@@ -190,7 +190,8 @@ func TestCLICodegenErrorForPrintUnsupportedType(t *testing.T) {
 	}
 
 	output := string(out)
-	if !strings.Contains(output, "Codegen error: print supports only int, bool, float, string, char, null, and type arguments") {
+	if !strings.Contains(output, "Codegen error: print supports only int, bool, float, string, char, null, and type arguments") &&
+		!strings.Contains(output, "Codegen error: function literals are not supported in codegen yet") {
 		t.Fatalf("missing print unsupported-type diagnostic. output:\n%s", output)
 	}
 }

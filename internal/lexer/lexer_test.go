@@ -227,3 +227,31 @@ func TestIdentifierWithDigits(t *testing.T) {
 		}
 	}
 }
+
+func TestModuloAndCompoundOperatorTokens(t *testing.T) {
+	input := `x %= 2; y = 5 % 3;`
+	tests := []struct {
+		expectedType    token.TokenType
+		expectedLiteral string
+	}{
+		{token.IDENT, "x"},
+		{token.MOD_EQ, "%="},
+		{token.INT, "2"},
+		{token.SEMICOLON, ";"},
+		{token.IDENT, "y"},
+		{token.ASSIGN, "="},
+		{token.INT, "5"},
+		{token.PERCENT, "%"},
+		{token.INT, "3"},
+		{token.SEMICOLON, ";"},
+		{token.EOF, ""},
+	}
+
+	l := New(input)
+	for i, tt := range tests {
+		tok := l.NextToken()
+		if tok.Type != tt.expectedType || tok.Literal != tt.expectedLiteral {
+			t.Fatalf("tests[%d] - got=(%q,%q) want=(%q,%q)", i, tok.Type, tok.Literal, tt.expectedType, tt.expectedLiteral)
+		}
+	}
+}

@@ -113,10 +113,16 @@ Prefix:
 
 Infix:
 
-- Arithmetic: `+`, `-`, `*`, `/`
+- Arithmetic: `+`, `-`, `*`, `/`, `%` (`%` is modulo)
 - Comparisons: `<`, `>`, `==`, `!=`
 - Boolean: `&&`, `||`, `^^`
 - Bitwise (int): `&`, `|`, `^`, `<<`, `>>`
+
+Assignment forms:
+
+- `=`
+- `+=`, `-=`, `*=`, `/=`, `%=` (compound assignment)
+- `++`, `--` (int variables only)
 
 Current mixed-type behavior includes:
 
@@ -124,6 +130,7 @@ Current mixed-type behavior includes:
 - `char + int` -> `char`
 - `char + char` -> `char`
 - `string + int/float/char` -> string concatenation
+- `%` with numeric types uses modulo semantics
 
 ### Control Flow
 
@@ -205,6 +212,11 @@ let next = 'A' + 1;
 print(banner);
 print(n1);
 print(next);
+print(7 % 4);
+print(7.5 % 2.0);
+let x = 9;
+x %= 4;
+print(x);
 print("type(next): " + typeof(next));
 print(true && false);
 print(true || false);

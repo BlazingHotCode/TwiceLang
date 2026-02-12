@@ -2,10 +2,12 @@ package evaluator
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 
 	"twice/internal/ast"
 	"twice/internal/object"
+	"twice/internal/token"
 )
 
 // TRUE and FALSE are singletons - we reuse these instead of creating new booleans
@@ -126,6 +128,13 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			targetType = runtimeTypeName(val)
 			env.SetType(node.Name.Value, targetType)
 		}
+		if inf, ok := node.Value.(*ast.InfixExpression); ok {
+			if inf.Token.Type == token.PLUSPLUS || inf.Token.Type == token.MINUSMIN {
+				if targetType != "int" {
+					return newError("++/-- only supported for int variables")
+				}
+			}
+		}
 		valType := runtimeTypeName(val)
 		if targetType == "null" && valType != "null" {
 			targetType = valType
@@ -135,6 +144,13 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			return newError("cannot assign %s to %s", valType, targetType)
 		}
 		env.Assign(node.Name.Value, val)
+	case *ast.FunctionStatement:
+		fnObj := Eval(node.Function, env)
+		if isError(fnObj) {
+			return fnObj
+		}
+		env.Set(node.Name.Value, fnObj)
+		env.SetType(node.Name.Value, "unknown")
 
 	// Expressions
 	case *ast.IntegerLiteral:
@@ -180,9 +196,25 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		return evalIfExpression(node, env)
 
 	case *ast.FunctionLiteral:
-		params := node.Parameters
-		body := node.Body
-		return &object.Function{Parameters: params, Body: body, Env: env}
+		for _, param := range node.Parameters {
+			if param.TypeName != "" && !isKnownTypeName(param.TypeName) {
+				return newError("unknown type: %s", param.TypeName)
+			}
+		}
+		if node.ReturnType != "" && !isKnownTypeName(node.ReturnType) {
+			return newError("unknown type: %s", node.ReturnType)
+		}
+		name := ""
+		if node.Name != nil {
+			name = node.Name.Value
+		}
+		return &object.Function{
+			Name:       name,
+			Parameters: node.Parameters,
+			ReturnType: node.ReturnType,
+			Body:       node.Body,
+			Env:        env,
+		}
 
 	case *ast.CallExpression:
 		if ident, ok := node.Function.(*ast.Identifier); ok && ident.Value == "typeof" && len(node.Arguments) == 1 {
@@ -196,11 +228,11 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		if isError(function) {
 			return function
 		}
-		args := evalExpressions(node.Arguments, env)
-		if len(args) == 1 && isError(args[0]) {
-			return args[0]
+		args, namedArgs, argErr := evalCallArguments(node.Arguments, env)
+		if argErr != nil {
+			return argErr
 		}
-		return applyFunction(function, args)
+		return applyFunction(function, args, namedArgs)
 	}
 
 	return nil
@@ -398,6 +430,8 @@ func evalMixedNumericInfixExpression(operator string, left, right object.Object)
 		return &object.Float{Value: leftVal * rightVal}
 	case "/":
 		return &object.Float{Value: leftVal / rightVal}
+	case "%":
+		return &object.Float{Value: math.Mod(leftVal, rightVal)}
 	case "<":
 		return nativeBoolToBooleanObject(leftVal < rightVal)
 	case ">":
@@ -472,6 +506,8 @@ func evalFloatInfixExpression(operator string, left, right object.Object) object
 		return &object.Float{Value: leftVal * rightVal}
 	case "/":
 		return &object.Float{Value: leftVal / rightVal}
+	case "%":
+		return &object.Float{Value: math.Mod(leftVal, rightVal)}
 	case "<":
 		return nativeBoolToBooleanObject(leftVal < rightVal)
 	case ">":
@@ -499,6 +535,8 @@ func evalIntegerInfixExpression(operator string, left, right object.Object) obje
 		return &object.Integer{Value: leftVal * rightVal}
 	case "/":
 		return &object.Integer{Value: leftVal / rightVal}
+	case "%":
+		return &object.Integer{Value: leftVal % rightVal}
 	case "<":
 		return nativeBoolToBooleanObject(leftVal < rightVal)
 	case ">":
@@ -558,33 +596,118 @@ func evalExpressions(exps []ast.Expression, env *object.Environment) []object.Ob
 	return result
 }
 
+func evalCallArguments(exps []ast.Expression, env *object.Environment) ([]object.Object, map[string]object.Object, *object.Error) {
+	positional := []object.Object{}
+	named := make(map[string]object.Object)
+
+	for _, e := range exps {
+		if na, ok := e.(*ast.NamedArgument); ok {
+			val := Eval(na.Value, env)
+			if isError(val) {
+				return nil, nil, val.(*object.Error)
+			}
+			if _, exists := named[na.Name]; exists {
+				return nil, nil, newError("duplicate named argument: %s", na.Name)
+			}
+			named[na.Name] = val
+			continue
+		}
+
+		evaluated := Eval(e, env)
+		if isError(evaluated) {
+			return nil, nil, evaluated.(*object.Error)
+		}
+		positional = append(positional, evaluated)
+	}
+
+	return positional, named, nil
+}
+
 // applyFunction calls a function with arguments
-func applyFunction(fn object.Object, args []object.Object) object.Object {
+func applyFunction(fn object.Object, args []object.Object, namedArgs map[string]object.Object) object.Object {
 	if builtin, ok := fn.(*object.Builtin); ok {
+		if len(namedArgs) > 0 {
+			return newError("named arguments are not supported for builtin functions")
+		}
 		return builtin.Fn(args...)
 	}
 	function, ok := fn.(*object.Function)
 	if !ok {
 		return newError("not a function: %s", fn.Type())
 	}
-
-	// Create new enclosed environment and bind parameters
-	extendedEnv := extendFunctionEnv(function, args)
-	// Evaluate function body in new environment
-	evaluated := Eval(function.Body, extendedEnv)
-	// Unwrap return value (functions return the value, not the ReturnValue object)
-	return unwrapReturnValue(evaluated)
+	return applyUserFunction(function, args, namedArgs)
 }
 
-// extendFunctionEnv creates a new scope with parameters bound to arguments
-func extendFunctionEnv(fn *object.Function, args []object.Object) *object.Environment {
-	env := object.NewEnclosedEnvironment(fn.Env)
+func applyUserFunction(function *object.Function, args []object.Object, namedArgs map[string]object.Object) object.Object {
+	extendedEnv := object.NewEnclosedEnvironment(function.Env)
 
-	for paramIdx, param := range fn.Parameters {
-		env.Set(param.Value, args[paramIdx])
+	posIdx := 0
+	usedNamed := make(map[string]bool)
+	for _, param := range function.Parameters {
+		var val object.Object
+		if posIdx < len(args) {
+			val = args[posIdx]
+			posIdx++
+		} else if namedVal, ok := namedArgs[param.Name.Value]; ok {
+			val = namedVal
+			usedNamed[param.Name.Value] = true
+		} else if param.DefaultValue != nil {
+			val = Eval(param.DefaultValue, extendedEnv)
+			if isError(val) {
+				return val
+			}
+		} else {
+			return newError("missing required argument: %s", param.Name.Value)
+		}
+
+		targetType := param.TypeName
+		if targetType == "" {
+			targetType = runtimeTypeName(val)
+		}
+		valType := runtimeTypeName(val)
+		if !isAssignableToType(targetType, valType) {
+			return newError("cannot assign %s to %s", valType, targetType)
+		}
+		extendedEnv.Set(param.Name.Value, val)
+		extendedEnv.SetType(param.Name.Value, targetType)
 	}
 
-	return env
+	if posIdx < len(args) {
+		return newError("too many positional arguments")
+	}
+	for name := range namedArgs {
+		if usedNamed[name] {
+			continue
+		}
+		if functionHasParam(function, name) {
+			return newError("argument provided twice: %s", name)
+		}
+		return newError("unknown named argument: %s", name)
+	}
+
+	evaluated := Eval(function.Body, extendedEnv)
+	result := unwrapReturnValue(evaluated)
+	if isError(result) {
+		return result
+	}
+
+	if function.ReturnType != "" {
+		got := runtimeTypeName(result)
+		if !isAssignableToType(function.ReturnType, got) {
+			return newError("cannot return %s from function returning %s", got, function.ReturnType)
+		}
+	}
+
+	return result
+}
+
+func functionHasParam(fn *object.Function, name string) bool {
+	for _, p := range fn.Parameters {
+		if p.Name.Value == name {
+			return true
+		}
+	}
+	return false
 }
 
 // unwrapReturnValue extracts the actual value from a ReturnValue

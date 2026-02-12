@@ -180,6 +180,56 @@ func TestBitwiseOperatorPrecedenceParsing(t *testing.T) {
 	}
 }
 
+func TestNamedFunctionSyntaxParses(t *testing.T) {
+	input := `fn add(a: int, b: int = 2) int { return a + b; }`
+	p := New(lexer.New(input))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	stmt, ok := program.Statements[0].(*ast.FunctionStatement)
+	if !ok {
+		t.Fatalf("expected function statement, got=%T", program.Statements[0])
+	}
+	if stmt.Name.Value != "add" {
+		t.Fatalf("expected function name add, got=%q", stmt.Name.Value)
+	}
+	if stmt.Function.ReturnType != "int" {
+		t.Fatalf("expected return type int, got=%q", stmt.Function.ReturnType)
+	}
+	if len(stmt.Function.Parameters) != 2 {
+		t.Fatalf("expected 2 parameters, got=%d", len(stmt.Function.Parameters))
+	}
+	if stmt.Function.Parameters[1].DefaultValue == nil {
+		t.Fatalf("expected default value for second parameter")
+	}
+}
+
+func TestModuloHasProductPrecedence(t *testing.T) {
+	p := New(lexer.New("5 + 6 % 4;"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+	if !ok {
+		t.Fatalf("expected expression statement, got=%T", program.Statements[0])
+	}
+
+	top, ok := stmt.Expression.(*ast.InfixExpression)
+	if !ok || top.Operator != "+" {
+		t.Fatalf("expected top-level + infix expression, got=%T (%v)", stmt.Expression, stmt.Expression)
+	}
+	right, ok := top.Right.(*ast.InfixExpression)
+	if !ok || right.Operator != "%" {
+		t.Fatalf("expected right side to be %% infix expression, got=%T (%v)", top.Right, top.Right)
+	}
+}
+
 func checkNoParserErrors(t *testing.T, p *Parser) {
 	t.Helper()
 	if len(p.Errors()) == 0 {

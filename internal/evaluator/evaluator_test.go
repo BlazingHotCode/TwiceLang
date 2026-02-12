@@ -23,6 +23,7 @@ func TestIntegerEval(t *testing.T) {
 		{"5 ^ 1", 4},
 		{"5 << 1", 10},
 		{"5 >> 1", 2},
+		{"5 % 2", 1},
 	}
 
 	for _, tt := range tests {
@@ -77,6 +78,32 @@ func TestIfElseEval(t *testing.T) {
 func TestFunctionCallEval(t *testing.T) {
 	evaluated := testEval("let add = fn(x, y) { x + y; }; add(2, 3)")
 	testIntegerObject(t, evaluated, 5)
+}
+
+func TestNamedFunctionWithDefaultsAndTypedReturnEval(t *testing.T) {
+	evaluated := testEval("fn add(a: int, b: int = 2) int { return a + b; } add(3)")
+	testIntegerObject(t, evaluated, 5)
+}
+
+func TestNamedArgumentsCallEval(t *testing.T) {
+	evaluated := testEval("fn sub(a: int, b: int) int { return a - b; } sub(b = 2, a = 7)")
+	testIntegerObject(t, evaluated, 5)
+}
+
+func TestMixedPositionalAndNamedCallEval(t *testing.T) {
+	evaluated := testEval("fn sum(a: int, b: int = 4, c: int = 1) int { return a + b + c; } sum(2, c = 3)")
+	testIntegerObject(t, evaluated, 9)
+}
+
+func TestFunctionReturnTypeValidationEval(t *testing.T) {
+	evaluated := testEval("fn bad() int { return true; } bad()")
+	errObj, ok := evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "cannot return bool from function returning int" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
 }
 
 func TestUnknownIdentifierError(t *testing.T) {
@@ -222,6 +249,8 @@ func TestMixedNumericOpsReturnFloatEval(t *testing.T) {
 		{"5.0 - 1.5", 3.5},
 		{"1.5 * 2.0", 3.0},
 		{"7.0 / 2.0", 3.5},
+		{"7.5 % 2.0", 1.5},
+		{"7 % 2.0", 1.0},
 	}
 	for _, tt := range tests {
 		evaluated := testEval(tt.input)
@@ -233,6 +262,11 @@ func TestMixedNumericOpsReturnFloatEval(t *testing.T) {
 			t.Fatalf("wrong value for %q: got=%g want=%g", tt.input, got.Value, tt.want)
 		}
 	}
+}
+
+func TestModuloAssignmentEval(t *testing.T) {
+	evaluated := testEval("let x = 7; x %= 4; x")
+	testIntegerObject(t, evaluated, 3)
 }
 
 func TestCharPlusIntReturnsCharEval(t *testing.T) {

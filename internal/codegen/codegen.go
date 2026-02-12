@@ -2,14 +2,17 @@ package codegen
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"twice/internal/ast"
+	"twice/internal/token"
 )
 
 // CodeGen holds the state for code generation
 type CodeGen struct {
 	output      strings.Builder
+	funcDefs    strings.Builder
 	labelCount  int
 	exitLabel   string
 	normalExit  string
@@ -24,6 +27,11 @@ type CodeGen struct {
 	floatVals   map[string]float64
 	stringLits  map[string]string
 	stackOffset int // current stack position
+	functions   map[string]*ast.FunctionLiteral
+	funcLabels  map[string]string
+	inFunction  bool
+	funcRetLbl  string
+	funcRetType valueType
 	errors      []CodegenError
 }
 
@@ -58,6 +66,8 @@ func New() *CodeGen {
 		stringVals:  make(map[string]string),
 		floatVals:   make(map[string]float64),
 		stringLits:  make(map[string]string),
+		functions:   make(map[string]*ast.FunctionLiteral),
+		funcLabels:  make(map[string]string),
 		stackOffset: 0,
 		errors:      []CodegenError{},
 	}
@@ -68,12 +78,14 @@ func (cg *CodeGen) Generate(program *ast.Program) string {
 	cg.reset()
 	cg.exitLabel = cg.newLabel()
 	cg.normalExit = cg.newLabel()
+	cg.collectFunctions(program)
 	cg.emitHeader()
 
 	// Generate code for each statement
 	for _, stmt := range program.Statements {
 		cg.generateStatement(stmt)
 	}
+	cg.generateFunctionDefinitions()
 
 	cg.emitFooter()
 	return cg.output.String()
@@ -229,6 +241,10 @@ func (cg *CodeGen) emitFooter() {
 	cg.emit("    mov $60, %%rax         # syscall: exit")
 	cg.emit("    syscall")
 	cg.emit("")
+	if cg.funcDefs.Len() > 0 {
+		cg.output.WriteString(cg.funcDefs.String())
+		cg.emit("")
+	}
 	cg.emit("    .section .rodata")
 	cg.emit("bool_true:  .ascii \"true\\n\"")
 	cg.emit("bool_false: .ascii \"false\\n\"")
@@ -250,6 +266,10 @@ func (cg *CodeGen) generateStatement(stmt ast.Statement) {
 		cg.generateReturn(s)
 	case *ast.ExpressionStatement:
 		cg.generateExpression(s.Expression)
+	case *ast.FunctionStatement:
+		if cg.inFunction {
+			cg.addNodeError("nested function declarations are not supported in codegen", s)
+		}
 	}
 }
 
@@ -278,6 +298,15 @@ func (cg *CodeGen) generateExpression(expr ast.Expression) {
 		cg.generateIfExpression(e)
 	case *ast.CallExpression:
 		cg.generateCallExpression(e)
+	case *ast.FunctionLiteral:
+		cg.addNodeError("function literals are not supported in codegen yet", e)
+		cg.emit("    mov $0, %%rax")
+	case *ast.NamedArgument:
+		cg.addNodeError("named arguments are only valid inside function calls", e)
+		cg.emit("    mov $0, %%rax")
+	default:
+		cg.addNodeError("unsupported expression in codegen", e)
+		cg.emit("    mov $0, %%rax")
 	}
 }
 
@@ -419,6 +448,10 @@ func (cg *CodeGen) generateInfix(ie *ast.InfixExpression) {
 	case "/":
 		cg.emit("    cqo                 # sign extend rax to rdx:rax")
 		cg.emit("    idiv %%rcx          # rax = rdx:rax / rcx")
+	case "%":
+		cg.emit("    cqo                 # sign extend rax to rdx:rax")
+		cg.emit("    idiv %%rcx          # rdx = rdx:rax %% rcx")
+		cg.emit("    mov %%rdx, %%rax")
 	case "&":
 		cg.emit("    and %%rcx, %%rax")
 	case "|":
@@ -597,6 +630,15 @@ func (cg *CodeGen) generateAssign(as *ast.AssignStatement) {
 	if declared, ok := cg.varDeclared[as.Name.Value]; ok {
 		target = declared
 	}
+	if inf, ok := as.Value.(*ast.InfixExpression); ok {
+		if inf.Token.Type == token.PLUSPLUS || inf.Token.Type == token.MINUSMIN {
+			if target != typeInt {
+				cg.addNodeError("++/-- only supported for int variables", as)
+				cg.emit("    mov $0, %%rax")
+				return
+			}
+		}
+	}
 	if inferred != typeNull && target != typeUnknown && target != inferred {
 		cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", typeName(inferred), typeName(target)), as)
 		cg.emit("    mov $0, %%rax")
@@ -614,6 +656,16 @@ func (cg *CodeGen) generateAssign(as *ast.AssignStatement) {
 // generateReturn handles return statements
 func (cg *CodeGen) generateReturn(rs *ast.ReturnStatement) {
 	cg.generateExpression(rs.ReturnValue)
+	if cg.inFunction {
+		if cg.funcRetType != typeUnknown {
+			got := cg.inferExpressionType(rs.ReturnValue)
+			if got != typeNull && got != typeUnknown && got != cg.funcRetType {
+				cg.addNodeError(fmt.Sprintf("cannot return %s from function returning %s", typeName(got), typeName(cg.funcRetType)), rs)
+			}
+		}
+		cg.emit("    jmp %s", cg.funcRetLbl)
+		return
+	}
 	cg.emit("    mov %%rax, %%rdi       # return value as process exit code")
 	cg.emit("    jmp %s", cg.exitLabel)
 }
@@ -658,6 +710,11 @@ func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 			cg.emit("    mov $0, %%rax")
 			return
 		}
+		if _, ok := ce.Arguments[0].(*ast.NamedArgument); ok {
+			cg.addNodeError("named arguments are not supported for print", ce.Arguments[0])
+			cg.emit("    mov $0, %%rax")
+			return
+		}
 		argType := cg.inferExpressionType(ce.Arguments[0])
 		prevErrCount := len(cg.errors)
 		cg.generateExpression(ce.Arguments[0])
@@ -684,12 +741,21 @@ func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 			cg.emit("    mov $0, %%rax")
 			return
 		}
+		if _, ok := ce.Arguments[0].(*ast.NamedArgument); ok {
+			cg.addNodeError("named arguments are not supported for typeof", ce.Arguments[0])
+			cg.emit("    mov $0, %%rax")
+			return
+		}
 		t := cg.inferTypeofType(ce.Arguments[0])
 		label := cg.stringLabel(typeName(t) + "\n")
 		cg.emit("    lea %s(%%rip), %%rax", label)
 	case "int", "float", "string", "char", "bool":
 		cg.generateCastCall(fn.Value, ce)
 	default:
+		if fl, ok := cg.functions[fn.Value]; ok {
+			cg.generateUserFunctionCall(fn.Value, fl, ce)
+			return
+		}
 		cg.addNodeError("unknown function "+fn.Value, ce)
 		cg.emit("    mov $0, %%rax")
 	}
@@ -802,7 +868,7 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
 				return typeChar
 			}
 			return typeUnknown
-		case "-", "*", "/":
+		case "-", "*", "/", "%":
 			if left == typeInt && right == typeInt {
 				return typeInt
 			}
@@ -845,8 +911,16 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
 			case "bool":
 				return typeBool
 			}
+			if fl, ok := cg.functions[fn.Value]; ok {
+				if fl.ReturnType == "" {
+					return typeUnknown
+				}
+				return parseTypeName(fl.ReturnType)
+			}
 		}
 		return typeUnknown
+	case *ast.NamedArgument:
+		return cg.inferExpressionType(e.Value)
 	default:
 		return typeUnknown
 	}
@@ -881,6 +955,7 @@ func (cg *CodeGen) inferTypeofType(expr ast.Expression) valueType {
 
 func (cg *CodeGen) reset() {
 	cg.output = strings.Builder{}
+	cg.funcDefs = strings.Builder{}
 	cg.labelCount = 0
 	cg.exitLabel = ""
 	cg.normalExit = ""
@@ -894,8 +969,218 @@ func (cg *CodeGen) reset() {
 	cg.stringVals = make(map[string]string)
 	cg.floatVals = make(map[string]float64)
 	cg.stringLits = make(map[string]string)
+	cg.functions = make(map[string]*ast.FunctionLiteral)
+	cg.funcLabels = make(map[string]string)
 	cg.stackOffset = 0
+	cg.inFunction = false
+	cg.funcRetLbl = ""
+	cg.funcRetType = typeUnknown
 	cg.errors = []CodegenError{}
+}
+
+func (cg *CodeGen) collectFunctions(program *ast.Program) {
+	for _, stmt := range program.Statements {
+		fs, ok := stmt.(*ast.FunctionStatement)
+		if !ok || fs == nil || fs.Name == nil || fs.Function == nil {
+			continue
+		}
+		name := fs.Name.Value
+		if _, exists := cg.functions[name]; exists {
+			cg.addNodeError("duplicate function declaration: "+name, fs)
+			continue
+		}
+		cg.functions[name] = fs.Function
+		cg.funcLabels[name] = "fn_" + name
+	}
+}
+
+func (cg *CodeGen) generateFunctionDefinitions() {
+	for name, fn := range cg.functions {
+		cg.generateOneFunction(name, fn)
+	}
+}
+
+type cgState struct {
+	variables   map[string]int
+	constVars   map[string]bool
+	varTypes    map[string]valueType
+	varDeclared map[string]valueType
+	varIsNull   map[string]bool
+	intVals     map[string]int64
+	charVals    map[string]rune
+	stringVals  map[string]string
+	floatVals   map[string]float64
+	stackOffset int
+	inFunction  bool
+	funcRetLbl  string
+	funcRetType valueType
+}
+
+func (cg *CodeGen) saveState() cgState {
+	return cgState{
+		variables:   cg.variables,
+		constVars:   cg.constVars,
+		varTypes:    cg.varTypes,
+		varDeclared: cg.varDeclared,
+		varIsNull:   cg.varIsNull,
+		intVals:     cg.intVals,
+		charVals:    cg.charVals,
+		stringVals:  cg.stringVals,
+		floatVals:   cg.floatVals,
+		stackOffset: cg.stackOffset,
+		inFunction:  cg.inFunction,
+		funcRetLbl:  cg.funcRetLbl,
+		funcRetType: cg.funcRetType,
+	}
+}
+
+func (cg *CodeGen) restoreState(st cgState) {
+	cg.variables = st.variables
+	cg.constVars = st.constVars
+	cg.varTypes = st.varTypes
+	cg.varDeclared = st.varDeclared
+	cg.varIsNull = st.varIsNull
+	cg.intVals = st.intVals
+	cg.charVals = st.charVals
+	cg.stringVals = st.stringVals
+	cg.floatVals = st.floatVals
+	cg.stackOffset = st.stackOffset
+	cg.inFunction = st.inFunction
+	cg.funcRetLbl = st.funcRetLbl
+	cg.funcRetType = st.funcRetType
+}
+
+func (cg *CodeGen) generateOneFunction(name string, fn *ast.FunctionLiteral) {
+	prevOutput := cg.output
+	cg.output = strings.Builder{}
+	state := cg.saveState()
+
+	cg.variables = make(map[string]int)
+	cg.constVars = make(map[string]bool)
+	cg.varTypes = make(map[string]valueType)
+	cg.varDeclared = make(map[string]valueType)
+	cg.varIsNull = make(map[string]bool)
+	cg.intVals = make(map[string]int64)
+	cg.charVals = make(map[string]rune)
+	cg.stringVals = make(map[string]string)
+	cg.floatVals = make(map[string]float64)
+	cg.stackOffset = 0
+	cg.inFunction = true
+	cg.funcRetLbl = cg.newLabel()
+	cg.funcRetType = parseTypeName(fn.ReturnType)
+
+	label := cg.funcLabels[name]
+	cg.emit("%s:", label)
+	cg.emit("    push %%rbp")
+	cg.emit("    mov %%rsp, %%rbp")
+
+	paramRegs := []string{"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"}
+	if len(fn.Parameters) > len(paramRegs) {
+		cg.addNodeError("functions with more than 6 parameters are not supported in codegen", fn)
+	}
+
+	for idx, p := range fn.Parameters {
+		if idx >= len(paramRegs) {
+			break
+		}
+		cg.emit("    push %s           # param %s", paramRegs[idx], p.Name.Value)
+		cg.stackOffset += 8
+		cg.variables[p.Name.Value] = cg.stackOffset
+		pt := parseTypeName(p.TypeName)
+		if p.TypeName != "" && pt == typeUnknown {
+			cg.addNodeError("unknown type: "+p.TypeName, p.Name)
+		}
+		cg.varTypes[p.Name.Value] = pt
+		cg.varDeclared[p.Name.Value] = pt
+		cg.varIsNull[p.Name.Value] = false
+	}
+
+	cg.generateBlockStatement(fn.Body)
+	cg.emit("    mov $0, %%rax")
+	cg.emit("%s:", cg.funcRetLbl)
+	cg.emit("    mov %%rbp, %%rsp")
+	cg.emit("    pop %%rbp")
+	cg.emit("    ret")
+
+	cg.funcDefs.WriteString(cg.output.String())
+	cg.output = prevOutput
+	cg.restoreState(state)
+}
+
+func (cg *CodeGen) generateUserFunctionCall(name string, fn *ast.FunctionLiteral, ce *ast.CallExpression) {
+	paramRegs := []string{"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"}
+	if len(fn.Parameters) > len(paramRegs) {
+		cg.addNodeError("functions with more than 6 parameters are not supported in codegen", ce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+
+	finalArgs := make([]ast.Expression, len(fn.Parameters))
+	namedMode := false
+	posIdx := 0
+	for _, arg := range ce.Arguments {
+		if na, ok := arg.(*ast.NamedArgument); ok {
+			namedMode = true
+			found := -1
+			for i, p := range fn.Parameters {
+				if p.Name.Value == na.Name {
+					found = i
+					break
+				}
+			}
+			if found == -1 {
+				cg.addNodeError("unknown named argument: "+na.Name, na)
+				cg.emit("    mov $0, %%rax")
+				return
+			}
+			if finalArgs[found] != nil {
+				cg.addNodeError("argument provided twice: "+na.Name, na)
+				cg.emit("    mov $0, %%rax")
+				return
+			}
+			finalArgs[found] = na.Value
+			continue
+		}
+
+		if namedMode {
+			cg.addNodeError("positional arguments cannot appear after named arguments", ce)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		if posIdx >= len(fn.Parameters) {
+			cg.addNodeError("too many positional arguments", ce)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		finalArgs[posIdx] = arg
+		posIdx++
+	}
+
+	for i, p := range fn.Parameters {
+		if finalArgs[i] != nil {
+			continue
+		}
+		if p.DefaultValue == nil {
+			cg.addNodeError("missing required argument: "+p.Name.Value, ce)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		finalArgs[i] = p.DefaultValue
+	}
+
+	for i, arg := range finalArgs {
+		want := parseTypeName(fn.Parameters[i].TypeName)
+		got := cg.inferExpressionType(arg)
+		if want != typeUnknown && got != typeUnknown && got != typeNull && got != want {
+			cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", typeName(got), typeName(want)), ce)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		cg.generateExpression(arg)
+		cg.emit("    mov %%rax, %s", paramRegs[i])
+	}
+
+	cg.emit("    call %s", cg.funcLabels[name])
 }
 
 func (cg *CodeGen) generateCastCall(castName string, ce *ast.CallExpression) {
@@ -1014,6 +1299,8 @@ func (cg *CodeGen) constFloatValue(expr ast.Expression) (float64, bool) {
 			return left * right, true
 		case "/":
 			return left / right, true
+		case "%":
+			return math.Mod(left, right), true
 		default:
 			return 0, false
 		}
@@ -1056,6 +1343,8 @@ func (cg *CodeGen) constIntValue(expr ast.Expression) (int64, bool) {
 			return left * right, true
 		case "/":
 			return left / right, true
+		case "%":
+			return left % right, true
 		default:
 			return 0, false
 		}

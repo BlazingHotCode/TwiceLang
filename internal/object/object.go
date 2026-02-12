@@ -106,7 +106,9 @@ func (e *Error) Inspect() string  { return "ERROR: " + e.Message }
 // Function represents a user-defined function
 // It has parameters, a body (AST block), and its own environment (closure)
 type Function struct {
-	Parameters []*ast.Identifier
+	Name       string
+	Parameters []*ast.FunctionParameter
+	ReturnType string
 	Body       *ast.BlockStatement
 	Env        *Environment
 }
@@ -117,10 +119,21 @@ func (f *Function) Inspect() string {
 
 	params := []string{}
 	for _, p := range f.Parameters {
-		params = append(params, p.String())
+		param := p.Name.String()
+		if p.TypeName != "" {
+			param += ": " + p.TypeName
+		}
+		if p.DefaultValue != nil {
+			param += " = " + p.DefaultValue.String()
+		}
+		params = append(params, param)
 	}
 
 	out.WriteString("fn")
+	if f.Name != "" {
+		out.WriteString(" ")
+		out.WriteString(f.Name)
+	}
 	out.WriteString("(")
 	out.WriteString(strings.Join(params, ", "))
 	out.WriteString(") {\n")

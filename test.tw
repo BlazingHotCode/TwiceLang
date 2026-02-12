@@ -31,6 +31,29 @@ print(n2);
 print(n3);
 print(n4);
 
+// modulo (`%`) and modulo assignment (`%=`)
+let mod_i = 7 % 4;
+print(mod_i);
+let mod_f = 7.5 % 2.0;
+print(mod_f);
+let mod_assign = 9;
+mod_assign %= 4;
+print(mod_assign);
+
+// compound assignments and increment/decrement
+let acc = 10;
+acc += 2;
+acc -= 1;
+acc *= 3;
+acc /= 11;
+print(acc);
+
+let i = 3;
+i++;
+print(i);
+i--;
+print(i);
+
 // char + char => char (sum of ASCII/codepoint values)
 let char_sum = 'A' + '1';
 print(char_sum);
@@ -53,3 +76,12 @@ print(5 | 2);
 print(5 ^ 1);
 print(5 << 1);
 print(5 >> 1);
+
+// function syntax demo
+fn add(a: int, b: int = 2) int {
+  return a + b;
+}
+
+print(add(3));             // positional + default => 5
+print(add(a = 3, b = 4));  // named args => 7
+print(add(3, b = 10));     // mixed positional + named => 13

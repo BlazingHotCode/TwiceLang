@@ -192,6 +192,46 @@ func TestCodegenBitwiseOperators(t *testing.T) {
 	}
 }
 
+func TestCodegenIntegerModulo(t *testing.T) {
+	asm, cg := generateAssembly(t, "print(7 % 4);")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "idiv %rcx") || !strings.Contains(asm, "mov %rdx, %rax") {
+		t.Fatalf("expected integer modulo instruction sequence, got:\n%s", asm)
+	}
+}
+
+func TestCodegenFloatModuloFolding(t *testing.T) {
+	asm, cg := generateAssembly(t, "print(7.5 % 2.0);")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "1.5\\n") {
+		t.Fatalf("expected folded float modulo literal in assembly, got:\n%s", asm)
+	}
+}
+
+func TestCodegenNamedFunctionCall(t *testing.T) {
+	asm, cg := generateAssembly(t, "fn add(a: int, b: int = 2) int { return a + b; } print(add(3));")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "fn_add:") {
+		t.Fatalf("expected generated function label, got:\n%s", asm)
+	}
+	if !strings.Contains(asm, "call fn_add") {
+		t.Fatalf("expected call to generated function, got:\n%s", asm)
+	}
+}
+
+func TestCodegenNamedArgumentsCall(t *testing.T) {
+	_, cg := generateAssembly(t, "fn sub(a: int, b: int) int { return a - b; } print(sub(b = 2, a = 7));")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+}
+
 func generateAssembly(t *testing.T, input string) (string, *CodeGen) {
 	t.Helper()
 	p := parser.New(lexer.New(input))

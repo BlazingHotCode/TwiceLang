@@ -315,8 +315,16 @@ func (bs *BlockStatement) String() string {
 // FunctionLiteral represents fn(<params>) { <body> }
 type FunctionLiteral struct {
 	Token      token.Token // The FN token
-	Parameters []*Identifier
+	Name       *Identifier // Optional function name
+	Parameters []*FunctionParameter
+	ReturnType string
 	Body       *BlockStatement
+}
+
+type FunctionParameter struct {
+	Name         *Identifier
+	TypeName     string
+	DefaultValue Expression
 }
 
 func (fl *FunctionLiteral) expressionNode()      {}
@@ -326,14 +334,44 @@ func (fl *FunctionLiteral) String() string {
 	var out bytes.Buffer
 	params := []string{}
 	for _, p := range fl.Parameters {
-		params = append(params, p.String())
+		param := p.Name.String()
+		if p.TypeName != "" {
+			param += ": " + p.TypeName
+		}
+		if p.DefaultValue != nil {
+			param += " = " + p.DefaultValue.String()
+		}
+		params = append(params, param)
 	}
 	out.WriteString(fl.TokenLiteral())
+	if fl.Name != nil {
+		out.WriteString(" ")
+		out.WriteString(fl.Name.String())
+	}
 	out.WriteString("(")
 	out.WriteString(strings.Join(params, ", "))
 	out.WriteString(") ")
+	if fl.ReturnType != "" {
+		out.WriteString(fl.ReturnType)
+		out.WriteString(" ")
+	}
 	out.WriteString(fl.Body.String())
 	return out.String()
+}
+
+type FunctionStatement struct {
+	Token    token.Token
+	Name     *Identifier
+	Function *FunctionLiteral
+}
+
+func (fs *FunctionStatement) statementNode()       {}
+func (fs *FunctionStatement) TokenLiteral() string { return fs.Token.Literal }
+func (fs *FunctionStatement) String() string {
+	if fs.Function != nil {
+		return fs.Function.String()
+	}
+	return ""
 }
 
 // CallExpression represents <function>(<arguments>)
@@ -357,4 +395,16 @@ func (ce *CallExpression) String() string {
 	out.WriteString(strings.Join(args, ", "))
 	out.WriteString(")")
 	return out.String()
+}
+
+type NamedArgument struct {
+	Token token.Token // The argument name token
+	Name  string
+	Value Expression
+}
+
+func (na *NamedArgument) expressionNode()      {}
+func (na *NamedArgument) TokenLiteral() string { return na.Token.Literal }
+func (na *NamedArgument) String() string {
+	return na.Name + " = " + na.Value.String()
 }
