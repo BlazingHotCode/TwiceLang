@@ -318,6 +318,31 @@ func (cg *CodeGen) generateInfix(ie *ast.InfixExpression) {
 	leftType := cg.inferExpressionType(ie.Left)
 	rightType := cg.inferExpressionType(ie.Right)
 
+	if leftType == typeBool && rightType == typeBool {
+		cg.generateExpression(ie.Right)
+		cg.emit("    push %%rax")
+		cg.generateExpression(ie.Left)
+		cg.emit("    pop %%rcx")
+		switch ie.Operator {
+		case "&&":
+			cg.emit("    and %%rcx, %%rax")
+			return
+		case "||":
+			cg.emit("    or %%rcx, %%rax")
+			cg.emit("    test %%rax, %%rax")
+			cg.emit("    setne %%al")
+			cg.emit("    movzbq %%al, %%rax")
+			return
+		case "^^":
+			cg.emit("    xor %%rcx, %%rax")
+			return
+		default:
+			cg.addNodeError("unsupported boolean operator in codegen", ie)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+	}
+
 	if leftType == typeString && ie.Operator == "+" {
 		combined, ok := cg.constStringValue(ie)
 		if !ok {
@@ -330,7 +355,7 @@ func (cg *CodeGen) generateInfix(ie *ast.InfixExpression) {
 		return
 	}
 
-	if isNumericType(leftType) && isNumericType(rightType) {
+	if isNumericType(leftType) && isNumericType(rightType) && (leftType == typeFloat || rightType == typeFloat) {
 		v, ok := cg.constFloatValue(ie)
 		if !ok {
 			cg.addNodeError("numeric infix with float result requires compile-time known values in codegen", ie)
@@ -743,6 +768,11 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
 		left := cg.inferExpressionType(e.Left)
 		right := cg.inferExpressionType(e.Right)
 		switch e.Operator {
+		case "&&", "||", "^^":
+			if left == typeBool && right == typeBool {
+				return typeBool
+			}
+			return typeUnknown
 		case "+":
 			if left == typeInt && right == typeInt {
 				return typeInt

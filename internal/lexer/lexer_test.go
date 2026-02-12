@@ -14,6 +14,9 @@ let ten = 10;
 if (five < ten) { return true; } else { return false; }
 5 == 5;
 5 != 10;
+true && false;
+true || false;
+true ^^ false;
 `
 
 	tests := []struct {
@@ -59,6 +62,18 @@ if (five < ten) { return true; } else { return false; }
 		{token.INT, "5"},
 		{token.NOT_EQ, "!="},
 		{token.INT, "10"},
+		{token.SEMICOLON, ";"},
+		{token.TRUE, "true"},
+		{token.AND, "&&"},
+		{token.FALSE, "false"},
+		{token.SEMICOLON, ";"},
+		{token.TRUE, "true"},
+		{token.OR, "||"},
+		{token.FALSE, "false"},
+		{token.SEMICOLON, ";"},
+		{token.TRUE, "true"},
+		{token.XOR, "^^"},
+		{token.FALSE, "false"},
 		{token.SEMICOLON, ";"},
 		{token.EOF, ""},
 	}

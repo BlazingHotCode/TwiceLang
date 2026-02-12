@@ -39,11 +39,28 @@ func TestBooleanEval(t *testing.T) {
 		{"1 != 1", false},
 		{"!true", false},
 		{"!false", true},
+		{"true && true", true},
+		{"true && false", false},
+		{"false || true", true},
+		{"false || false", false},
+		{"true ^^ false", true},
+		{"true ^^ true", false},
 	}
 
 	for _, tt := range tests {
 		evaluated := testEval(tt.input)
 		testBooleanObject(t, evaluated, tt.expected)
+	}
+}
+
+func TestBooleanOperatorTypeMismatch(t *testing.T) {
+	evaluated := testEval("1 && true")
+	errObj, ok := evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "type mismatch: INTEGER && BOOLEAN" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
 	}
 }
 

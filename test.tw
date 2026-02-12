@@ -41,3 +41,8 @@ print(char_next);
 print("x:" + 7);
 print("x:" + 3.5);
 print("x:" + 'A');
+
+// boolean operators: &&, ||, ^^
+print(true && false);
+print(true || false);
+print(true ^^ false);

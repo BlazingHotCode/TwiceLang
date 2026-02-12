@@ -167,6 +167,16 @@ func TestCodegenCharPlusIntPrintsAsChar(t *testing.T) {
 	}
 }
 
+func TestCodegenBooleanOperators(t *testing.T) {
+	asm, cg := generateAssembly(t, "print(true && false); print(true || false); print(true ^^ false);")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if strings.Count(asm, "call print_bool") < 3 {
+		t.Fatalf("expected boolean operator results to print via print_bool, got:\n%s", asm)
+	}
+}
+
 func generateAssembly(t *testing.T, input string) (string, *CodeGen) {
 	t.Helper()
 	p := parser.New(lexer.New(input))

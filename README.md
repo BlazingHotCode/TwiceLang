@@ -18,7 +18,7 @@ The Go pipeline is wired end-to-end:
 
 - Primitive values: `int`, `bool`, `float`, `string`, `char`, `null`
 - Prefix operators: `!`, `-`
-- Infix operators: `+`, `-`, `*`, `/`, `<`, `>`, `==`, `!=`
+- Infix operators: `+`, `-`, `*`, `/`, `<`, `>`, `==`, `!=`, `&&`, `||`, `^^`
 - `let` and `const` bindings
 - Optional type annotations:
   - `let name = value;`
@@ -85,6 +85,9 @@ print(n + 1);
 print(typeof(n));
 print(float(3));
 print(char(65));
+print(true && false);
+print(true || false);
+print(true ^^ false);
 n
 ```
 
