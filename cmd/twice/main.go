@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"twice/internal/codegen"
 	"twice/internal/lexer"
 	"twice/internal/parser"
@@ -57,9 +58,9 @@ func main() {
 	// Generate code
 	cg := codegen.New()
 	assembly := cg.Generate(program)
-	if len(cg.Errors()) > 0 {
-		for _, err := range cg.Errors() {
-			fmt.Printf("Codegen error: %s\n", err)
+	if len(cg.DetailedErrors()) > 0 {
+		for _, err := range cg.DetailedErrors() {
+			printCodegenError(sourceFile, string(source), err)
 		}
 		os.Exit(1)
 	}
@@ -94,4 +95,52 @@ func runPath(output string) string {
 		return output
 	}
 	return "." + string(os.PathSeparator) + output
+}
+
+func printCodegenError(filename string, source string, err codegen.CodegenError) {
+	fmt.Printf("Codegen error: %s\n", err.Message)
+	line, col, ok := findContextLocation(source, err.Context)
+	if !ok {
+		fmt.Printf("  --> %s\n", filename)
+		if err.Context != "" {
+			fmt.Printf("   | context: %s\n", err.Context)
+		}
+		return
+	}
+
+	lines := strings.Split(source, "\n")
+	fmt.Printf("  --> %s:%d:%d\n", filename, line, col)
+	fmt.Println("   |")
+	if line-2 >= 0 {
+		fmt.Printf("%3d| %s\n", line-1, lines[line-2])
+	}
+	fmt.Printf("%3d| %s\n", line, lines[line-1])
+	fmt.Printf("   | %s^\n", strings.Repeat(" ", col-1))
+	if line < len(lines) {
+		fmt.Printf("%3d| %s\n", line+1, lines[line])
+	}
+}
+
+func findContextLocation(source string, context string) (line int, col int, ok bool) {
+	ctx := strings.TrimSpace(context)
+	if ctx == "" {
+		return 0, 0, false
+	}
+	lines := strings.Split(source, "\n")
+	candidates := []string{
+		ctx,
+		strings.TrimSuffix(ctx, ";"),
+		strings.Trim(ctx, "`"),
+	}
+	for i, ln := range lines {
+		for _, c := range candidates {
+			if c == "" {
+				continue
+			}
+			if idx := strings.Index(ln, c); idx >= 0 {
+				return i + 1, idx + 1, true
+			}
+		}
+	}
+	return 0, 0, false
 }

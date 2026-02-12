@@ -17,7 +17,7 @@ type CodeGen struct {
 	constVars   map[string]bool
 	varTypes    map[string]valueType
 	stackOffset int // current stack position
-	errors      []string
+	errors      []CodegenError
 }
 
 type valueType int
@@ -28,6 +28,11 @@ const (
 	typeBool
 )
 
+type CodegenError struct {
+	Message string
+	Context string
+}
+
 // New creates a new code generator
 func New() *CodeGen {
 	return &CodeGen{
@@ -35,12 +40,13 @@ func New() *CodeGen {
 		constVars:   make(map[string]bool),
 		varTypes:    make(map[string]valueType),
 		stackOffset: 0,
-		errors:      []string{},
+		errors:      []CodegenError{},
 	}
 }
 
 // Generate produces x86-64 assembly from a program
 func (cg *CodeGen) Generate(program *ast.Program) string {
+	cg.reset()
 	cg.exitLabel = cg.newLabel()
 	cg.normalExit = cg.newLabel()
 	cg.emitHeader()
@@ -278,7 +284,8 @@ func (cg *CodeGen) generatePrefix(pe *ast.PrefixExpression) {
 func (cg *CodeGen) generateIdentifier(i *ast.Identifier) {
 	offset, ok := cg.variables[i.Value]
 	if !ok {
-		cg.emit("    # ERROR: undefined variable %s", i.Value)
+		cg.addNodeError("identifier not found: "+i.Value, i)
+		cg.emit("    mov $0, %%rax")
 		return
 	}
 	// Load from stack: rbp - offset
@@ -289,11 +296,10 @@ func (cg *CodeGen) generateIdentifier(i *ast.Identifier) {
 func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
 	if _, exists := cg.variables[ls.Name.Value]; exists {
 		if cg.constVars[ls.Name.Value] {
-			cg.addError("cannot reassign const: " + ls.Name.Value)
+			cg.addNodeError("cannot reassign const: "+ls.Name.Value, ls)
 		} else {
-			cg.addError("identifier already declared: " + ls.Name.Value)
+			cg.addNodeError("identifier already declared: "+ls.Name.Value, ls)
 		}
-		cg.emit("    # ERROR: duplicate declaration %s", ls.Name.Value)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
@@ -312,8 +318,7 @@ func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
 // generateConst handles immutable variable declarations.
 func (cg *CodeGen) generateConst(cs *ast.ConstStatement) {
 	if _, exists := cg.variables[cs.Name.Value]; exists {
-		cg.addError("identifier already declared: " + cs.Name.Value)
-		cg.emit("    # ERROR: duplicate declaration %s", cs.Name.Value)
+		cg.addNodeError("identifier already declared: "+cs.Name.Value, cs)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
@@ -333,14 +338,12 @@ func (cg *CodeGen) generateConst(cs *ast.ConstStatement) {
 func (cg *CodeGen) generateAssign(as *ast.AssignStatement) {
 	offset, exists := cg.variables[as.Name.Value]
 	if !exists {
-		cg.addError("identifier not found: " + as.Name.Value)
-		cg.emit("    # ERROR: undefined variable %s", as.Name.Value)
+		cg.addNodeError("identifier not found: "+as.Name.Value, as)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
 	if cg.constVars[as.Name.Value] {
-		cg.addError("cannot reassign const: " + as.Name.Value)
-		cg.emit("    # ERROR: cannot reassign const %s", as.Name.Value)
+		cg.addNodeError("cannot reassign const: "+as.Name.Value, as)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
@@ -385,8 +388,7 @@ func (cg *CodeGen) generateIfExpression(ie *ast.IfExpression) {
 func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 	fn, ok := ce.Function.(*ast.Identifier)
 	if !ok {
-		cg.addError("unsupported call target")
-		cg.emit("    # ERROR: unsupported call target")
+		cg.addNodeError("unsupported call target", ce)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
@@ -394,27 +396,27 @@ func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 	switch fn.Value {
 	case "print":
 		if len(ce.Arguments) != 1 {
-			cg.addError("print expects exactly 1 argument")
-			cg.emit("    # ERROR: print expects exactly 1 argument")
+			cg.addNodeError("print expects exactly 1 argument", ce)
 			cg.emit("    mov $0, %%rax")
 			return
 		}
 		argType := cg.inferExpressionType(ce.Arguments[0])
-		if argType == typeUnknown {
-			cg.addError("print supports only int and bool arguments")
-			cg.emit("    # ERROR: print supports only int and bool arguments")
+		prevErrCount := len(cg.errors)
+		cg.generateExpression(ce.Arguments[0])
+		if len(cg.errors) > prevErrCount {
 			cg.emit("    mov $0, %%rax")
 			return
 		}
-		cg.generateExpression(ce.Arguments[0])
 		if argType == typeBool {
 			cg.emit("    call print_bool")
-		} else {
+		} else if argType == typeInt {
 			cg.emit("    call print_int")
+		} else {
+			cg.addNodeError("print supports only int and bool arguments", ce.Arguments[0])
+			cg.emit("    mov $0, %%rax")
 		}
 	default:
-		cg.addError("unknown function " + fn.Value)
-		cg.emit("    # ERROR: unknown function %s", fn.Value)
+		cg.addNodeError("unknown function "+fn.Value, ce)
 		cg.emit("    mov $0, %%rax")
 	}
 }
@@ -432,11 +434,39 @@ func (cg *CodeGen) newLabel() string {
 }
 
 func (cg *CodeGen) addError(msg string) {
-	cg.errors = append(cg.errors, msg)
+	cg.errors = append(cg.errors, CodegenError{Message: msg})
+}
+
+func (cg *CodeGen) addNodeError(msg string, node ast.Node) {
+	ctx := ""
+	if node != nil {
+		ctx = strings.TrimSpace(node.String())
+		if ctx == "" {
+			ctx = strings.TrimSpace(node.TokenLiteral())
+		}
+	}
+	cg.errors = append(cg.errors, CodegenError{
+		Message: msg,
+		Context: ctx,
+	})
 }
 
 func (cg *CodeGen) Errors() []string {
-	return cg.errors
+	formatted := make([]string, 0, len(cg.errors))
+	for _, err := range cg.errors {
+		if err.Context == "" {
+			formatted = append(formatted, err.Message)
+			continue
+		}
+		formatted = append(formatted, fmt.Sprintf("%s (at `%s`)", err.Message, err.Context))
+	}
+	return formatted
+}
+
+func (cg *CodeGen) DetailedErrors() []CodegenError {
+	out := make([]CodegenError, len(cg.errors))
+	copy(out, cg.errors)
+	return out
 }
 
 func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
@@ -501,4 +531,16 @@ func (cg *CodeGen) inferBlockType(block *ast.BlockStatement) valueType {
 	default:
 		return typeUnknown
 	}
+}
+
+func (cg *CodeGen) reset() {
+	cg.output = strings.Builder{}
+	cg.labelCount = 0
+	cg.exitLabel = ""
+	cg.normalExit = ""
+	cg.variables = make(map[string]int)
+	cg.constVars = make(map[string]bool)
+	cg.varTypes = make(map[string]valueType)
+	cg.stackOffset = 0
+	cg.errors = []CodegenError{}
 }
