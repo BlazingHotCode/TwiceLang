@@ -1,100 +1,203 @@
-# twice
+# Twice
 
-A small language/compiler project built twice:
+Twice is a small programming language project.
 
-- Phase 1 in Go (current implementation)
+Current active implementation:
+- Go frontend + evaluator
+- x86-64 codegen pipeline (`as` + `gcc`/`ld`)
 
-## Current Status (Go)
+## System Requirements
 
-The Go pipeline is wired end-to-end:
+### Build From Source
 
-- Lexer
-- Pratt parser
-- AST
-- x86-64 code generator
-- Assembler/linker integration (`as` + `gcc`/`ld`)
+Required:
+- Go (current stable release recommended)
+- GNU assembler: `as`
+- One linker toolchain:
+  - `gcc` (recommended), or
+  - `ld`
 
-## Language Features (Current)
+Used by the build/run flow:
+- `go build` compiles the `twice` CLI
+- `as` assembles generated x86-64 assembly
+- `gcc`/`ld` links the final executable
 
-- Primitive values: `int`, `bool`, `float`, `string`, `char`, `null`
-- Prefix operators: `!`, `-`
-- Infix operators: `+`, `-`, `*`, `/`, `<`, `>`, `==`, `!=`, `&&`, `||`, `^^`
-- `let` and `const` bindings
-- Optional type annotations:
-  - `let name = value;`
-  - `let name: type = value;`
-  - `let name: type;` (initialized as `null`)
-  - `const name = value;`
-  - `const name: type = value;`
-- Variable reassignment (`x = value;`) with const protection and type checks
-- `if / elif / else`
-- `return`
-- Builtins:
-  - `print(<expr>)` for `int`, `bool`, `float`, `string`, `char`, `null`, and `type`
-  - `typeof(<expr>)` returns the static/runtime type name
-  - Casts: `int(...)`, `float(...)`, `string(...)`, `char(...)`, `bool(...)`
-- Line and block comments:
-  - `// comment`
-  - `/* block comment */`
+### Run an Already Compiled `twice` Binary
 
-## Statement Terminators
+Required:
+- 64-bit Linux (x86-64)
+- No Go toolchain required
 
-- Most statements require `;` (including `let`, `const`, assignment, `return`, and expression statements)
-- Expression statements without `;` are treated as implicit `return`
-  - Example: `x` behaves like `return x`
-- Newlines are not statement terminators by themselves
+Notes:
+- The produced programs are native Linux executables.
+- If your precompiled `twice` binary is dynamically linked, system libc must be present (typical on Linux systems).
 
-## Build And Run
+## What Works Today
 
-Build the CLI:
+- Lexer, Pratt parser, AST
+- Evaluator (interpreter semantics)
+- Code generation to x86-64 assembly and executable output
+- CLI compiler/runner (`cmd/twice`)
+
+## Quick Start
+
+### 1. Build the CLI
 
 ```bash
 go build -o twice ./cmd/twice
 ```
 
-Compile a `.tw` file:
+### 2. Compile a source file
 
 ```bash
 ./twice -o output test.tw
 ```
 
-Compile and run immediately:
+### 3. Compile and run immediately
 
 ```bash
 ./twice -run -o output test.tw
 ```
 
-Read source from stdin:
+### 4. Run from stdin
 
 ```bash
 echo 'print(123);' | ./twice -run -
 ```
 
-Note: the CLI currently runs outputs as `./<name>`, so use a relative `-o` path when using `-run`.
+Note: `-run` executes `./<output>`, so prefer a relative `-o` value when using `-run`.
 
-## Example
+## Language Guide
+
+### Primitive Types
+
+- `int`
+- `bool`
+- `float`
+- `string`
+- `char`
+- `null`
+
+### Declarations
 
 ```tw
-// Single-line and block comments work.
-/* test program */
+let x = 10;
+let name: string = "twice";
+let maybe: int;      // initialized to null
+
+const limit = 100;
+const label: string = "prod";
+```
+
+### Assignment
+
+```tw
+let x = 1;
+x = 2;
+```
+
+- Reassigning `const` is an error.
+- Type constraints are enforced.
+
+### Operators
+
+Prefix:
+- `!`
+- `-`
+
+Infix:
+- Arithmetic: `+`, `-`, `*`, `/`
+- Comparisons: `<`, `>`, `==`, `!=`
+- Boolean: `&&`, `||`, `^^`
+
+Current mixed-type behavior includes:
+- `int` with `float` arithmetic -> `float`
+- `char + int` -> `char`
+- `char + char` -> `char`
+- `string + int/float/char` -> string concatenation
+
+### Control Flow
+
+```tw
+if (x > 10) {
+  print("big");
+} elif (x == 10) {
+  print("equal");
+} else {
+  print("small");
+}
+```
+
+### Builtins
+
+- `print(expr)` supports: `int`, `bool`, `float`, `string`, `char`, `null`, `type`
+- `typeof(expr)` returns the type name
+- Casts:
+  - `int(...)`
+  - `float(...)`
+  - `string(...)`
+  - `char(...)`
+  - `bool(...)`
+
+### Comments
+
+```tw
+// line comment
+/* block comment */
+```
+
+### Statement Terminators
+
+- Most statements require `;`
+- Newlines are not statement terminators
+- An expression without trailing `;` becomes an implicit `return`
+
+Example:
+
+```tw
+let x = 41;
+x + 1
+```
+
+The last line is treated as `return x + 1`.
+
+## Example Program
+
+```tw
 const banner: string = "Twice";
-let n: int;
-n = 41;
+let n1 = 1 + 2.5;
+let next = 'A' + 1;
+
 print(banner);
-print(n + 1);
-print(typeof(n));
-print(float(3));
-print(char(65));
+print(n1);
+print(next);
+print("type(next): " + typeof(next));
 print(true && false);
 print(true || false);
 print(true ^^ false);
-n
+
+n1
 ```
 
-The last line (`n`) is an implicit return (no semicolon), so process exit code is `41`.
+## Project Layout
 
-## Next Work
+- `cmd/twice` - CLI entrypoint
+- `internal/lexer` - tokenization
+- `internal/parser` - Pratt parser
+- `internal/ast` - AST nodes
+- `internal/evaluator` - interpreter semantics
+- `internal/codegen` - x86-64 codegen
+- `internal/object` - runtime object model
+- `internal/token` - token definitions
 
-- Expand callable function codegen beyond builtin `print`
-- Improve parser recovery
-- Complete the OCaml implementation track
+## Testing
+
+Run all tests:
+
+```bash
+go test ./...
+```
+
+## Roadmap
+
+See `TODO.md` for planned work (bitwise ops, custom libraries, function codegen expansion).
