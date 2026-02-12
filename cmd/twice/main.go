@@ -3,40 +3,33 @@ package main
 import (
 	"fmt"
 	"twice/internal/lexer"
-	"twice/internal/token"
+	"twice/internal/parser"
 )
 
 func main() {
-	input := `let five = 5;
-let ten = 10;
-
-let add = fn(x, y) {
-	x + y;
-};
-
-let result = add(five, ten);
-!-/*5;
-5 < 10 > 5;
-
-if (5 < 10) {
-	return true;
-} else {
-	return false;
-}
-
-10 == 10;
-10 != 9;
+	input := `
+let x = 5 + 3 * 2;
+let y = 10;
+let add = fn(a, b) { a + b; };
+let result = add(x, y);
+if (result > 10) { return true; } else { return false; }
 `
 
 	l := lexer.New(input)
+	p := parser.New(l)
 
-	// Keep getting tokens until we hit EOF
-	for {
-		tok := l.NextToken()
-		fmt.Printf("%+v\n", tok)
-		
-		if tok.Type == token.EOF {
-			break
+	program := p.ParseProgram()
+
+	// Check for errors
+	if len(p.Errors()) != 0 {
+		fmt.Println("Parser errors:")
+		for _, err := range p.Errors() {
+			fmt.Printf("\t%s\n", err)
 		}
+		return
 	}
+
+	// Print the parsed program (reconstructed from AST)
+	fmt.Println("Parsed program:")
+	fmt.Println(program.String())
 }
