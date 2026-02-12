@@ -2,34 +2,44 @@ package main
 
 import (
 	"fmt"
+	"twice/internal/evaluator"
 	"twice/internal/lexer"
+	"twice/internal/object"
 	"twice/internal/parser"
 )
 
 func main() {
-	input := `
-let x = 5 + 3 * 2;
-let y = 10;
-let add = fn(a, b) { a + b; };
-let result = add(x, y);
-if (result > 10) { return true; } else { return false; }
-`
-
-	l := lexer.New(input)
-	p := parser.New(l)
-
-	program := p.ParseProgram()
-
-	// Check for errors
-	if len(p.Errors()) != 0 {
-		fmt.Println("Parser errors:")
-		for _, err := range p.Errors() {
-			fmt.Printf("\t%s\n", err)
-		}
-		return
+	// Test various programs
+	tests := []string{
+		"5 + 5",
+		"let x = 5; x",
+		"let a = 5; let b = 10; a + b",
+		"fn(x) { x + 5 }(10)",
+		"let add = fn(a, b) { a + b; }; add(5, 10)",
+		"if (5 < 10) { 10 } else { 5 }",
+		"if (5 > 10) { 10 } else { 5 }",
+		"!!true",
+		"5 + true",
 	}
 
-	// Print the parsed program (reconstructed from AST)
-	fmt.Println("Parsed program:")
-	fmt.Println(program.String())
+	for _, input := range tests {
+		fmt.Printf("Input: %s\n", input)
+		
+		l := lexer.New(input)
+		p := parser.New(l)
+		program := p.ParseProgram()
+
+		if len(p.Errors()) != 0 {
+			for _, err := range p.Errors() {
+				fmt.Printf("  Parse error: %s\n", err)
+			}
+			continue
+		}
+
+		env := object.NewEnvironment()
+		result := evaluator.Eval(program, env)
+		
+		fmt.Printf("  Result: %s\n\n", result.Inspect())
+	}
+
 }
