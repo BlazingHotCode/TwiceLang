@@ -195,6 +195,28 @@ func TestCLICodegenErrorForPrintUnsupportedType(t *testing.T) {
 	}
 }
 
+func TestCLICodegenErrorForUndefinedIdentifier(t *testing.T) {
+	root := repoRoot(t)
+
+	srcPath := filepath.Join(t.TempDir(), "bad_undefined_ident.tw")
+	source := "print(y);\n"
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	cmd := exec.Command("go", "run", "./cmd/twice", srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected codegen failure, got success. output:\n%s", out)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "Codegen error: identifier not found: y") {
+		t.Fatalf("missing undefined identifier diagnostic. output:\n%s", output)
+	}
+}
+
 func TestCLICompileAndRunConstValue(t *testing.T) {
 	root := repoRoot(t)
 	ensureToolchain(t)

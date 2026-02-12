@@ -7,20 +7,14 @@
 - Support parameter passing and local function stack frames.
 - Align function return behavior between evaluator and codegen.
 
-## 2. Real Codegen Error Handling
-
-- Replace assembly comment errors with real Go errors (e.g. undefined variable, unknown function, invalid call target).
-- Propagate codegen failures up to CLI and stop compilation on error.
-- Improve user-facing error messages with source context when possible.
-
-## 3. Explicit Variable Types And Typed Declarations
+## 2. Explicit Variable Types And Typed Declarations
 
 - Add support for explicit variable type annotations with syntax: `let name: type = value`.
 - Add support for typed declarations without an initial value (declaration-only form), e.g. `let name: type;`.
 - Extend lexer/parser/AST to represent `:` and declared types.
 - Enforce declared-type compatibility in evaluator/codegen.
 
-## 4. Automatic Variable Type Inference
+## 3. Automatic Variable Type Inference
 
 - Infer variable type automatically from assigned value when no explicit type is provided.
 - Store inferred type metadata for later validations and codegen decisions.

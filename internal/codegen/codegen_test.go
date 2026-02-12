@@ -87,6 +87,16 @@ func TestAssignmentConstValidation(t *testing.T) {
 	}
 }
 
+func TestUndefinedIdentifierCodegenValidation(t *testing.T) {
+	_, cg := generateAssembly(t, "print(x);")
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen errors for undefined identifier, got none")
+	}
+	if !strings.Contains(cg.Errors()[0], "identifier not found: x") {
+		t.Fatalf("missing undefined identifier diagnostic, got: %v", cg.Errors())
+	}
+}
+
 func generateAssembly(t *testing.T, input string) (string, *CodeGen) {
 	t.Helper()
 	p := parser.New(lexer.New(input))
