@@ -30,3 +30,12 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Local build artifacts produced by this project
+/twice
+/test_bin
+/output
+/tw_*_bin
+
+# Keep sample source file tracked
+!/test.tw
