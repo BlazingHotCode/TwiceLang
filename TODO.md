@@ -19,3 +19,16 @@
 - Replace assembly comment errors with real Go errors (e.g. undefined variable, unknown function, invalid call target).
 - Propagate codegen failures up to CLI and stop compilation on error.
 - Improve user-facing error messages with source context when possible.
+
+## 4. Explicit Variable Types And Typed Declarations
+
+- Add support for explicit variable type annotations with syntax: `let name: type = value`.
+- Add support for typed declarations without an initial value (declaration-only form), e.g. `let name: type;`.
+- Extend lexer/parser/AST to represent `:` and declared types.
+- Enforce declared-type compatibility in evaluator/codegen.
+
+## 5. Automatic Variable Type Inference
+
+- Infer variable type automatically from assigned value when no explicit type is provided.
+- Store inferred type metadata for later validations and codegen decisions.
+- Validate reassignment/update operations against inferred type rules (once reassignment exists).
