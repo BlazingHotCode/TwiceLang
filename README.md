@@ -116,6 +116,7 @@ Infix:
 - Arithmetic: `+`, `-`, `*`, `/`
 - Comparisons: `<`, `>`, `==`, `!=`
 - Boolean: `&&`, `||`, `^^`
+- Bitwise (int): `&`, `|`, `^`, `<<`, `>>`
 
 Current mixed-type behavior includes:
 
@@ -183,6 +184,11 @@ print("type(next): " + typeof(next));
 print(true && false);
 print(true || false);
 print(true ^^ false);
+print(5 & 3);
+print(5 | 2);
+print(5 ^ 1);
+print(5 << 1);
+print(5 >> 1);
 
 n1
 ```
@@ -208,4 +214,4 @@ go test ./...
 
 ## Roadmap
 
-See `TODO.md` for planned work (bitwise ops, custom libraries, function codegen expansion).
+See `TODO.md` for planned work (custom libraries, function codegen expansion).
