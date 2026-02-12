@@ -3,6 +3,7 @@
 Twice is a small programming language project.
 
 Current active implementation:
+
 - Go frontend + evaluator
 - x86-64 codegen pipeline (`as` + `gcc`/`ld`)
 
@@ -11,6 +12,7 @@ Current active implementation:
 ### Build From Source
 
 Required:
+
 - Go (current stable release recommended)
 - GNU assembler: `as`
 - One linker toolchain:
@@ -18,6 +20,7 @@ Required:
   - `ld`
 
 Used by the build/run flow:
+
 - `go build` compiles the `twice` CLI
 - `as` assembles generated x86-64 assembly
 - `gcc`/`ld` links the final executable
@@ -25,10 +28,12 @@ Used by the build/run flow:
 ### Run an Already Compiled `twice` Binary
 
 Required:
+
 - 64-bit Linux (x86-64)
 - No Go toolchain required
 
 Notes:
+
 - The produced programs are native Linux executables.
 - If your precompiled `twice` binary is dynamically linked, system libc must be present (typical on Linux systems).
 
@@ -102,15 +107,18 @@ x = 2;
 ### Operators
 
 Prefix:
+
 - `!`
 - `-`
 
 Infix:
+
 - Arithmetic: `+`, `-`, `*`, `/`
 - Comparisons: `<`, `>`, `==`, `!=`
 - Boolean: `&&`, `||`, `^^`
 
 Current mixed-type behavior includes:
+
 - `int` with `float` arithmetic -> `float`
 - `char + int` -> `char`
 - `char + char` -> `char`
