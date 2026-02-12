@@ -1,5 +1,3 @@
-const base = 10;
-let x = 7;
-x = 5;
-print(base);
-print(x + base);
+let x = 1;
+x = 2;
+print(x);
