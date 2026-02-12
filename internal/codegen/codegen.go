@@ -11,14 +11,15 @@ import (
 type CodeGen struct {
 	output      strings.Builder
 	labelCount  int
-	constants   []int       // Integer constants pool
-	constantMap map[int]int // value -> index
+	variables   map[string]int // name -> stack offset
+	stackOffset int            // current stack position
 }
 
 // New creates a new code generator
 func New() *CodeGen {
 	return &CodeGen{
-		constantMap: make(map[int]int),
+		variables:   make(map[string]int),
+		stackOffset: 0,
 	}
 }
 
@@ -47,14 +48,18 @@ func (cg *CodeGen) emitHeader() {
 	cg.emit(".text")
 	cg.emit("")
 	cg.emit("_start:")
+	cg.emit("    push %%rbp           # save old base pointer")
+	cg.emit("    mov %%rsp, %%rbp     # set new base pointer")
 }
 
 // emitFooter outputs exit syscall and data section
 func (cg *CodeGen) emitFooter() {
 	cg.emit("")
-	cg.emit("    # Exit with result in rax as exit code")
-	cg.emit("    mov %%rax, %%rdi        # exit code")
-	cg.emit("    mov $60, %%rax         # syscall: exit")
+	cg.emit("    # Exit with result in rax")
+	cg.emit("    mov %%rbp, %%rsp     # restore stack pointer")
+	cg.emit("    pop %%rbp            # restore base pointer")
+	cg.emit("    mov %%rax, %%rdi     # exit code")
+	cg.emit("    mov $60, %%rax       # syscall: exit")
 	cg.emit("    syscall")
 }
 
@@ -81,7 +86,7 @@ func (cg *CodeGen) generateExpression(expr ast.Expression) {
 	case *ast.PrefixExpression:
 		cg.generatePrefix(e)
 	case *ast.Identifier:
-		cg.emit("    # TODO: identifier %s", e.Value)
+		cg.generateIdentifier(e)
 	}
 }
 
@@ -156,12 +161,26 @@ func (cg *CodeGen) generatePrefix(pe *ast.PrefixExpression) {
 	}
 }
 
+func (cg *CodeGen) generateIdentifier(i *ast.Identifier) {
+	offset, ok := cg.variables[i.Value]
+	if !ok {
+		cg.emit("    # ERROR: undefined variable %s", i.Value)
+		return
+	}
+	// Load from stack: rbp - offset
+	cg.emit("    mov -%d(%%rbp), %%rax  # load %s", offset, i.Value)
+}
+
 // generateLet handles variable declarations (simplified - no stack frame yet)
 func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
 	cg.generateExpression(ls.Value)
-	// For now, we just leave it in rax
-	// Real implementation needs stack slots or registers
-	cg.emit("    # let %s = result in rax", ls.Name.Value)
+
+	// Allocate space on stack and store
+	cg.stackOffset += 8 // 8 bytes for int64
+	name := ls.Name.Value
+	cg.variables[name] = cg.stackOffset
+
+	cg.emit("    push %%rax           # let %s", name)
 }
 
 // generateReturn handles return statements
