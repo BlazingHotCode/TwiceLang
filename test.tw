@@ -1,5 +1,5 @@
-print(123);
+const base = 10;
 let x = 7;
-print(x+5);
-12;
-print(1);
+x = 5;
+print(base);
+print(x + base);
