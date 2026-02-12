@@ -74,19 +74,28 @@ func (cg *CodeGen) generateExpression(expr ast.Expression) {
 	switch e := expr.(type) {
 	case *ast.IntegerLiteral:
 		cg.generateInteger(e)
+	case *ast.Boolean:
+		cg.generateBoolean(e)
 	case *ast.InfixExpression:
 		cg.generateInfix(e)
-	case *ast.Identifier:
-		// For now, identifiers need stack frame support
-		cg.emit("    # TODO: identifier %s", e.Value)
 	case *ast.PrefixExpression:
 		cg.generatePrefix(e)
+	case *ast.Identifier:
+		cg.emit("    # TODO: identifier %s", e.Value)
 	}
 }
 
 // generateInteger loads an integer into rax
 func (cg *CodeGen) generateInteger(il *ast.IntegerLiteral) {
 	cg.emit("    mov $%d, %%rax", il.Value)
+}
+
+func (cg *CodeGen) generateBoolean(b *ast.Boolean) {
+	if b.Value {
+		cg.emit("    mov $1, %%rax") // true = 1
+	} else {
+		cg.emit("    mov $0, %%rax") // false = 0
+	}
 }
 
 // generateInfix handles binary operations: left op right
