@@ -45,6 +45,7 @@ Notes:
 - CLI compiler/runner (`cmd/twice`)
 - Typed declarations with inference and null-default initialization
 - Numeric, string, char, boolean, modulo, and bitwise operators
+- String indexing (`str[i]`) returning `char`
 - Named functions with typed/default parameters and typed returns
 - Function calls with positional, named, and mixed arguments
 - Function calls before declaration (resolved by codegen)
@@ -136,7 +137,14 @@ Current mixed-type behavior includes:
 - `char + int` -> `char`
 - `char + char` -> `char`
 - `string + int/float/char` -> string concatenation
+- `string[index]` -> `char`
 - `%` with numeric types uses modulo semantics
+
+String indexing example:
+
+```tw
+print("Twice"[2]); // 'i'
+```
 
 ### Control Flow
 
@@ -263,6 +271,7 @@ print(char(66));
 print("x:" + 7);
 print(7 % 4);
 print(7.5 % 2.0);
+print("Twice"[2]);
 print(true ^^ false);
 print(5 << 1);
 print('A' + 1);

@@ -26,6 +26,9 @@ print(greeting);
 print("x:" + 7);
 print("x:" + 3.5);
 print("x:" + 'A');
+print("Twice"[2]); // string indexing => char ('i')
+let word = "array";
+print(word[0]);    // 'a'
 
 // mixed numeric math
 let n1 = 1 + 2.5;

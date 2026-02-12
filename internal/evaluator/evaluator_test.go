@@ -378,6 +378,46 @@ func TestArrayLengthMethodEval(t *testing.T) {
 	testIntegerObject(t, evaluated, 2)
 }
 
+func TestStringIndexingEval(t *testing.T) {
+	evaluated := testEval(`"abc"[1]`)
+	got, ok := unwrapReturn(evaluated).(*object.Char)
+	if !ok {
+		t.Fatalf("expected char object, got=%T", evaluated)
+	}
+	if got.Value != 'b' {
+		t.Fatalf("wrong indexed char: got=%q want=%q", got.Value, 'b')
+	}
+
+	evaluated = testEval(`let s = "xyz"; s[2]`)
+	got, ok = unwrapReturn(evaluated).(*object.Char)
+	if !ok {
+		t.Fatalf("expected char object, got=%T", evaluated)
+	}
+	if got.Value != 'z' {
+		t.Fatalf("wrong indexed char: got=%q want=%q", got.Value, 'z')
+	}
+}
+
+func TestStringIndexingErrorsEval(t *testing.T) {
+	evaluated := testEval(`"abc"[9]`)
+	errObj, ok := evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "string index out of bounds: 9" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+
+	evaluated = testEval(`"abc"[true]`)
+	errObj, ok = evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "index must be int, got bool" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+}
+
 func testEval(input string) object.Object {
 	l := lexer.New(input)
 	p := parser.New(l)

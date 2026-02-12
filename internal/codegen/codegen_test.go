@@ -290,6 +290,19 @@ func TestCodegenArrayLengthMethod(t *testing.T) {
 	}
 }
 
+func TestCodegenStringIndexing(t *testing.T) {
+	asm, cg := generateAssembly(t, `print("abc"[1]); let s = "xyz"; print(s[2]);`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if strings.Count(asm, "call print_char") < 2 {
+		t.Fatalf("expected string indexing results to print via print_char, got:\n%s", asm)
+	}
+	if !strings.Contains(asm, "movzbq (%rcx,%rax), %rax") {
+		t.Fatalf("expected byte-load index sequence for string indexing, got:\n%s", asm)
+	}
+}
+
 func generateAssembly(t *testing.T, input string) (string, *CodeGen) {
 	t.Helper()
 	p := parser.New(lexer.New(input))

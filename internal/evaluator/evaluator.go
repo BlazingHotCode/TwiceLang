@@ -729,19 +729,27 @@ func functionHasParam(fn *object.Function, name string) bool {
 }
 
 func evalIndexExpression(left object.Object, index object.Object) object.Object {
-	arr, ok := left.(*object.Array)
-	if !ok {
-		return newError("index operator not supported: %s", left.Type())
-	}
 	idxObj, ok := index.(*object.Integer)
 	if !ok {
-		return newError("array index must be int, got %s", runtimeTypeName(index))
+		return newError("index must be int, got %s", runtimeTypeName(index))
 	}
 	idx := int(idxObj.Value)
-	if idx < 0 || idx >= len(arr.Elements) {
-		return newError("array index out of bounds: %d", idx)
+
+	if arr, ok := left.(*object.Array); ok {
+		if idx < 0 || idx >= len(arr.Elements) {
+			return newError("array index out of bounds: %d", idx)
+		}
+		return arr.Elements[idx]
 	}
-	return arr.Elements[idx]
+
+	if str, ok := left.(*object.String); ok {
+		if idx < 0 || idx >= len(str.Value) {
+			return newError("string index out of bounds: %d", idx)
+		}
+		return &object.Char{Value: rune(str.Value[idx])}
+	}
+
+	return newError("index operator not supported: %s", left.Type())
 }
 
 func evalIndexAssignStatement(node *ast.IndexAssignStatement, env *object.Environment) object.Object {

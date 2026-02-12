@@ -394,20 +394,39 @@ func (cg *CodeGen) generateIndexExpression(ie *ast.IndexExpression) {
 		cg.emit("    mov $0, %%rax")
 		return
 	}
-	if id, ok := ie.Left.(*ast.Identifier); ok && cg.varIsNull[id.Value] {
+	leftTypeName := cg.inferExpressionTypeName(ie.Left)
+	if id, ok := ie.Left.(*ast.Identifier); ok && cg.varIsNull[id.Value] && leftTypeName != "string" {
 		cg.addNodeError("cannot index null array", ie)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
-	leftTypeName := cg.inferExpressionTypeName(ie.Left)
-	elemTypeName, arrLen, ok := peelArrayType(leftTypeName)
-	if !ok {
-		cg.addNodeError("index operator not supported for non-array type", ie)
+	if cg.inferExpressionType(ie.Index) != typeInt {
+		cg.addNodeError("index must be int", ie.Index)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
-	if cg.inferExpressionType(ie.Index) != typeInt {
-		cg.addNodeError("array index must be int", ie.Index)
+
+	if leftTypeName == "string" {
+		if idx, ok := cg.constIntValue(ie.Index); ok {
+			if s, ok := cg.constStringValue(ie.Left); ok {
+				if idx < 0 || int(idx) >= len(s) {
+					cg.addNodeError(fmt.Sprintf("string index out of bounds: %d", idx), ie)
+					cg.emit("    mov $0, %%rax")
+					return
+				}
+			}
+		}
+		cg.generateExpression(ie.Left) // string pointer
+		cg.emit("    push %%rax")
+		cg.generateExpression(ie.Index)
+		cg.emit("    pop %%rcx")
+		cg.emit("    movzbq (%%rcx,%%rax), %%rax")
+		return
+	}
+
+	elemTypeName, arrLen, ok := peelArrayType(leftTypeName)
+	if !ok {
+		cg.addNodeError("index operator not supported for non-array/string type", ie)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
@@ -1186,6 +1205,9 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
 		}
 		return typeUnknown
 	case *ast.IndexExpression:
+		if cg.inferExpressionTypeName(e.Left) == "string" {
+			return typeChar
+		}
 		elemTypeName, _, ok := peelArrayType(cg.inferExpressionTypeName(e.Left))
 		if !ok {
 			return typeUnknown
@@ -1217,6 +1239,9 @@ func (cg *CodeGen) inferExpressionTypeName(expr ast.Expression) string {
 		}
 		return t
 	case *ast.IndexExpression:
+		if cg.inferExpressionTypeName(e.Left) == "string" {
+			return "char"
+		}
 		elem, _, ok := peelArrayType(cg.inferExpressionTypeName(e.Left))
 		if !ok {
 			return "unknown"
