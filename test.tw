@@ -1,4 +1,6 @@
-// TODO 2-5 demo: more types, typed declarations, inference, and typeof/casts
+// Twice feature showcase
+
+// typed declarations, inference, null defaults
 let s: string = "hello";
 let c = 'A';
 let f = 3.14;
@@ -7,7 +9,7 @@ let n: string; // typed declaration without initializer => null
 print(s);
 print(c);
 print(f);
-print(n); // null
+print(n);
 
 print(typeof(s));
 print(typeof(c));
@@ -18,10 +20,14 @@ print(int(true));
 print(bool(0));
 print(char(66));
 
-// New `+` behavior demos:
+// string concat and numeric coercion
 let greeting = "Hello, " + "Twice!";
 print(greeting);
+print("x:" + 7);
+print("x:" + 3.5);
+print("x:" + 'A');
 
+// mixed numeric math
 let n1 = 1 + 2.5;
 let n2 = 6 - 2.5;
 let n3 = 3 * 2.0;
@@ -31,16 +37,15 @@ print(n2);
 print(n3);
 print(n4);
 
-// modulo (`%`) and modulo assignment (`%=`)
+// modulo and compound assignments
 let mod_i = 7 % 4;
-print(mod_i);
 let mod_f = 7.5 % 2.0;
-print(mod_f);
 let mod_assign = 9;
 mod_assign %= 4;
+print(mod_i);
+print(mod_f);
 print(mod_assign);
 
-// compound assignments and increment/decrement
 let acc = 10;
 acc += 2;
 acc -= 1;
@@ -54,34 +59,39 @@ print(i);
 i--;
 print(i);
 
-// char + char => char (sum of ASCII/codepoint values)
+// char arithmetic
 let char_sum = 'A' + '1';
-print(char_sum);
 let char_next = 'A' + 1;
+print(char_sum);
 print(char_next);
 
-// string + int/float/char => string
-print("x:" + 7);
-print("x:" + 3.5);
-print("x:" + 'A');
-
-// boolean operators: &&, ||, ^^
+// booleans and bitwise operators
 print(true && false);
 print(true || false);
 print(true ^^ false);
-
-// bitwise operators: &, |, ^, <<, >>
 print(5 & 3);
 print(5 | 2);
 print(5 ^ 1);
 print(5 << 1);
 print(5 >> 1);
 
-// function syntax demo
+// control flow
+let score = 10;
+if (score > 10) {
+  print("big");
+} elif (score == 10) {
+  print("equal");
+} else {
+  print("small");
+};
+
+// function calls: before declaration, default args, named args, mixed args
+print(add(5));
+
 fn add(a: int, b: int = 2) int {
   return a + b;
 }
 
-print(add(3));             // positional + default => 5
-print(add(a = 3, b = 4));  // named args => 7
-print(add(3, b = 10));     // mixed positional + named => 13
+print(add(3));
+print(add(a = 3, b = 4));
+print(add(3, b = 10));

@@ -43,6 +43,11 @@ Notes:
 - Evaluator (interpreter semantics)
 - Code generation to x86-64 assembly and executable output
 - CLI compiler/runner (`cmd/twice`)
+- Typed declarations with inference and null-default initialization
+- Numeric, string, char, boolean, modulo, and bitwise operators
+- Named functions with typed/default parameters and typed returns
+- Function calls with positional, named, and mixed arguments
+- Function calls before declaration (resolved by codegen)
 
 ## Quick Start
 
@@ -141,7 +146,7 @@ if (x > 10) {
   print("equal");
 } else {
   print("small");
-}
+};
 ```
 
 ### Functions
@@ -162,12 +167,21 @@ add(a = 3, b = 4);  // named arguments
 add(3, b = 10);     // mixed positional + named
 ```
 
+Call order is declaration-order independent:
+
+```tw
+print(add(3));
+
+fn add(a: int, b: int = 2) int {
+  return a + b;
+}
+```
+
 Notes:
 
 - Parameters may be typed and may have default values.
 - Function return type can be declared and is validated.
-- For now, codegen supports named function declarations and calls.
-- Anonymous function literals/closures are still evaluator-oriented and not fully codegen-supported.
+- Codegen resolves named functions independently of source order (you can call before declaration).
 
 ### Builtins
 
@@ -205,37 +219,38 @@ The last line is treated as `return x + 1`.
 ## Example Program
 
 ```tw
-const banner: string = "Twice";
-let n1 = 1 + 2.5;
-let next = 'A' + 1;
+let s: string = "hello";
+let c = 'A';
+let f = 3.14;
+let n: string;
 
-print(banner);
-print(n1);
-print(next);
+print(s);
+print(c);
+print(f);
+print(n);
+print(typeof(n));
+print(int(true));
+print(char(66));
+
+print("x:" + 7);
 print(7 % 4);
 print(7.5 % 2.0);
-let x = 9;
-x %= 4;
-print(x);
-print("type(next): " + typeof(next));
-print(true && false);
-print(true || false);
 print(true ^^ false);
-print(5 & 3);
-print(5 | 2);
-print(5 ^ 1);
 print(5 << 1);
-print(5 >> 1);
+print('A' + 1);
+
+print(add(5)); // call before declaration
 
 fn add(a: int, b: int = 2) int {
   return a + b;
 }
+
 print(add(3));
 print(add(a = 3, b = 4));
 print(add(3, b = 10));
-
-n1
 ```
+
+See `test.tw` for a fuller feature walkthrough.
 
 ## Project Layout
 
@@ -258,4 +273,7 @@ go test ./...
 
 ## Roadmap
 
-See `TODO.md` for planned work (custom libraries and remaining function/closure codegen gaps).
+See `TODO.md` for planned work, currently focused on:
+
+- Custom libraries (for example, a `math` library)
+- Continued evaluator/codegen parity polish

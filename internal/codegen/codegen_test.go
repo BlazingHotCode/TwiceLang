@@ -232,6 +232,16 @@ func TestCodegenNamedArgumentsCall(t *testing.T) {
 	}
 }
 
+func TestCodegenFunctionCallBeforeDeclaration(t *testing.T) {
+	asm, cg := generateAssembly(t, "print(add(3)); fn add(a: int, b: int = 2) int { return a + b; }")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "call fn_add") {
+		t.Fatalf("expected call to function declared later in file, got:\n%s", asm)
+	}
+}
+
 func generateAssembly(t *testing.T, input string) (string, *CodeGen) {
 	t.Helper()
 	p := parser.New(lexer.New(input))

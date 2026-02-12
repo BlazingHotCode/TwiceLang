@@ -27,12 +27,23 @@ type CodeGen struct {
 	floatVals   map[string]float64
 	stringLits  map[string]string
 	stackOffset int // current stack position
-	functions   map[string]*ast.FunctionLiteral
-	funcLabels  map[string]string
+	functions   map[string]*compiledFunction
+	funcByName  map[string]string
+	varFuncs    map[string]string
+	currentFn   string
+	nextAnonFn  int
 	inFunction  bool
 	funcRetLbl  string
 	funcRetType valueType
 	errors      []CodegenError
+}
+
+type compiledFunction struct {
+	Key      string
+	Name     string
+	Label    string
+	Literal  *ast.FunctionLiteral
+	Captures []string
 }
 
 type valueType int
@@ -66,8 +77,9 @@ func New() *CodeGen {
 		stringVals:  make(map[string]string),
 		floatVals:   make(map[string]float64),
 		stringLits:  make(map[string]string),
-		functions:   make(map[string]*ast.FunctionLiteral),
-		funcLabels:  make(map[string]string),
+		functions:   make(map[string]*compiledFunction),
+		funcByName:  make(map[string]string),
+		varFuncs:    make(map[string]string),
 		stackOffset: 0,
 		errors:      []CodegenError{},
 	}
@@ -752,8 +764,12 @@ func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 	case "int", "float", "string", "char", "bool":
 		cg.generateCastCall(fn.Value, ce)
 	default:
-		if fl, ok := cg.functions[fn.Value]; ok {
-			cg.generateUserFunctionCall(fn.Value, fl, ce)
+		if key, ok := cg.varFuncs[fn.Value]; ok {
+			cg.generateUserFunctionCall(cg.functions[key], ce)
+			return
+		}
+		if key, ok := cg.funcByName[fn.Value]; ok {
+			cg.generateUserFunctionCall(cg.functions[key], ce)
 			return
 		}
 		cg.addNodeError("unknown function "+fn.Value, ce)
@@ -911,11 +927,19 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
 			case "bool":
 				return typeBool
 			}
-			if fl, ok := cg.functions[fn.Value]; ok {
-				if fl.ReturnType == "" {
+			if key, ok := cg.varFuncs[fn.Value]; ok {
+				fl := cg.functions[key]
+				if fl.Literal.ReturnType == "" {
 					return typeUnknown
 				}
-				return parseTypeName(fl.ReturnType)
+				return parseTypeName(fl.Literal.ReturnType)
+			}
+			if key, ok := cg.funcByName[fn.Value]; ok {
+				fl := cg.functions[key]
+				if fl.Literal.ReturnType == "" {
+					return typeUnknown
+				}
+				return parseTypeName(fl.Literal.ReturnType)
 			}
 		}
 		return typeUnknown
@@ -969,9 +993,12 @@ func (cg *CodeGen) reset() {
 	cg.stringVals = make(map[string]string)
 	cg.floatVals = make(map[string]float64)
 	cg.stringLits = make(map[string]string)
-	cg.functions = make(map[string]*ast.FunctionLiteral)
-	cg.funcLabels = make(map[string]string)
+	cg.functions = make(map[string]*compiledFunction)
+	cg.funcByName = make(map[string]string)
+	cg.varFuncs = make(map[string]string)
 	cg.stackOffset = 0
+	cg.currentFn = ""
+	cg.nextAnonFn = 0
 	cg.inFunction = false
 	cg.funcRetLbl = ""
 	cg.funcRetType = typeUnknown
@@ -979,24 +1006,142 @@ func (cg *CodeGen) reset() {
 }
 
 func (cg *CodeGen) collectFunctions(program *ast.Program) {
+	globalScope := map[string]struct{}{}
 	for _, stmt := range program.Statements {
-		fs, ok := stmt.(*ast.FunctionStatement)
-		if !ok || fs == nil || fs.Name == nil || fs.Function == nil {
-			continue
+		switch s := stmt.(type) {
+		case *ast.FunctionStatement:
+			if s != nil && s.Name != nil {
+				globalScope[s.Name.Value] = struct{}{}
+			}
+		case *ast.LetStatement:
+			if s != nil && s.Name != nil {
+				globalScope[s.Name.Value] = struct{}{}
+			}
+		case *ast.ConstStatement:
+			if s != nil && s.Name != nil {
+				globalScope[s.Name.Value] = struct{}{}
+			}
 		}
-		name := fs.Name.Value
-		if _, exists := cg.functions[name]; exists {
-			cg.addNodeError("duplicate function declaration: "+name, fs)
-			continue
+	}
+	for _, stmt := range program.Statements {
+		cg.collectFunctionsInStatement(stmt, globalScope)
+	}
+}
+
+func (cg *CodeGen) collectFunctionsInStatement(stmt ast.Statement, scope map[string]struct{}) {
+	switch s := stmt.(type) {
+	case *ast.FunctionStatement:
+		if s == nil || s.Name == nil || s.Function == nil {
+			return
 		}
-		cg.functions[name] = fs.Function
-		cg.funcLabels[name] = "fn_" + name
+		key := s.Name.Value
+		if _, exists := cg.functions[key]; exists {
+			cg.addNodeError("duplicate function declaration: "+key, s)
+			return
+		}
+		captures := cg.computeCaptures(s.Function, scope)
+		cg.functions[key] = &compiledFunction{
+			Key:      key,
+			Name:     s.Name.Value,
+			Label:    "fn_" + s.Name.Value,
+			Literal:  s.Function,
+			Captures: captures,
+		}
+		cg.funcByName[s.Name.Value] = key
+
+		childScope := copyScope(scope)
+		for _, p := range s.Function.Parameters {
+			childScope[p.Name.Value] = struct{}{}
+		}
+		collectDeclaredNames(s.Function.Body, childScope)
+		for _, st := range s.Function.Body.Statements {
+			cg.collectFunctionsInStatement(st, childScope)
+		}
+	case *ast.LetStatement:
+		if s != nil && s.Value != nil {
+			cg.collectFunctionsInExpression(s.Value, scope)
+		}
+	case *ast.ConstStatement:
+		if s != nil && s.Value != nil {
+			cg.collectFunctionsInExpression(s.Value, scope)
+		}
+	case *ast.AssignStatement:
+		if s != nil && s.Value != nil {
+			cg.collectFunctionsInExpression(s.Value, scope)
+		}
+	case *ast.ReturnStatement:
+		if s != nil && s.ReturnValue != nil {
+			cg.collectFunctionsInExpression(s.ReturnValue, scope)
+		}
+	case *ast.ExpressionStatement:
+		if s != nil && s.Expression != nil {
+			cg.collectFunctionsInExpression(s.Expression, scope)
+		}
+	}
+}
+
+func (cg *CodeGen) collectFunctionsInExpression(expr ast.Expression, scope map[string]struct{}) {
+	switch e := expr.(type) {
+	case *ast.FunctionLiteral:
+		key := fmt.Sprintf("lit_%d", cg.nextAnonFn)
+		cg.nextAnonFn++
+		captures := cg.computeCaptures(e, scope)
+		cg.functions[key] = &compiledFunction{
+			Key:      key,
+			Label:    "fn_" + key,
+			Literal:  e,
+			Captures: captures,
+		}
+		childScope := copyScope(scope)
+		for _, p := range e.Parameters {
+			childScope[p.Name.Value] = struct{}{}
+		}
+		collectDeclaredNames(e.Body, childScope)
+		for _, st := range e.Body.Statements {
+			cg.collectFunctionsInStatement(st, childScope)
+		}
+	case *ast.CallExpression:
+		cg.collectFunctionsInExpression(e.Function, scope)
+		for _, arg := range e.Arguments {
+			cg.collectFunctionsInExpression(arg, scope)
+		}
+	case *ast.InfixExpression:
+		cg.collectFunctionsInExpression(e.Left, scope)
+		cg.collectFunctionsInExpression(e.Right, scope)
+	case *ast.PrefixExpression:
+		cg.collectFunctionsInExpression(e.Right, scope)
+	case *ast.IfExpression:
+		cg.collectFunctionsInExpression(e.Condition, scope)
+		if e.Consequence != nil {
+			for _, st := range e.Consequence.Statements {
+				cg.collectFunctionsInStatement(st, scope)
+			}
+		}
+		if e.Alternative != nil {
+			for _, st := range e.Alternative.Statements {
+				cg.collectFunctionsInStatement(st, scope)
+			}
+		}
+	case *ast.NamedArgument:
+		cg.collectFunctionsInExpression(e.Value, scope)
 	}
 }
 
 func (cg *CodeGen) generateFunctionDefinitions() {
-	for name, fn := range cg.functions {
-		cg.generateOneFunction(name, fn)
+	keys := make([]string, 0, len(cg.functions))
+	for k := range cg.functions {
+		keys = append(keys, k)
+	}
+	// deterministic output for tests
+	for i := 0; i < len(keys)-1; i++ {
+		for j := i + 1; j < len(keys); j++ {
+			if keys[j] < keys[i] {
+				keys[i], keys[j] = keys[j], keys[i]
+			}
+		}
+	}
+	for _, key := range keys {
+		cg.generateOneFunction(cg.functions[key])
 	}
 }
 
@@ -1010,10 +1155,12 @@ type cgState struct {
 	charVals    map[string]rune
 	stringVals  map[string]string
 	floatVals   map[string]float64
+	varFuncs    map[string]string
 	stackOffset int
 	inFunction  bool
 	funcRetLbl  string
 	funcRetType valueType
+	currentFn   string
 }
 
 func (cg *CodeGen) saveState() cgState {
@@ -1027,10 +1174,12 @@ func (cg *CodeGen) saveState() cgState {
 		charVals:    cg.charVals,
 		stringVals:  cg.stringVals,
 		floatVals:   cg.floatVals,
+		varFuncs:    cg.varFuncs,
 		stackOffset: cg.stackOffset,
 		inFunction:  cg.inFunction,
 		funcRetLbl:  cg.funcRetLbl,
 		funcRetType: cg.funcRetType,
+		currentFn:   cg.currentFn,
 	}
 }
 
@@ -1044,13 +1193,15 @@ func (cg *CodeGen) restoreState(st cgState) {
 	cg.charVals = st.charVals
 	cg.stringVals = st.stringVals
 	cg.floatVals = st.floatVals
+	cg.varFuncs = st.varFuncs
 	cg.stackOffset = st.stackOffset
 	cg.inFunction = st.inFunction
 	cg.funcRetLbl = st.funcRetLbl
 	cg.funcRetType = st.funcRetType
+	cg.currentFn = st.currentFn
 }
 
-func (cg *CodeGen) generateOneFunction(name string, fn *ast.FunctionLiteral) {
+func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 	prevOutput := cg.output
 	cg.output = strings.Builder{}
 	state := cg.saveState()
@@ -1064,22 +1215,25 @@ func (cg *CodeGen) generateOneFunction(name string, fn *ast.FunctionLiteral) {
 	cg.charVals = make(map[string]rune)
 	cg.stringVals = make(map[string]string)
 	cg.floatVals = make(map[string]float64)
+	cg.varFuncs = make(map[string]string)
 	cg.stackOffset = 0
 	cg.inFunction = true
 	cg.funcRetLbl = cg.newLabel()
-	cg.funcRetType = parseTypeName(fn.ReturnType)
+	cg.funcRetType = parseTypeName(fn.Literal.ReturnType)
+	cg.currentFn = fn.Key
 
-	label := cg.funcLabels[name]
+	label := fn.Label
 	cg.emit("%s:", label)
 	cg.emit("    push %%rbp")
 	cg.emit("    mov %%rsp, %%rbp")
 
 	paramRegs := []string{"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"}
-	if len(fn.Parameters) > len(paramRegs) {
-		cg.addNodeError("functions with more than 6 parameters are not supported in codegen", fn)
+	totalParams := len(fn.Literal.Parameters) + len(fn.Captures)
+	if totalParams > len(paramRegs) {
+		cg.addNodeError("functions with more than 6 total parameters/captures are not supported in codegen", fn.Literal)
 	}
 
-	for idx, p := range fn.Parameters {
+	for idx, p := range fn.Literal.Parameters {
 		if idx >= len(paramRegs) {
 			break
 		}
@@ -1095,7 +1249,28 @@ func (cg *CodeGen) generateOneFunction(name string, fn *ast.FunctionLiteral) {
 		cg.varIsNull[p.Name.Value] = false
 	}
 
-	cg.generateBlockStatement(fn.Body)
+	for idx, name := range fn.Captures {
+		regIdx := len(fn.Literal.Parameters) + idx
+		if regIdx >= len(paramRegs) {
+			break
+		}
+		cg.emit("    push %s           # capture %s", paramRegs[regIdx], name)
+		cg.stackOffset += 8
+		cg.variables[name] = cg.stackOffset
+		cg.varTypes[name] = typeUnknown
+		cg.varDeclared[name] = typeUnknown
+		cg.varIsNull[name] = false
+	}
+
+	for _, st := range fn.Literal.Body.Statements {
+		if fs, ok := st.(*ast.FunctionStatement); ok && fs != nil && fs.Name != nil {
+			if key, ok := cg.funcByName[fs.Name.Value]; ok {
+				cg.varFuncs[fs.Name.Value] = key
+			}
+		}
+	}
+
+	cg.generateBlockStatement(fn.Literal.Body)
 	cg.emit("    mov $0, %%rax")
 	cg.emit("%s:", cg.funcRetLbl)
 	cg.emit("    mov %%rbp, %%rsp")
@@ -1107,22 +1282,23 @@ func (cg *CodeGen) generateOneFunction(name string, fn *ast.FunctionLiteral) {
 	cg.restoreState(state)
 }
 
-func (cg *CodeGen) generateUserFunctionCall(name string, fn *ast.FunctionLiteral, ce *ast.CallExpression) {
+func (cg *CodeGen) generateUserFunctionCall(fn *compiledFunction, ce *ast.CallExpression) {
 	paramRegs := []string{"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"}
-	if len(fn.Parameters) > len(paramRegs) {
-		cg.addNodeError("functions with more than 6 parameters are not supported in codegen", ce)
+	totalParams := len(fn.Literal.Parameters) + len(fn.Captures)
+	if totalParams > len(paramRegs) {
+		cg.addNodeError("functions with more than 6 total parameters/captures are not supported in codegen", ce)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
 
-	finalArgs := make([]ast.Expression, len(fn.Parameters))
+	finalArgs := make([]ast.Expression, len(fn.Literal.Parameters))
 	namedMode := false
 	posIdx := 0
 	for _, arg := range ce.Arguments {
 		if na, ok := arg.(*ast.NamedArgument); ok {
 			namedMode = true
 			found := -1
-			for i, p := range fn.Parameters {
+			for i, p := range fn.Literal.Parameters {
 				if p.Name.Value == na.Name {
 					found = i
 					break
@@ -1147,7 +1323,7 @@ func (cg *CodeGen) generateUserFunctionCall(name string, fn *ast.FunctionLiteral
 			cg.emit("    mov $0, %%rax")
 			return
 		}
-		if posIdx >= len(fn.Parameters) {
+		if posIdx >= len(fn.Literal.Parameters) {
 			cg.addNodeError("too many positional arguments", ce)
 			cg.emit("    mov $0, %%rax")
 			return
@@ -1156,7 +1332,7 @@ func (cg *CodeGen) generateUserFunctionCall(name string, fn *ast.FunctionLiteral
 		posIdx++
 	}
 
-	for i, p := range fn.Parameters {
+	for i, p := range fn.Literal.Parameters {
 		if finalArgs[i] != nil {
 			continue
 		}
@@ -1169,7 +1345,7 @@ func (cg *CodeGen) generateUserFunctionCall(name string, fn *ast.FunctionLiteral
 	}
 
 	for i, arg := range finalArgs {
-		want := parseTypeName(fn.Parameters[i].TypeName)
+		want := parseTypeName(fn.Literal.Parameters[i].TypeName)
 		got := cg.inferExpressionType(arg)
 		if want != typeUnknown && got != typeUnknown && got != typeNull && got != want {
 			cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", typeName(got), typeName(want)), ce)
@@ -1180,7 +1356,155 @@ func (cg *CodeGen) generateUserFunctionCall(name string, fn *ast.FunctionLiteral
 		cg.emit("    mov %%rax, %s", paramRegs[i])
 	}
 
-	cg.emit("    call %s", cg.funcLabels[name])
+	for idx, capName := range fn.Captures {
+		regIdx := len(fn.Literal.Parameters) + idx
+		if regIdx >= len(paramRegs) {
+			break
+		}
+		cg.generateExpression(&ast.Identifier{Value: capName})
+		cg.emit("    mov %%rax, %s", paramRegs[regIdx])
+	}
+
+	cg.emit("    call %s", fn.Label)
+}
+
+func copyScope(scope map[string]struct{}) map[string]struct{} {
+	out := make(map[string]struct{}, len(scope))
+	for k := range scope {
+		out[k] = struct{}{}
+	}
+	return out
+}
+
+func collectDeclaredNames(block *ast.BlockStatement, scope map[string]struct{}) {
+	if block == nil {
+		return
+	}
+	for _, st := range block.Statements {
+		switch s := st.(type) {
+		case *ast.LetStatement:
+			if s != nil && s.Name != nil {
+				scope[s.Name.Value] = struct{}{}
+			}
+		case *ast.ConstStatement:
+			if s != nil && s.Name != nil {
+				scope[s.Name.Value] = struct{}{}
+			}
+		case *ast.FunctionStatement:
+			if s != nil && s.Name != nil {
+				scope[s.Name.Value] = struct{}{}
+			}
+		}
+	}
+}
+
+func (cg *CodeGen) computeCaptures(fn *ast.FunctionLiteral, outerScope map[string]struct{}) []string {
+	local := make(map[string]struct{})
+	for _, p := range fn.Parameters {
+		local[p.Name.Value] = struct{}{}
+	}
+	collectDeclaredNames(fn.Body, local)
+
+	used := map[string]struct{}{}
+	collectUsedNamesInBlock(fn.Body, used)
+
+	captures := []string{}
+	for name := range used {
+		if _, isLocal := local[name]; isLocal {
+			continue
+		}
+		if _, existsOuter := outerScope[name]; !existsOuter {
+			continue
+		}
+		if isBuiltinName(name) {
+			continue
+		}
+		captures = append(captures, name)
+	}
+
+	for i := 0; i < len(captures)-1; i++ {
+		for j := i + 1; j < len(captures); j++ {
+			if captures[j] < captures[i] {
+				captures[i], captures[j] = captures[j], captures[i]
+			}
+		}
+	}
+	return captures
+}
+
+func isBuiltinName(name string) bool {
+	switch name {
+	case "print", "typeof", "int", "float", "string", "char", "bool":
+		return true
+	default:
+		return false
+	}
+}
+
+func collectUsedNamesInBlock(block *ast.BlockStatement, used map[string]struct{}) {
+	if block == nil {
+		return
+	}
+	for _, st := range block.Statements {
+		collectUsedNamesInStatement(st, used)
+	}
+}
+
+func collectUsedNamesInStatement(stmt ast.Statement, used map[string]struct{}) {
+	switch s := stmt.(type) {
+	case *ast.LetStatement:
+		if s != nil && s.Value != nil {
+			collectUsedNamesInExpression(s.Value, used)
+		}
+	case *ast.ConstStatement:
+		if s != nil && s.Value != nil {
+			collectUsedNamesInExpression(s.Value, used)
+		}
+	case *ast.AssignStatement:
+		if s != nil && s.Name != nil {
+			used[s.Name.Value] = struct{}{}
+		}
+		if s != nil && s.Value != nil {
+			collectUsedNamesInExpression(s.Value, used)
+		}
+	case *ast.ReturnStatement:
+		if s != nil && s.ReturnValue != nil {
+			collectUsedNamesInExpression(s.ReturnValue, used)
+		}
+	case *ast.ExpressionStatement:
+		if s != nil && s.Expression != nil {
+			collectUsedNamesInExpression(s.Expression, used)
+		}
+	case *ast.FunctionStatement:
+		// Nested function bodies are handled independently; skip here.
+		return
+	}
+}
+
+func collectUsedNamesInExpression(expr ast.Expression, used map[string]struct{}) {
+	switch e := expr.(type) {
+	case *ast.Identifier:
+		used[e.Value] = struct{}{}
+	case *ast.PrefixExpression:
+		collectUsedNamesInExpression(e.Right, used)
+	case *ast.InfixExpression:
+		collectUsedNamesInExpression(e.Left, used)
+		collectUsedNamesInExpression(e.Right, used)
+	case *ast.IfExpression:
+		collectUsedNamesInExpression(e.Condition, used)
+		collectUsedNamesInBlock(e.Consequence, used)
+		collectUsedNamesInBlock(e.Alternative, used)
+	case *ast.CallExpression:
+		collectUsedNamesInExpression(e.Function, used)
+		for _, arg := range e.Arguments {
+			collectUsedNamesInExpression(arg, used)
+		}
+	case *ast.NamedArgument:
+		collectUsedNamesInExpression(e.Value, used)
+	case *ast.FunctionLiteral:
+		// Nested function body capture set should be computed independently.
+		return
+	}
 }
 
 func (cg *CodeGen) generateCastCall(castName string, ce *ast.CallExpression) {
