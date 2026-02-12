@@ -100,6 +100,60 @@ func TestReassignmentUndeclaredError(t *testing.T) {
 	}
 }
 
+func TestAdditionalLiteralTypesEval(t *testing.T) {
+	tests := []struct {
+		input        string
+		expectedType object.ObjectType
+	}{
+		{`3.14`, object.FLOAT_OBJ},
+		{`"hello"`, object.STRING_OBJ},
+		{`'a'`, object.CHAR_OBJ},
+		{`null`, object.NULL_OBJ},
+	}
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		if evaluated.Type() != tt.expectedType {
+			t.Fatalf("wrong type for %q. got=%s want=%s", tt.input, evaluated.Type(), tt.expectedType)
+		}
+	}
+}
+
+func TestTypedDeclarationAndNullInit(t *testing.T) {
+	evaluated := testEval("let s: string; s")
+	if evaluated.Type() != object.NULL_OBJ {
+		t.Fatalf("expected null object, got=%s", evaluated.Type())
+	}
+}
+
+func TestTypedAssignmentValidation(t *testing.T) {
+	evaluated := testEval("let x: int = 1; x = true;")
+	errObj, ok := evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "cannot assign bool to int" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+}
+
+func TestTypeofAndCasts(t *testing.T) {
+	evaluated := testEval("typeof(1)")
+	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "int" {
+		t.Fatalf("expected type(int), got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+
+	evaluated = testEval("int(true)")
+	testIntegerObject(t, evaluated, 1)
+
+	evaluated = testEval("bool(0)")
+	testBooleanObject(t, evaluated, false)
+
+	evaluated = testEval("let n: string; typeof(n)")
+	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "string" {
+		t.Fatalf("expected type(string), got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+}
+
 func testEval(input string) object.Object {
 	l := lexer.New(input)
 	p := parser.New(l)

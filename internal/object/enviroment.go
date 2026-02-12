@@ -5,13 +5,19 @@ package object
 type Environment struct {
 	store      map[string]Object
 	constStore map[string]bool
+	typeStore  map[string]string
 	outer      *Environment // Parent scope, nil for global scope
 }
 
 // NewEnvironment creates a new global environment
 func NewEnvironment() *Environment {
 	s := make(map[string]Object)
-	return &Environment{store: s, constStore: make(map[string]bool), outer: nil}
+	return &Environment{
+		store:      s,
+		constStore: make(map[string]bool),
+		typeStore:  make(map[string]string),
+		outer:      nil,
+	}
 }
 
 // NewEnclosedEnvironment creates a new scope enclosed by outer
@@ -43,6 +49,21 @@ func (e *Environment) SetConst(name string, val Object) Object {
 	e.store[name] = val
 	e.constStore[name] = true
 	return val
+}
+
+func (e *Environment) SetType(name string, t string) {
+	e.typeStore[name] = t
+}
+
+func (e *Environment) TypeOf(name string) (string, bool) {
+	t, ok := e.typeStore[name]
+	if ok {
+		return t, true
+	}
+	if e.outer != nil {
+		return e.outer.TypeOf(name)
+	}
+	return "", false
 }
 
 // Has looks up whether a name exists in the current scope chain.

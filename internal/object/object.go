@@ -12,11 +12,16 @@ type ObjectType string
 
 const (
 	INTEGER_OBJ      ObjectType = "INTEGER"
+	FLOAT_OBJ        ObjectType = "FLOAT"
+	STRING_OBJ       ObjectType = "STRING"
+	CHAR_OBJ         ObjectType = "CHAR"
 	BOOLEAN_OBJ      ObjectType = "BOOLEAN"
+	TYPE_OBJ         ObjectType = "TYPE"
 	NULL_OBJ         ObjectType = "NULL"
 	RETURN_VALUE_OBJ ObjectType = "RETURN_VALUE"
 	ERROR_OBJ        ObjectType = "ERROR"
 	FUNCTION_OBJ     ObjectType = "FUNCTION"
+	BUILTIN_OBJ      ObjectType = "BUILTIN"
 )
 
 // Object is the interface for all runtime values
@@ -34,6 +39,30 @@ type Integer struct {
 func (i *Integer) Type() ObjectType { return INTEGER_OBJ }
 func (i *Integer) Inspect() string  { return fmt.Sprintf("%d", i.Value) }
 
+// Float represents floating-point values like 3.14
+type Float struct {
+	Value float64
+}
+
+func (f *Float) Type() ObjectType { return FLOAT_OBJ }
+func (f *Float) Inspect() string  { return fmt.Sprintf("%g", f.Value) }
+
+// String represents text values.
+type String struct {
+	Value string
+}
+
+func (s *String) Type() ObjectType { return STRING_OBJ }
+func (s *String) Inspect() string  { return s.Value }
+
+// Char represents a single Unicode code point.
+type Char struct {
+	Value rune
+}
+
+func (c *Char) Type() ObjectType { return CHAR_OBJ }
+func (c *Char) Inspect() string  { return string(c.Value) }
+
 // Boolean represents true or false
 type Boolean struct {
 	Value bool
@@ -41,6 +70,14 @@ type Boolean struct {
 
 func (b *Boolean) Type() ObjectType { return BOOLEAN_OBJ }
 func (b *Boolean) Inspect() string  { return fmt.Sprintf("%t", b.Value) }
+
+// TypeValue represents a runtime type descriptor returned by typeof.
+type TypeValue struct {
+	Name string
+}
+
+func (t *TypeValue) Type() ObjectType { return TYPE_OBJ }
+func (t *TypeValue) Inspect() string  { return t.Name }
 
 // Null represents the absence of value
 // There's only one null value, but we use a struct for the interface
@@ -92,3 +129,12 @@ func (f *Function) Inspect() string {
 
 	return out.String()
 }
+
+type BuiltinFunction func(args ...Object) Object
+
+type Builtin struct {
+	Fn BuiltinFunction
+}
+
+func (b *Builtin) Type() ObjectType { return BUILTIN_OBJ }
+func (b *Builtin) Inspect() string  { return "builtin function" }

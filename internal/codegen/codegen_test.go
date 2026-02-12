@@ -97,6 +97,31 @@ func TestUndefinedIdentifierCodegenValidation(t *testing.T) {
 	}
 }
 
+func TestCodegenSupportsAdditionalPrintTypes(t *testing.T) {
+	asm, cg := generateAssembly(t, `let s: string = "hi"; let c = 'a'; let f = 3.14; let n: string; print(s); print(c); print(f); print(n);`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "call print_cstr") || !strings.Contains(asm, "call print_char") {
+		t.Fatalf("expected string and char print calls in assembly, got:\n%s", asm)
+	}
+}
+
+func TestCodegenTypeofAndCast(t *testing.T) {
+	_, cg := generateAssembly(t, "print(typeof(1)); print(int(true));")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+
+	asm, cg := generateAssembly(t, "let n: string; print(typeof(n));")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "string\\n") {
+		t.Fatalf("expected typeof(n) to resolve declared type string, got:\n%s", asm)
+	}
+}
+
 func generateAssembly(t *testing.T, input string) (string, *CodeGen) {
 	t.Helper()
 	p := parser.New(lexer.New(input))

@@ -1,10 +1,19 @@
-// single-line comment
-let x = 1; // end-line comment
+// TODO 2-5 demo: more types, typed declarations, inference, and typeof/casts
+let s: string = "hello";
+let c = 'A';
+let f = 3.14;
+let n: string; // typed declaration without initializer => null
 
-/* multi-line
-   block comment */
-x = x + 4;
+print(s);
+print(c);
+print(f);
+print(n); // null
 
-print(x); // prints 5
-print(true);
-print(false); /* block comment at end of line */
+print(typeof(s));
+print(typeof(c));
+print(typeof(f));
+print(typeof(n));
+
+print(int(true));
+print(bool(0));
+print(char(66));

@@ -92,6 +92,35 @@ x = x + 1;
 	}
 }
 
+func TestTypedLetDeclarationParses(t *testing.T) {
+	p := New(lexer.New("let name: string;"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	stmt, ok := program.Statements[0].(*ast.LetStatement)
+	if !ok {
+		t.Fatalf("expected let statement, got=%T", program.Statements[0])
+	}
+	if stmt.TypeName != "string" {
+		t.Fatalf("expected type annotation string, got=%q", stmt.TypeName)
+	}
+	if stmt.Value != nil {
+		t.Fatalf("expected nil initializer for typed declaration")
+	}
+}
+
+func TestAdditionalLiteralParsing(t *testing.T) {
+	p := New(lexer.New(`3.14; "abc"; 'z'; null;`))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+	if len(program.Statements) != 4 {
+		t.Fatalf("expected 4 statements, got=%d", len(program.Statements))
+	}
+}
+
 func checkNoParserErrors(t *testing.T, p *Parser) {
 	t.Helper()
 	if len(p.Errors()) == 0 {

@@ -118,3 +118,42 @@ x = x + 2; /* inline block comment */ print(x);
 		}
 	}
 }
+
+func TestAdditionalLiteralTokens(t *testing.T) {
+	input := `let s: string = "hi"; let c = 'a'; let f = 3.14; let n = null;`
+	tests := []struct {
+		expectedType    token.TokenType
+		expectedLiteral string
+	}{
+		{token.LET, "let"},
+		{token.IDENT, "s"},
+		{token.COLON, ":"},
+		{token.IDENT, "string"},
+		{token.ASSIGN, "="},
+		{token.STRING, "hi"},
+		{token.SEMICOLON, ";"},
+		{token.LET, "let"},
+		{token.IDENT, "c"},
+		{token.ASSIGN, "="},
+		{token.CHAR, "a"},
+		{token.SEMICOLON, ";"},
+		{token.LET, "let"},
+		{token.IDENT, "f"},
+		{token.ASSIGN, "="},
+		{token.FLOAT, "3.14"},
+		{token.SEMICOLON, ";"},
+		{token.LET, "let"},
+		{token.IDENT, "n"},
+		{token.ASSIGN, "="},
+		{token.NULL, "null"},
+		{token.SEMICOLON, ";"},
+		{token.EOF, ""},
+	}
+	l := New(input)
+	for i, tt := range tests {
+		tok := l.NextToken()
+		if tok.Type != tt.expectedType || tok.Literal != tt.expectedLiteral {
+			t.Fatalf("tests[%d] - got=(%q,%q) want=(%q,%q)", i, tok.Type, tok.Literal, tt.expectedType, tt.expectedLiteral)
+		}
+	}
+}

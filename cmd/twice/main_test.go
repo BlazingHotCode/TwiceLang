@@ -190,7 +190,7 @@ func TestCLICodegenErrorForPrintUnsupportedType(t *testing.T) {
 	}
 
 	output := string(out)
-	if !strings.Contains(output, "Codegen error: print supports only int and bool arguments") {
+	if !strings.Contains(output, "Codegen error: print supports only int, bool, float, string, char, null, and type arguments") {
 		t.Fatalf("missing print unsupported-type diagnostic. output:\n%s", output)
 	}
 }
@@ -214,6 +214,46 @@ func TestCLICodegenErrorForUndefinedIdentifier(t *testing.T) {
 	output := string(out)
 	if !strings.Contains(output, "Codegen error: identifier not found: y") {
 		t.Fatalf("missing undefined identifier diagnostic. output:\n%s", output)
+	}
+}
+
+func TestCLICompileAndRunNewTypesTypeofAndCasts(t *testing.T) {
+	root := repoRoot(t)
+	ensureToolchain(t)
+
+	srcPath := filepath.Join(t.TempDir(), "new_types.tw")
+	source := `let s: string = "hi";
+let c = 'A';
+let f = 3.14;
+let n: string;
+print(s);
+print(c);
+print(f);
+print(n);
+print(typeof(c));
+print(int(true));
+`
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	outputName := "twice_cli_new_types_bin"
+	outputPath := filepath.Join(root, outputName)
+	_ = os.Remove(outputPath)
+	t.Cleanup(func() { _ = os.Remove(outputPath) })
+
+	cmd := exec.Command("go", "run", "./cmd/twice", "-run", "-o", outputName, srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("compile/run failed: %v\n%s", err, out)
+	}
+
+	output := string(out)
+	for _, want := range []string{"\nhi\n", "\nA\n", "\n3.14\n", "\nnull\n", "\nchar\n", "\n1\n"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("missing expected output %q. full output:\n%s", want, output)
+		}
 	}
 }
 

@@ -72,10 +72,14 @@ func New(l *lexer.Lexer) *Parser {
 	// Register prefix parsers (tokens that can START an expression)
 	p.registerPrefix(token.IDENT, p.parseIdentifier)
 	p.registerPrefix(token.INT, p.parseIntegerLiteral)
+	p.registerPrefix(token.FLOAT, p.parseFloatLiteral)
+	p.registerPrefix(token.STRING, p.parseStringLiteral)
+	p.registerPrefix(token.CHAR, p.parseCharLiteral)
 	p.registerPrefix(token.BANG, p.parsePrefixExpression)
 	p.registerPrefix(token.MINUS, p.parsePrefixExpression)
 	p.registerPrefix(token.TRUE, p.parseBoolean)
 	p.registerPrefix(token.FALSE, p.parseBoolean)
+	p.registerPrefix(token.NULL, p.parseNullLiteral)
 	p.registerPrefix(token.LPAREN, p.parseGroupedExpression)
 	p.registerPrefix(token.IF, p.parseIfExpression)
 	p.registerPrefix(token.FUNCTION, p.parseFunctionLiteral)
@@ -209,7 +213,29 @@ func (p *Parser) parseLetStatement() *ast.LetStatement {
 	// Create identifier node
 	stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
 
-	// Expect = after identifier
+	// Optional type annotation: let name: type ...
+	if p.peekTokenIs(token.COLON) {
+		p.nextToken()
+		if !p.expectPeek(token.IDENT) {
+			return nil
+		}
+		stmt.TypeName = p.curToken.Literal
+	}
+
+	// Optional initializer:
+	// - let name: type;
+	// - let name = value;
+	// - let name: type = value;
+	if p.peekTokenIs(token.SEMICOLON) {
+		p.nextToken()
+		if stmt.TypeName == "" {
+			p.errors = append(p.errors, "let declaration without value requires explicit type annotation")
+			return nil
+		}
+		stmt.Value = nil
+		return stmt
+	}
+
 	if !p.expectPeek(token.ASSIGN) {
 		return nil
 	}
@@ -237,6 +263,14 @@ func (p *Parser) parseConstStatement() *ast.ConstStatement {
 	}
 
 	stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+
+	if p.peekTokenIs(token.COLON) {
+		p.nextToken()
+		if !p.expectPeek(token.IDENT) {
+			return nil
+		}
+		stmt.TypeName = p.curToken.Literal
+	}
 
 	if !p.expectPeek(token.ASSIGN) {
 		return nil
@@ -358,6 +392,34 @@ func (p *Parser) parseIntegerLiteral() ast.Expression {
 
 	lit.Value = value
 	return lit
+}
+
+func (p *Parser) parseFloatLiteral() ast.Expression {
+	lit := &ast.FloatLiteral{Token: p.curToken}
+	value, err := strconv.ParseFloat(p.curToken.Literal, 64)
+	if err != nil {
+		msg := fmt.Sprintf("could not parse %q as float", p.curToken.Literal)
+		p.errors = append(p.errors, msg)
+		return nil
+	}
+	lit.Value = value
+	return lit
+}
+
+func (p *Parser) parseStringLiteral() ast.Expression {
+	return &ast.StringLiteral{Token: p.curToken, Value: p.curToken.Literal}
+}
+
+func (p *Parser) parseCharLiteral() ast.Expression {
+	if len(p.curToken.Literal) != 1 {
+		p.errors = append(p.errors, "invalid char literal")
+		return nil
+	}
+	return &ast.CharLiteral{Token: p.curToken, Value: rune(p.curToken.Literal[0])}
+}
+
+func (p *Parser) parseNullLiteral() ast.Expression {
+	return &ast.NullLiteral{Token: p.curToken}
 }
 
 // parsePrefixExpression handles !<expr> and -<expr>

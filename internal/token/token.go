@@ -18,8 +18,11 @@ const (
 	EOF     TokenType = "EOF"     // End of file, tells parser we're done
 
 	// Identifiers and literals
-	IDENT TokenType = "IDENT" // Variable names: x, y, foo
-	INT   TokenType = "INT"   // Integers: 1, 42, 999
+	IDENT  TokenType = "IDENT"  // Variable names: x, y, foo
+	INT    TokenType = "INT"    // Integers: 1, 42, 999
+	FLOAT  TokenType = "FLOAT"  // Floating-point: 3.14
+	STRING TokenType = "STRING" // Strings: "hello"
+	CHAR   TokenType = "CHAR"   // Char literals: 'a'
 
 	// Operators
 	ASSIGN   TokenType = "="
@@ -36,6 +39,7 @@ const (
 	// Delimiters
 	COMMA     TokenType = ","
 	SEMICOLON TokenType = ";"
+	COLON     TokenType = ":"
 	LPAREN    TokenType = "("
 	RPAREN    TokenType = ")"
 	LBRACE    TokenType = "{"
@@ -51,6 +55,7 @@ const (
 	ELIF     TokenType = "ELIF"
 	ELSE     TokenType = "ELSE"
 	RETURN   TokenType = "RETURN"
+	NULL     TokenType = "NULL"
 )
 
 // keywords maps string identifiers to their token type
@@ -65,6 +70,7 @@ var keywords = map[string]TokenType{
 	"elif":   ELIF,
 	"else":   ELSE,
 	"return": RETURN,
+	"null":   NULL,
 }
 
 // LookupIdent checks if an identifier is a keyword

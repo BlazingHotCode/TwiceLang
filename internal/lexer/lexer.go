@@ -85,6 +85,8 @@ func (l *Lexer) NextToken() token.Token {
 		tok = newToken(token.GT, l.ch)
 	case ';':
 		tok = newToken(token.SEMICOLON, l.ch)
+	case ':':
+		tok = newToken(token.COLON, l.ch)
 	case ',':
 		tok = newToken(token.COMMA, l.ch)
 	case '(':
@@ -95,6 +97,14 @@ func (l *Lexer) NextToken() token.Token {
 		tok = newToken(token.LBRACE, l.ch)
 	case '}':
 		tok = newToken(token.RBRACE, l.ch)
+	case '"':
+		tok.Type = token.STRING
+		tok.Literal = l.readString()
+		return tok
+	case '\'':
+		tok.Type = token.CHAR
+		tok.Literal = l.readCharLiteral()
+		return tok
 	case 0:
 		// NUL byte means end of input
 		tok.Literal = ""
@@ -108,8 +118,7 @@ func (l *Lexer) NextToken() token.Token {
 			tok.Type = token.LookupIdent(tok.Literal)
 			return tok // Already advanced past identifier
 		} else if isDigit(l.ch) {
-			tok.Type = token.INT
-			tok.Literal = l.readNumber()
+			tok.Type, tok.Literal = l.readNumber()
 			return tok // Already advanced past number
 		} else {
 			// Unknown character
@@ -188,12 +197,56 @@ func (l *Lexer) readIdentifier() string {
 
 // readNumber reads a sequence of digits
 // For now, only integers. No decimals or scientific notation.
-func (l *Lexer) readNumber() string {
+func (l *Lexer) readNumber() (token.TokenType, string) {
 	position := l.position
+	hasDot := false
 	for isDigit(l.ch) {
 		l.readChar()
 	}
-	return l.input[position:l.position]
+	if l.ch == '.' && isDigit(l.peekChar()) {
+		hasDot = true
+		l.readChar()
+		for isDigit(l.ch) {
+			l.readChar()
+		}
+	}
+	if hasDot {
+		return token.FLOAT, l.input[position:l.position]
+	}
+	return token.INT, l.input[position:l.position]
+}
+
+func (l *Lexer) readString() string {
+	// current ch is opening quote
+	l.readChar()
+	position := l.position
+	for l.ch != '"' && l.ch != 0 {
+		l.readChar()
+	}
+	lit := l.input[position:l.position]
+	if l.ch == '"' {
+		l.readChar()
+	}
+	return lit
+}
+
+func (l *Lexer) readCharLiteral() string {
+	// current ch is opening single quote
+	l.readChar()
+	if l.ch == 0 || l.ch == '\'' {
+		// invalid/empty char literal, keep parser/evaluator responsible for erroring later
+		lit := ""
+		if l.ch == '\'' {
+			l.readChar()
+		}
+		return lit
+	}
+	ch := l.ch
+	l.readChar()
+	if l.ch == '\'' {
+		l.readChar()
+	}
+	return string(ch)
 }
 
 // isLetter checks if ch is a letter or underscore

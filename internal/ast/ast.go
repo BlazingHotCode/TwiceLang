@@ -70,11 +70,51 @@ func (il *IntegerLiteral) expressionNode()      {}
 func (il *IntegerLiteral) TokenLiteral() string { return il.Token.Literal }
 func (il *IntegerLiteral) String() string       { return il.Token.Literal }
 
+// FloatLiteral represents a floating-point number like 3.14
+type FloatLiteral struct {
+	Token token.Token
+	Value float64
+}
+
+func (fl *FloatLiteral) expressionNode()      {}
+func (fl *FloatLiteral) TokenLiteral() string { return fl.Token.Literal }
+func (fl *FloatLiteral) String() string       { return fl.Token.Literal }
+
+// StringLiteral represents a string like "hello"
+type StringLiteral struct {
+	Token token.Token
+	Value string
+}
+
+func (sl *StringLiteral) expressionNode()      {}
+func (sl *StringLiteral) TokenLiteral() string { return sl.Token.Literal }
+func (sl *StringLiteral) String() string       { return "\"" + sl.Value + "\"" }
+
+// CharLiteral represents a character like 'a'
+type CharLiteral struct {
+	Token token.Token
+	Value rune
+}
+
+func (cl *CharLiteral) expressionNode()      {}
+func (cl *CharLiteral) TokenLiteral() string { return cl.Token.Literal }
+func (cl *CharLiteral) String() string       { return "'" + string(cl.Value) + "'" }
+
+// NullLiteral represents null.
+type NullLiteral struct {
+	Token token.Token
+}
+
+func (nl *NullLiteral) expressionNode()      {}
+func (nl *NullLiteral) TokenLiteral() string { return nl.Token.Literal }
+func (nl *NullLiteral) String() string       { return "null" }
+
 // LetStatement represents: let <name> = <value>;
 type LetStatement struct {
-	Token token.Token // The LET token
-	Name  *Identifier // Variable name
-	Value Expression  // The expression being assigned
+	Token    token.Token // The LET token
+	Name     *Identifier // Variable name
+	TypeName string      // Optional explicit type annotation
+	Value    Expression  // Optional initializer
 }
 
 func (ls *LetStatement) statementNode()       {}
@@ -84,8 +124,12 @@ func (ls *LetStatement) String() string {
 	var out bytes.Buffer
 	out.WriteString(ls.TokenLiteral() + " ")
 	out.WriteString(ls.Name.String())
-	out.WriteString(" = ")
+	if ls.TypeName != "" {
+		out.WriteString(": ")
+		out.WriteString(ls.TypeName)
+	}
 	if ls.Value != nil {
+		out.WriteString(" = ")
 		out.WriteString(ls.Value.String())
 	}
 	out.WriteString(";")
@@ -94,9 +138,10 @@ func (ls *LetStatement) String() string {
 
 // ConstStatement represents: const <name> = <value>;
 type ConstStatement struct {
-	Token token.Token // The CONST token
-	Name  *Identifier // Variable name
-	Value Expression  // The expression being assigned
+	Token    token.Token // The CONST token
+	Name     *Identifier // Variable name
+	TypeName string      // Optional explicit type annotation
+	Value    Expression  // The expression being assigned
 }
 
 func (cs *ConstStatement) statementNode()       {}
@@ -106,6 +151,10 @@ func (cs *ConstStatement) String() string {
 	var out bytes.Buffer
 	out.WriteString(cs.TokenLiteral() + " ")
 	out.WriteString(cs.Name.String())
+	if cs.TypeName != "" {
+		out.WriteString(": ")
+		out.WriteString(cs.TypeName)
+	}
 	out.WriteString(" = ")
 	if cs.Value != nil {
 		out.WriteString(cs.Value.String())

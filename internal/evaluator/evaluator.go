@@ -2,6 +2,7 @@ package evaluator
 
 import (
 	"fmt"
+	"strconv"
 
 	"twice/internal/ast"
 	"twice/internal/object"
@@ -13,6 +14,32 @@ var (
 	FALSE = &object.Boolean{Value: false}
 	NULL  = &object.Null{}
 )
+
+var builtins = map[string]*object.Builtin{
+	"typeof": {
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 1 {
+				return newError("typeof expects 1 argument, got=%d", len(args))
+			}
+			return &object.TypeValue{Name: runtimeTypeName(args[0])}
+		},
+	},
+	"int": {
+		Fn: func(args ...object.Object) object.Object { return castToInt(args) },
+	},
+	"float": {
+		Fn: func(args ...object.Object) object.Object { return castToFloat(args) },
+	},
+	"string": {
+		Fn: func(args ...object.Object) object.Object { return castToString(args) },
+	},
+	"char": {
+		Fn: func(args ...object.Object) object.Object { return castToChar(args) },
+	},
+	"bool": {
+		Fn: func(args ...object.Object) object.Object { return castToBool(args) },
+	},
+}
 
 // Eval is the heart of the interpreter
 // It takes an AST node and returns an Object
@@ -41,11 +68,26 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			}
 			return newError("identifier already declared: %s", node.Name.Value)
 		}
-		val := Eval(node.Value, env)
-		if isError(val) {
-			return val
+		var val object.Object = NULL
+		if node.Value != nil {
+			val = Eval(node.Value, env)
+			if isError(val) {
+				return val
+			}
+		}
+		varType := node.TypeName
+		if varType != "" && !isKnownTypeName(varType) {
+			return newError("unknown type: %s", varType)
+		}
+		valType := runtimeTypeName(val)
+		if varType == "" {
+			varType = valType
+		}
+		if !isAssignableToType(varType, valType) {
+			return newError("cannot assign %s to %s", valType, varType)
 		}
 		env.Set(node.Name.Value, val)
+		env.SetType(node.Name.Value, varType)
 
 	case *ast.ConstStatement:
 		if env.HasInCurrentScope(node.Name.Value) {
@@ -55,7 +97,19 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		if isError(val) {
 			return val
 		}
+		varType := node.TypeName
+		if varType != "" && !isKnownTypeName(varType) {
+			return newError("unknown type: %s", varType)
+		}
+		valType := runtimeTypeName(val)
+		if varType == "" {
+			varType = valType
+		}
+		if !isAssignableToType(varType, valType) {
+			return newError("cannot assign %s to %s", valType, varType)
+		}
 		env.SetConst(node.Name.Value, val)
+		env.SetType(node.Name.Value, varType)
 	case *ast.AssignStatement:
 		if !env.Has(node.Name.Value) {
 			return newError("identifier not found: " + node.Name.Value)
@@ -67,11 +121,36 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		if isError(val) {
 			return val
 		}
+		targetType, ok := env.TypeOf(node.Name.Value)
+		if !ok {
+			targetType = runtimeTypeName(val)
+			env.SetType(node.Name.Value, targetType)
+		}
+		valType := runtimeTypeName(val)
+		if targetType == "null" && valType != "null" {
+			targetType = valType
+			env.SetType(node.Name.Value, targetType)
+		}
+		if !isAssignableToType(targetType, valType) {
+			return newError("cannot assign %s to %s", valType, targetType)
+		}
 		env.Assign(node.Name.Value, val)
 
 	// Expressions
 	case *ast.IntegerLiteral:
 		return &object.Integer{Value: node.Value}
+
+	case *ast.FloatLiteral:
+		return &object.Float{Value: node.Value}
+
+	case *ast.StringLiteral:
+		return &object.String{Value: node.Value}
+
+	case *ast.CharLiteral:
+		return &object.Char{Value: node.Value}
+
+	case *ast.NullLiteral:
+		return NULL
 
 	case *ast.Boolean:
 		return nativeBoolToBooleanObject(node.Value)
@@ -106,6 +185,13 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		return &object.Function{Parameters: params, Body: body, Env: env}
 
 	case *ast.CallExpression:
+		if ident, ok := node.Function.(*ast.Identifier); ok && ident.Value == "typeof" && len(node.Arguments) == 1 {
+			if argIdent, ok := node.Arguments[0].(*ast.Identifier); ok {
+				if t, ok := env.TypeOf(argIdent.Value); ok {
+					return &object.TypeValue{Name: t}
+				}
+			}
+		}
 		function := Eval(node.Function, env)
 		if isError(function) {
 			return function
@@ -171,6 +257,9 @@ func nativeBoolToBooleanObject(input bool) *object.Boolean {
 func evalIdentifier(node *ast.Identifier, env *object.Environment) object.Object {
 	val, ok := env.Get(node.Value)
 	if !ok {
+		if builtin, ok := builtins[node.Value]; ok {
+			return builtin
+		}
 		return newError("identifier not found: " + node.Value)
 	}
 	return val
@@ -204,12 +293,14 @@ func evalBangOperatorExpression(right object.Object) object.Object {
 
 // evalMinusPrefixOperatorExpression handles -5, -10
 func evalMinusPrefixOperatorExpression(right object.Object) object.Object {
-	if right.Type() != object.INTEGER_OBJ {
+	switch right := right.(type) {
+	case *object.Integer:
+		return &object.Integer{Value: -right.Value}
+	case *object.Float:
+		return &object.Float{Value: -right.Value}
+	default:
 		return newError("unknown operator: -%s", right.Type())
 	}
-
-	value := right.(*object.Integer).Value
-	return &object.Integer{Value: -value}
 }
 
 // evalInfixExpression handles 5 + 3, true == false, etc.
@@ -217,12 +308,40 @@ func evalInfixExpression(operator string, left, right object.Object) object.Obje
 	switch {
 	case left.Type() == object.INTEGER_OBJ && right.Type() == object.INTEGER_OBJ:
 		return evalIntegerInfixExpression(operator, left, right)
+	case left.Type() == object.FLOAT_OBJ && right.Type() == object.FLOAT_OBJ:
+		return evalFloatInfixExpression(operator, left, right)
 	case operator == "==":
 		return nativeBoolToBooleanObject(left == right) // Pointer comparison works for singletons
 	case operator == "!=":
 		return nativeBoolToBooleanObject(left != right)
 	case left.Type() != right.Type():
 		return newError("type mismatch: %s %s %s", left.Type(), operator, right.Type())
+	default:
+		return newError("unknown operator: %s %s %s", left.Type(), operator, right.Type())
+	}
+}
+
+func evalFloatInfixExpression(operator string, left, right object.Object) object.Object {
+	leftVal := left.(*object.Float).Value
+	rightVal := right.(*object.Float).Value
+
+	switch operator {
+	case "+":
+		return &object.Float{Value: leftVal + rightVal}
+	case "-":
+		return &object.Float{Value: leftVal - rightVal}
+	case "*":
+		return &object.Float{Value: leftVal * rightVal}
+	case "/":
+		return &object.Float{Value: leftVal / rightVal}
+	case "<":
+		return nativeBoolToBooleanObject(leftVal < rightVal)
+	case ">":
+		return nativeBoolToBooleanObject(leftVal > rightVal)
+	case "==":
+		return nativeBoolToBooleanObject(leftVal == rightVal)
+	case "!=":
+		return nativeBoolToBooleanObject(leftVal != rightVal)
 	default:
 		return newError("unknown operator: %s %s %s", left.Type(), operator, right.Type())
 	}
@@ -303,6 +422,9 @@ func evalExpressions(exps []ast.Expression, env *object.Environment) []object.Ob
 
 // applyFunction calls a function with arguments
 func applyFunction(fn object.Object, args []object.Object) object.Object {
+	if builtin, ok := fn.(*object.Builtin); ok {
+		return builtin.Fn(args...)
+	}
 	function, ok := fn.(*object.Function)
 	if !ok {
 		return newError("not a function: %s", fn.Type())
@@ -346,4 +468,146 @@ func isError(obj object.Object) bool {
 		return obj.Type() == object.ERROR_OBJ
 	}
 	return false
+}
+
+func runtimeTypeName(obj object.Object) string {
+	switch obj.(type) {
+	case *object.Integer:
+		return "int"
+	case *object.Float:
+		return "float"
+	case *object.String:
+		return "string"
+	case *object.Char:
+		return "char"
+	case *object.Boolean:
+		return "bool"
+	case *object.Null:
+		return "null"
+	case *object.TypeValue:
+		return "type"
+	default:
+		return "unknown"
+	}
+}
+
+func isAssignableToType(targetType string, valueType string) bool {
+	if targetType == "" {
+		return true
+	}
+	if valueType == "null" {
+		return true
+	}
+	return targetType == valueType
+}
+
+func isKnownTypeName(t string) bool {
+	switch t {
+	case "int", "float", "string", "char", "bool", "null", "type":
+		return true
+	default:
+		return false
+	}
+}
+
+func castToInt(args []object.Object) object.Object {
+	if len(args) != 1 {
+		return newError("int expects 1 argument, got=%d", len(args))
+	}
+	switch v := args[0].(type) {
+	case *object.Integer:
+		return &object.Integer{Value: v.Value}
+	case *object.Float:
+		return &object.Integer{Value: int64(v.Value)}
+	case *object.Boolean:
+		if v.Value {
+			return &object.Integer{Value: 1}
+		}
+		return &object.Integer{Value: 0}
+	case *object.Char:
+		return &object.Integer{Value: int64(v.Value)}
+	case *object.String:
+		n, err := strconv.ParseInt(v.Value, 10, 64)
+		if err != nil {
+			return newError("cannot cast string to int: %q", v.Value)
+		}
+		return &object.Integer{Value: n}
+	default:
+		return newError("cannot cast %s to int", runtimeTypeName(args[0]))
+	}
+}
+
+func castToFloat(args []object.Object) object.Object {
+	if len(args) != 1 {
+		return newError("float expects 1 argument, got=%d", len(args))
+	}
+	switch v := args[0].(type) {
+	case *object.Float:
+		return &object.Float{Value: v.Value}
+	case *object.Integer:
+		return &object.Float{Value: float64(v.Value)}
+	case *object.Boolean:
+		if v.Value {
+			return &object.Float{Value: 1}
+		}
+		return &object.Float{Value: 0}
+	case *object.Char:
+		return &object.Float{Value: float64(v.Value)}
+	case *object.String:
+		n, err := strconv.ParseFloat(v.Value, 64)
+		if err != nil {
+			return newError("cannot cast string to float: %q", v.Value)
+		}
+		return &object.Float{Value: n}
+	default:
+		return newError("cannot cast %s to float", runtimeTypeName(args[0]))
+	}
+}
+
+func castToString(args []object.Object) object.Object {
+	if len(args) != 1 {
+		return newError("string expects 1 argument, got=%d", len(args))
+	}
+	return &object.String{Value: args[0].Inspect()}
+}
+
+func castToChar(args []object.Object) object.Object {
+	if len(args) != 1 {
+		return newError("char expects 1 argument, got=%d", len(args))
+	}
+	switch v := args[0].(type) {
+	case *object.Char:
+		return &object.Char{Value: v.Value}
+	case *object.Integer:
+		return &object.Char{Value: rune(v.Value)}
+	case *object.String:
+		if len(v.Value) != 1 {
+			return newError("cannot cast string to char: %q", v.Value)
+		}
+		return &object.Char{Value: rune(v.Value[0])}
+	default:
+		return newError("cannot cast %s to char", runtimeTypeName(args[0]))
+	}
+}
+
+func castToBool(args []object.Object) object.Object {
+	if len(args) != 1 {
+		return newError("bool expects 1 argument, got=%d", len(args))
+	}
+	switch v := args[0].(type) {
+	case *object.Boolean:
+		return nativeBoolToBooleanObject(v.Value)
+	case *object.Integer:
+		return nativeBoolToBooleanObject(v.Value != 0)
+	case *object.Float:
+		return nativeBoolToBooleanObject(v.Value != 0)
+	case *object.Char:
+		return nativeBoolToBooleanObject(v.Value != 0)
+	case *object.String:
+		return nativeBoolToBooleanObject(v.Value != "")
+	case *object.Null:
+		return FALSE
+	default:
+		return newError("cannot cast %s to bool", runtimeTypeName(args[0]))
+	}
 }

@@ -16,6 +16,9 @@ type CodeGen struct {
 	variables   map[string]int // name -> stack offset
 	constVars   map[string]bool
 	varTypes    map[string]valueType
+	varDeclared map[string]valueType
+	varIsNull   map[string]bool
+	stringLits  map[string]string
 	stackOffset int // current stack position
 	errors      []CodegenError
 }
@@ -26,6 +29,11 @@ const (
 	typeUnknown valueType = iota
 	typeInt
 	typeBool
+	typeFloat
+	typeString
+	typeChar
+	typeNull
+	typeType
 )
 
 type CodegenError struct {
@@ -39,6 +47,9 @@ func New() *CodeGen {
 		variables:   make(map[string]int),
 		constVars:   make(map[string]bool),
 		varTypes:    make(map[string]valueType),
+		varDeclared: make(map[string]valueType),
+		varIsNull:   make(map[string]bool),
+		stringLits:  make(map[string]string),
 		stackOffset: 0,
 		errors:      []CodegenError{},
 	}
@@ -149,6 +160,46 @@ func (cg *CodeGen) emitHeader() {
 	cg.emit("    ret")
 	cg.emit("")
 
+	// Print C-string helper.
+	// Input: rax = pointer to null-terminated string
+	cg.emit("# Function: print_cstr")
+	cg.emit("print_cstr:")
+	cg.emit("    push %%rbp")
+	cg.emit("    mov %%rsp, %%rbp")
+	cg.emit("    mov %%rax, %%rsi")
+	cg.emit("    xor %%rdx, %%rdx")
+	cg.emit("print_cstr_len_loop:")
+	cg.emit("    cmpb $0, (%%rsi,%%rdx,1)")
+	cg.emit("    je print_cstr_write")
+	cg.emit("    inc %%rdx")
+	cg.emit("    jmp print_cstr_len_loop")
+	cg.emit("print_cstr_write:")
+	cg.emit("    mov $1, %%rax")
+	cg.emit("    mov $1, %%rdi")
+	cg.emit("    syscall")
+	cg.emit("    pop %%rbp")
+	cg.emit("    ret")
+	cg.emit("")
+
+	// Print char helper.
+	// Input: rax = codepoint (low byte used)
+	cg.emit("# Function: print_char")
+	cg.emit("print_char:")
+	cg.emit("    push %%rbp")
+	cg.emit("    mov %%rsp, %%rbp")
+	cg.emit("    sub $16, %%rsp")
+	cg.emit("    movb %%al, -2(%%rbp)")
+	cg.emit("    movb $10, -1(%%rbp)")
+	cg.emit("    lea -2(%%rbp), %%rsi")
+	cg.emit("    mov $2, %%rdx")
+	cg.emit("    mov $1, %%rax")
+	cg.emit("    mov $1, %%rdi")
+	cg.emit("    syscall")
+	cg.emit("    add $16, %%rsp")
+	cg.emit("    pop %%rbp")
+	cg.emit("    ret")
+	cg.emit("")
+
 	// Entry point
 	cg.emit("_start:")
 	cg.emit("    push %%rbp")
@@ -173,6 +224,10 @@ func (cg *CodeGen) emitFooter() {
 	cg.emit("    .section .rodata")
 	cg.emit("bool_true:  .ascii \"true\\n\"")
 	cg.emit("bool_false: .ascii \"false\\n\"")
+	cg.emit("null_lit:   .asciz \"null\\n\"")
+	for lit, label := range cg.stringLits {
+		cg.emit("%s: .asciz \"%s\"", label, escapeAsmString(lit))
+	}
 }
 
 func (cg *CodeGen) generateStatement(stmt ast.Statement) {
@@ -195,6 +250,14 @@ func (cg *CodeGen) generateExpression(expr ast.Expression) {
 	switch e := expr.(type) {
 	case *ast.IntegerLiteral:
 		cg.generateInteger(e)
+	case *ast.FloatLiteral:
+		cg.generateFloat(e)
+	case *ast.StringLiteral:
+		cg.generateString(e)
+	case *ast.CharLiteral:
+		cg.generateChar(e)
+	case *ast.NullLiteral:
+		cg.generateNull(e)
 	case *ast.Boolean:
 		cg.generateBoolean(e)
 	case *ast.InfixExpression:
@@ -215,6 +278,24 @@ func (cg *CodeGen) generateInteger(il *ast.IntegerLiteral) {
 	cg.emit("    mov $%d, %%rax", il.Value)
 }
 
+func (cg *CodeGen) generateFloat(fl *ast.FloatLiteral) {
+	label := cg.stringLabel(fmt.Sprintf("%g\n", fl.Value))
+	cg.emit("    lea %s(%%rip), %%rax", label)
+}
+
+func (cg *CodeGen) generateString(sl *ast.StringLiteral) {
+	label := cg.stringLabel(sl.Value + "\n")
+	cg.emit("    lea %s(%%rip), %%rax", label)
+}
+
+func (cg *CodeGen) generateChar(cl *ast.CharLiteral) {
+	cg.emit("    mov $%d, %%rax", cl.Value)
+}
+
+func (cg *CodeGen) generateNull(_ *ast.NullLiteral) {
+	cg.emit("    lea null_lit(%%rip), %%rax")
+}
+
 func (cg *CodeGen) generateBoolean(b *ast.Boolean) {
 	if b.Value {
 		cg.emit("    mov $1, %%rax") // true = 1
@@ -226,6 +307,14 @@ func (cg *CodeGen) generateBoolean(b *ast.Boolean) {
 // generateInfix handles binary operations: left op right
 // We use the stack to hold intermediate results
 func (cg *CodeGen) generateInfix(ie *ast.InfixExpression) {
+	leftType := cg.inferExpressionType(ie.Left)
+	rightType := cg.inferExpressionType(ie.Right)
+	if leftType != typeInt || rightType != typeInt {
+		cg.addNodeError("infix operations currently support int operands only in codegen", ie)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+
 	// Generate right side first (will be in rax)
 	cg.generateExpression(ie.Right)
 	// Push right side to stack
@@ -288,6 +377,10 @@ func (cg *CodeGen) generateIdentifier(i *ast.Identifier) {
 		cg.emit("    mov $0, %%rax")
 		return
 	}
+	if cg.varIsNull[i.Value] {
+		cg.emit("    lea null_lit(%%rip), %%rax")
+		return
+	}
 	// Load from stack: rbp - offset
 	cg.emit("    mov -%d(%%rbp), %%rax  # load %s", offset, i.Value)
 }
@@ -304,13 +397,41 @@ func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
 		return
 	}
 
-	cg.generateExpression(ls.Value)
+	declared := parseTypeName(ls.TypeName)
+	if ls.TypeName != "" && declared == typeUnknown {
+		cg.addNodeError("unknown type: "+ls.TypeName, ls)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if declared != typeUnknown {
+		cg.varDeclared[ls.Name.Value] = declared
+	}
+
+	if ls.Value == nil {
+		cg.generateNull(&ast.NullLiteral{})
+	} else {
+		cg.generateExpression(ls.Value)
+	}
 
 	// Allocate space on stack and store
 	cg.stackOffset += 8 // 8 bytes for int64
 	name := ls.Name.Value
 	cg.variables[name] = cg.stackOffset
-	cg.varTypes[name] = cg.inferExpressionType(ls.Value)
+	inferred := typeNull
+	if ls.Value != nil {
+		inferred = cg.inferExpressionType(ls.Value)
+	}
+	if declared != typeUnknown && inferred != typeNull && declared != inferred {
+		cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", typeName(inferred), typeName(declared)), ls)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if declared != typeUnknown {
+		cg.varTypes[name] = declared
+	} else {
+		cg.varTypes[name] = inferred
+	}
+	cg.varIsNull[name] = inferred == typeNull
 
 	cg.emit("    push %%rax           # let %s", name)
 }
@@ -323,13 +444,34 @@ func (cg *CodeGen) generateConst(cs *ast.ConstStatement) {
 		return
 	}
 
+	declared := parseTypeName(cs.TypeName)
+	if cs.TypeName != "" && declared == typeUnknown {
+		cg.addNodeError("unknown type: "+cs.TypeName, cs)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if declared != typeUnknown {
+		cg.varDeclared[cs.Name.Value] = declared
+	}
+
 	cg.generateExpression(cs.Value)
 
 	cg.stackOffset += 8
 	name := cs.Name.Value
 	cg.variables[name] = cg.stackOffset
 	cg.constVars[name] = true
-	cg.varTypes[name] = cg.inferExpressionType(cs.Value)
+	inferred := cg.inferExpressionType(cs.Value)
+	if declared != typeUnknown && inferred != typeNull && declared != inferred {
+		cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", typeName(inferred), typeName(declared)), cs)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if declared != typeUnknown {
+		cg.varTypes[name] = declared
+	} else {
+		cg.varTypes[name] = inferred
+	}
+	cg.varIsNull[name] = inferred == typeNull
 
 	cg.emit("    push %%rax           # const %s", name)
 }
@@ -350,7 +492,25 @@ func (cg *CodeGen) generateAssign(as *ast.AssignStatement) {
 
 	cg.generateExpression(as.Value)
 	cg.emit("    mov %%rax, -%d(%%rbp)  # assign %s", offset, as.Name.Value)
-	cg.varTypes[as.Name.Value] = cg.inferExpressionType(as.Value)
+	inferred := cg.inferExpressionType(as.Value)
+	target := cg.varTypes[as.Name.Value]
+	if target == typeNull && inferred != typeNull {
+		target = inferred
+	}
+	if declared, ok := cg.varDeclared[as.Name.Value]; ok {
+		target = declared
+	}
+	if inferred != typeNull && target != typeUnknown && target != inferred {
+		cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", typeName(inferred), typeName(target)), as)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if target == typeUnknown {
+		cg.varTypes[as.Name.Value] = inferred
+	} else {
+		cg.varTypes[as.Name.Value] = target
+	}
+	cg.varIsNull[as.Name.Value] = inferred == typeNull
 }
 
 // generateReturn handles return statements
@@ -407,14 +567,30 @@ func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 			cg.emit("    mov $0, %%rax")
 			return
 		}
-		if argType == typeBool {
+		switch argType {
+		case typeBool:
 			cg.emit("    call print_bool")
-		} else if argType == typeInt {
+		case typeInt:
 			cg.emit("    call print_int")
-		} else {
-			cg.addNodeError("print supports only int and bool arguments", ce.Arguments[0])
+		case typeChar:
+			cg.emit("    call print_char")
+		case typeString, typeFloat, typeType, typeNull:
+			cg.emit("    call print_cstr")
+		default:
+			cg.addNodeError("print supports only int, bool, float, string, char, null, and type arguments", ce.Arguments[0])
 			cg.emit("    mov $0, %%rax")
 		}
+	case "typeof":
+		if len(ce.Arguments) != 1 {
+			cg.addNodeError("typeof expects exactly 1 argument", ce)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		t := cg.inferTypeofType(ce.Arguments[0])
+		label := cg.stringLabel(typeName(t) + "\n")
+		cg.emit("    lea %s(%%rip), %%rax", label)
+	case "int", "float", "string", "char", "bool":
+		cg.generateCastCall(fn.Value, ce)
 	default:
 		cg.addNodeError("unknown function "+fn.Value, ce)
 		cg.emit("    mov $0, %%rax")
@@ -473,9 +649,20 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
 	switch e := expr.(type) {
 	case *ast.IntegerLiteral:
 		return typeInt
+	case *ast.FloatLiteral:
+		return typeFloat
+	case *ast.StringLiteral:
+		return typeString
+	case *ast.CharLiteral:
+		return typeChar
+	case *ast.NullLiteral:
+		return typeNull
 	case *ast.Boolean:
 		return typeBool
 	case *ast.Identifier:
+		if cg.varIsNull[e.Value] {
+			return typeNull
+		}
 		if t, ok := cg.varTypes[e.Value]; ok {
 			return t
 		}
@@ -513,6 +700,24 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
 			return cons
 		}
 		return typeUnknown
+	case *ast.CallExpression:
+		if fn, ok := e.Function.(*ast.Identifier); ok {
+			switch fn.Value {
+			case "typeof":
+				return typeType
+			case "int":
+				return typeInt
+			case "float":
+				return typeFloat
+			case "string":
+				return typeString
+			case "char":
+				return typeChar
+			case "bool":
+				return typeBool
+			}
+		}
+		return typeUnknown
 	default:
 		return typeUnknown
 	}
@@ -533,6 +738,18 @@ func (cg *CodeGen) inferBlockType(block *ast.BlockStatement) valueType {
 	}
 }
 
+func (cg *CodeGen) inferTypeofType(expr ast.Expression) valueType {
+	if id, ok := expr.(*ast.Identifier); ok {
+		if declared, ok := cg.varDeclared[id.Value]; ok && declared != typeUnknown {
+			return declared
+		}
+		if t, ok := cg.varTypes[id.Value]; ok && t != typeUnknown {
+			return t
+		}
+	}
+	return cg.inferExpressionType(expr)
+}
+
 func (cg *CodeGen) reset() {
 	cg.output = strings.Builder{}
 	cg.labelCount = 0
@@ -541,6 +758,109 @@ func (cg *CodeGen) reset() {
 	cg.variables = make(map[string]int)
 	cg.constVars = make(map[string]bool)
 	cg.varTypes = make(map[string]valueType)
+	cg.varDeclared = make(map[string]valueType)
+	cg.varIsNull = make(map[string]bool)
+	cg.stringLits = make(map[string]string)
 	cg.stackOffset = 0
 	cg.errors = []CodegenError{}
+}
+
+func (cg *CodeGen) generateCastCall(castName string, ce *ast.CallExpression) {
+	if len(ce.Arguments) != 1 {
+		cg.addNodeError(fmt.Sprintf("%s expects exactly 1 argument", castName), ce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	argType := cg.inferExpressionType(ce.Arguments[0])
+	cg.generateExpression(ce.Arguments[0])
+
+	switch castName {
+	case "int":
+		if argType == typeInt || argType == typeBool || argType == typeChar {
+			return
+		}
+	case "bool":
+		if argType == typeBool {
+			return
+		}
+		if argType == typeInt || argType == typeChar {
+			cg.emit("    test %%rax, %%rax")
+			cg.emit("    setne %%al")
+			cg.emit("    movzbq %%al, %%rax")
+			return
+		}
+	case "char":
+		if argType == typeChar || argType == typeInt || argType == typeBool {
+			return
+		}
+	case "string":
+		if argType == typeString || argType == typeFloat || argType == typeType || argType == typeNull {
+			return
+		}
+	case "float":
+		if argType == typeFloat {
+			return
+		}
+	}
+
+	cg.addNodeError(fmt.Sprintf("cannot cast %s to %s", typeName(argType), castName), ce)
+	cg.emit("    mov $0, %%rax")
+}
+
+func parseTypeName(s string) valueType {
+	switch s {
+	case "int":
+		return typeInt
+	case "bool":
+		return typeBool
+	case "float":
+		return typeFloat
+	case "string":
+		return typeString
+	case "char":
+		return typeChar
+	case "type":
+		return typeType
+	case "null":
+		return typeNull
+	default:
+		return typeUnknown
+	}
+}
+
+func typeName(t valueType) string {
+	switch t {
+	case typeInt:
+		return "int"
+	case typeBool:
+		return "bool"
+	case typeFloat:
+		return "float"
+	case typeString:
+		return "string"
+	case typeChar:
+		return "char"
+	case typeNull:
+		return "null"
+	case typeType:
+		return "type"
+	default:
+		return "unknown"
+	}
+}
+
+func (cg *CodeGen) stringLabel(lit string) string {
+	if label, ok := cg.stringLits[lit]; ok {
+		return label
+	}
+	label := fmt.Sprintf("str_%d", len(cg.stringLits))
+	cg.stringLits[lit] = label
+	return label
+}
+
+func escapeAsmString(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "\"", "\\\"")
+	s = strings.ReplaceAll(s, "\n", "\\n")
+	return s
 }
