@@ -26,14 +26,7 @@
 - Store inferred type metadata for later validations and codegen decisions.
 - Validate reassignment/update operations against inferred type rules (once reassignment exists).
 
-## 5. Variable Reassignment
-
-- Add support for reassigning previously declared variables with syntax: `name = value;`.
-- Ensure reassignment fails for undeclared identifiers.
-- Ensure reassignment is blocked for constants declared with `const`.
-- Add parser/evaluator/codegen tests for reassignment behavior.
-
-## 6. Print All Current Types
+## 5. Print All Current Types
 
 - Extend `print` support to handle both integers and booleans.
 - Emit correct runtime output for booleans (`true`/`false`) in codegen path.

@@ -92,6 +92,49 @@ func (ls *LetStatement) String() string {
 	return out.String()
 }
 
+// ConstStatement represents: const <name> = <value>;
+type ConstStatement struct {
+	Token token.Token // The CONST token
+	Name  *Identifier // Variable name
+	Value Expression  // The expression being assigned
+}
+
+func (cs *ConstStatement) statementNode()       {}
+func (cs *ConstStatement) TokenLiteral() string { return cs.Token.Literal }
+
+func (cs *ConstStatement) String() string {
+	var out bytes.Buffer
+	out.WriteString(cs.TokenLiteral() + " ")
+	out.WriteString(cs.Name.String())
+	out.WriteString(" = ")
+	if cs.Value != nil {
+		out.WriteString(cs.Value.String())
+	}
+	out.WriteString(";")
+	return out.String()
+}
+
+// AssignStatement represents: <name> = <value>;
+type AssignStatement struct {
+	Token token.Token // The IDENT token
+	Name  *Identifier
+	Value Expression
+}
+
+func (as *AssignStatement) statementNode()       {}
+func (as *AssignStatement) TokenLiteral() string { return as.Token.Literal }
+
+func (as *AssignStatement) String() string {
+	var out bytes.Buffer
+	out.WriteString(as.Name.String())
+	out.WriteString(" = ")
+	if as.Value != nil {
+		out.WriteString(as.Value.String())
+	}
+	out.WriteString(";")
+	return out.String()
+}
+
 // ReturnStatement represents: return <expression>;
 type ReturnStatement struct {
 	Token       token.Token // The RETURN token

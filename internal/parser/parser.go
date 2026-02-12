@@ -183,8 +183,15 @@ func (p *Parser) parseStatement() ast.Statement {
 	switch p.curToken.Type {
 	case token.LET:
 		return p.parseLetStatement()
+	case token.CONST:
+		return p.parseConstStatement()
 	case token.RETURN:
 		return p.parseReturnStatement()
+	case token.IDENT:
+		if p.peekTokenIs(token.ASSIGN) {
+			return p.parseAssignStatement()
+		}
+		return p.parseExpressionStatement()
 	default:
 		return p.parseExpressionStatement()
 	}
@@ -214,6 +221,51 @@ func (p *Parser) parseLetStatement() *ast.LetStatement {
 	stmt.Value = p.parseExpression(LOWEST)
 
 	// Semicolons are mandatory statement terminators.
+	if !p.expectPeek(token.SEMICOLON) {
+		return nil
+	}
+
+	return stmt
+}
+
+// parseConstStatement handles: const <name> = <value>;
+func (p *Parser) parseConstStatement() *ast.ConstStatement {
+	stmt := &ast.ConstStatement{Token: p.curToken}
+
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+
+	stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+
+	if !p.expectPeek(token.ASSIGN) {
+		return nil
+	}
+
+	p.nextToken()
+	stmt.Value = p.parseExpression(LOWEST)
+
+	if !p.expectPeek(token.SEMICOLON) {
+		return nil
+	}
+
+	return stmt
+}
+
+// parseAssignStatement handles: <name> = <value>;
+func (p *Parser) parseAssignStatement() *ast.AssignStatement {
+	stmt := &ast.AssignStatement{
+		Token: p.curToken,
+		Name:  &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal},
+	}
+
+	if !p.expectPeek(token.ASSIGN) {
+		return nil
+	}
+
+	p.nextToken()
+	stmt.Value = p.parseExpression(LOWEST)
+
 	if !p.expectPeek(token.SEMICOLON) {
 		return nil
 	}

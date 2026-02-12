@@ -68,6 +68,38 @@ func TestUnknownIdentifierError(t *testing.T) {
 	}
 }
 
+func TestConstEval(t *testing.T) {
+	evaluated := testEval("const x = 7; x")
+	testIntegerObject(t, evaluated, 7)
+}
+
+func TestConstCannotBeRedeclaredByLet(t *testing.T) {
+	evaluated := testEval("const x = 1; let x = 2;")
+	errObj, ok := evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "cannot reassign const: x" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+}
+
+func TestVariableReassignmentEval(t *testing.T) {
+	evaluated := testEval("let x = 1; x = 3; x")
+	testIntegerObject(t, evaluated, 3)
+}
+
+func TestReassignmentUndeclaredError(t *testing.T) {
+	evaluated := testEval("x = 3;")
+	errObj, ok := evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "identifier not found: x" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+}
+
 func testEval(input string) object.Object {
 	l := lexer.New(input)
 	p := parser.New(l)

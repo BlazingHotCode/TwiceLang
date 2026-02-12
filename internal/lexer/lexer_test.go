@@ -9,6 +9,7 @@ import (
 func TestNextToken(t *testing.T) {
 	input := `
 let five = 5;
+const c = 1;
 let ten = 10;
 if (five < ten) { return true; } else { return false; }
 5 == 5;
@@ -23,6 +24,11 @@ if (five < ten) { return true; } else { return false; }
 		{token.IDENT, "five"},
 		{token.ASSIGN, "="},
 		{token.INT, "5"},
+		{token.SEMICOLON, ";"},
+		{token.CONST, "const"},
+		{token.IDENT, "c"},
+		{token.ASSIGN, "="},
+		{token.INT, "1"},
 		{token.SEMICOLON, ";"},
 		{token.LET, "let"},
 		{token.IDENT, "ten"},

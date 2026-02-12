@@ -49,6 +49,34 @@ func TestPrintArityValidation(t *testing.T) {
 	}
 }
 
+func TestConstCodegen(t *testing.T) {
+	asm, _ := generateAssembly(t, "const x = 3; print(x);")
+	if !strings.Contains(asm, "# const x") {
+		t.Fatalf("expected const declaration emission, got:\n%s", asm)
+	}
+}
+
+func TestConstRedeclarationValidation(t *testing.T) {
+	_, cg := generateAssembly(t, "const x = 1; let x = 2;")
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen errors for const redeclaration, got none")
+	}
+}
+
+func TestAssignmentCodegen(t *testing.T) {
+	asm, _ := generateAssembly(t, "let x = 1; x = 2;")
+	if !strings.Contains(asm, "# assign x") {
+		t.Fatalf("expected assignment emission, got:\n%s", asm)
+	}
+}
+
+func TestAssignmentConstValidation(t *testing.T) {
+	_, cg := generateAssembly(t, "const x = 1; x = 2;")
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen errors for const reassignment, got none")
+	}
+}
+
 func generateAssembly(t *testing.T, input string) (string, *CodeGen) {
 	t.Helper()
 	p := parser.New(lexer.New(input))

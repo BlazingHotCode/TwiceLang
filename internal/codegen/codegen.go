@@ -14,6 +14,7 @@ type CodeGen struct {
 	exitLabel   string
 	normalExit  string
 	variables   map[string]int // name -> stack offset
+	constVars   map[string]bool
 	varTypes    map[string]valueType
 	stackOffset int // current stack position
 	errors      []string
@@ -31,6 +32,7 @@ const (
 func New() *CodeGen {
 	return &CodeGen{
 		variables:   make(map[string]int),
+		constVars:   make(map[string]bool),
 		varTypes:    make(map[string]valueType),
 		stackOffset: 0,
 		errors:      []string{},
@@ -144,6 +146,10 @@ func (cg *CodeGen) generateStatement(stmt ast.Statement) {
 	switch s := stmt.(type) {
 	case *ast.LetStatement:
 		cg.generateLet(s)
+	case *ast.ConstStatement:
+		cg.generateConst(s)
+	case *ast.AssignStatement:
+		cg.generateAssign(s)
 	case *ast.ReturnStatement:
 		cg.generateReturn(s)
 	case *ast.ExpressionStatement:
@@ -254,6 +260,17 @@ func (cg *CodeGen) generateIdentifier(i *ast.Identifier) {
 
 // generateLet handles variable declarations (simplified - no stack frame yet)
 func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
+	if _, exists := cg.variables[ls.Name.Value]; exists {
+		if cg.constVars[ls.Name.Value] {
+			cg.addError("cannot reassign const: " + ls.Name.Value)
+		} else {
+			cg.addError("identifier already declared: " + ls.Name.Value)
+		}
+		cg.emit("    # ERROR: duplicate declaration %s", ls.Name.Value)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+
 	cg.generateExpression(ls.Value)
 
 	// Allocate space on stack and store
@@ -263,6 +280,47 @@ func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
 	cg.varTypes[name] = cg.inferExpressionType(ls.Value)
 
 	cg.emit("    push %%rax           # let %s", name)
+}
+
+// generateConst handles immutable variable declarations.
+func (cg *CodeGen) generateConst(cs *ast.ConstStatement) {
+	if _, exists := cg.variables[cs.Name.Value]; exists {
+		cg.addError("identifier already declared: " + cs.Name.Value)
+		cg.emit("    # ERROR: duplicate declaration %s", cs.Name.Value)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+
+	cg.generateExpression(cs.Value)
+
+	cg.stackOffset += 8
+	name := cs.Name.Value
+	cg.variables[name] = cg.stackOffset
+	cg.constVars[name] = true
+	cg.varTypes[name] = cg.inferExpressionType(cs.Value)
+
+	cg.emit("    push %%rax           # const %s", name)
+}
+
+// generateAssign handles variable reassignment.
+func (cg *CodeGen) generateAssign(as *ast.AssignStatement) {
+	offset, exists := cg.variables[as.Name.Value]
+	if !exists {
+		cg.addError("identifier not found: " + as.Name.Value)
+		cg.emit("    # ERROR: undefined variable %s", as.Name.Value)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if cg.constVars[as.Name.Value] {
+		cg.addError("cannot reassign const: " + as.Name.Value)
+		cg.emit("    # ERROR: cannot reassign const %s", as.Name.Value)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+
+	cg.generateExpression(as.Value)
+	cg.emit("    mov %%rax, -%d(%%rbp)  # assign %s", offset, as.Name.Value)
+	cg.varTypes[as.Name.Value] = cg.inferExpressionType(as.Value)
 }
 
 // generateReturn handles return statements

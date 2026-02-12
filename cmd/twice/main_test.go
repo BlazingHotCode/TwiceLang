@@ -167,6 +167,106 @@ func TestCLICodegenErrorForPrintArity(t *testing.T) {
 	}
 }
 
+func TestCLICompileAndRunConstValue(t *testing.T) {
+	root := repoRoot(t)
+	ensureToolchain(t)
+
+	srcPath := filepath.Join(t.TempDir(), "const_ok.tw")
+	source := "const x = 8;\nprint(x);\n"
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	outputName := "twice_cli_const_bin"
+	outputPath := filepath.Join(root, outputName)
+	_ = os.Remove(outputPath)
+	t.Cleanup(func() { _ = os.Remove(outputPath) })
+
+	cmd := exec.Command("go", "run", "./cmd/twice", "-run", "-o", outputName, srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("compile/run failed: %v\n%s", err, out)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "\n8\n") {
+		t.Fatalf("expected runtime print output. output:\n%s", output)
+	}
+}
+
+func TestCLICodegenErrorForConstRedeclare(t *testing.T) {
+	root := repoRoot(t)
+
+	srcPath := filepath.Join(t.TempDir(), "const_redeclare.tw")
+	source := "const x = 1;\nlet x = 2;\n"
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	cmd := exec.Command("go", "run", "./cmd/twice", srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected codegen failure, got success. output:\n%s", out)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "Codegen error: cannot reassign const: x") {
+		t.Fatalf("missing const redeclare diagnostic. output:\n%s", output)
+	}
+}
+
+func TestCLICompileAndRunVariableReassignment(t *testing.T) {
+	root := repoRoot(t)
+	ensureToolchain(t)
+
+	srcPath := filepath.Join(t.TempDir(), "assign_ok.tw")
+	source := "let x = 1;\nx = 4;\nprint(x);\n"
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	outputName := "twice_cli_assign_bin"
+	outputPath := filepath.Join(root, outputName)
+	_ = os.Remove(outputPath)
+	t.Cleanup(func() { _ = os.Remove(outputPath) })
+
+	cmd := exec.Command("go", "run", "./cmd/twice", "-run", "-o", outputName, srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("compile/run failed: %v\n%s", err, out)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "\n4\n") {
+		t.Fatalf("expected runtime print output. output:\n%s", output)
+	}
+}
+
+func TestCLICodegenErrorForConstReassignment(t *testing.T) {
+	root := repoRoot(t)
+
+	srcPath := filepath.Join(t.TempDir(), "const_reassign.tw")
+	source := "const x = 1;\nx = 2;\n"
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	cmd := exec.Command("go", "run", "./cmd/twice", srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected codegen failure, got success. output:\n%s", out)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "Codegen error: cannot reassign const: x") {
+		t.Fatalf("missing const reassignment diagnostic. output:\n%s", output)
+	}
+}
+
 func ensureToolchain(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("as"); err != nil {

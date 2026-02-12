@@ -35,11 +35,39 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		}
 		return &object.ReturnValue{Value: val}
 	case *ast.LetStatement:
+		if env.HasInCurrentScope(node.Name.Value) {
+			if env.IsConstInCurrentScope(node.Name.Value) {
+				return newError("cannot reassign const: %s", node.Name.Value)
+			}
+			return newError("identifier already declared: %s", node.Name.Value)
+		}
 		val := Eval(node.Value, env)
 		if isError(val) {
 			return val
 		}
 		env.Set(node.Name.Value, val)
+
+	case *ast.ConstStatement:
+		if env.HasInCurrentScope(node.Name.Value) {
+			return newError("identifier already declared: %s", node.Name.Value)
+		}
+		val := Eval(node.Value, env)
+		if isError(val) {
+			return val
+		}
+		env.SetConst(node.Name.Value, val)
+	case *ast.AssignStatement:
+		if !env.Has(node.Name.Value) {
+			return newError("identifier not found: " + node.Name.Value)
+		}
+		if env.IsConst(node.Name.Value) {
+			return newError("cannot reassign const: %s", node.Name.Value)
+		}
+		val := Eval(node.Value, env)
+		if isError(val) {
+			return val
+		}
+		env.Assign(node.Name.Value, val)
 
 	// Expressions
 	case *ast.IntegerLiteral:
