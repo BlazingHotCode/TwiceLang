@@ -213,9 +213,9 @@ func (p *Parser) parseLetStatement() *ast.LetStatement {
 	// Parse the expression (value being assigned)
 	stmt.Value = p.parseExpression(LOWEST)
 
-	// Expect semicolon (optional in our language, but good for parsing)
-	if p.peekTokenIs(token.SEMICOLON) {
-		p.nextToken()
+	// Semicolons are mandatory statement terminators.
+	if !p.expectPeek(token.SEMICOLON) {
+		return nil
 	}
 
 	return stmt
@@ -229,24 +229,29 @@ func (p *Parser) parseReturnStatement() *ast.ReturnStatement {
 
 	stmt.ReturnValue = p.parseExpression(LOWEST)
 
-	if p.peekTokenIs(token.SEMICOLON) {
-		p.nextToken()
+	if !p.expectPeek(token.SEMICOLON) {
+		return nil
 	}
 
 	return stmt
 }
 
-// parseExpressionStatement handles expressions used as statements
-func (p *Parser) parseExpressionStatement() *ast.ExpressionStatement {
+// parseExpressionStatement handles expressions used as statements.
+// If an expression is not terminated by ';', we treat it as an implicit return.
+func (p *Parser) parseExpressionStatement() ast.Statement {
 	stmt := &ast.ExpressionStatement{Token: p.curToken}
 
 	stmt.Expression = p.parseExpression(LOWEST)
 
 	if p.peekTokenIs(token.SEMICOLON) {
 		p.nextToken()
+		return stmt
 	}
 
-	return stmt
+	return &ast.ReturnStatement{
+		Token:       token.Token{Type: token.RETURN, Literal: "return"},
+		ReturnValue: stmt.Expression,
+	}
 }
 
 // parseExpression is the heart of Pratt parsing
