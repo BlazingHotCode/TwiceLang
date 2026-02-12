@@ -112,6 +112,129 @@ func TestTypedLetDeclarationParses(t *testing.T) {
 	}
 }
 
+func TestTypedArrayLetDeclarationParses(t *testing.T) {
+	p := New(lexer.New("let arr: int[3];"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	stmt, ok := program.Statements[0].(*ast.LetStatement)
+	if !ok {
+		t.Fatalf("expected let statement, got=%T", program.Statements[0])
+	}
+	if stmt.TypeName != "int[3]" {
+		t.Fatalf("expected type annotation int[3], got=%q", stmt.TypeName)
+	}
+	if stmt.Value != nil {
+		t.Fatalf("expected nil initializer for typed declaration")
+	}
+}
+
+func TestNestedArrayTypeParses(t *testing.T) {
+	p := New(lexer.New("let grid: int[][];"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	stmt, ok := program.Statements[0].(*ast.LetStatement)
+	if !ok {
+		t.Fatalf("expected let statement, got=%T", program.Statements[0])
+	}
+	if stmt.TypeName != "int[][]" {
+		t.Fatalf("expected type annotation int[][], got=%q", stmt.TypeName)
+	}
+}
+
+func TestArrayLiteralParsesInLet(t *testing.T) {
+	p := New(lexer.New("let arr = {1, 2, 3};"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	stmt, ok := program.Statements[0].(*ast.LetStatement)
+	if !ok {
+		t.Fatalf("expected let statement, got=%T", program.Statements[0])
+	}
+	arr, ok := stmt.Value.(*ast.ArrayLiteral)
+	if !ok {
+		t.Fatalf("expected array literal initializer, got=%T", stmt.Value)
+	}
+	if len(arr.Elements) != 3 {
+		t.Fatalf("expected 3 elements, got=%d", len(arr.Elements))
+	}
+}
+
+func TestArrayIndexExpressionParses(t *testing.T) {
+	p := New(lexer.New("arr[1];"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+	if !ok {
+		t.Fatalf("expected expression statement, got=%T", program.Statements[0])
+	}
+	idx, ok := stmt.Expression.(*ast.IndexExpression)
+	if !ok {
+		t.Fatalf("expected index expression, got=%T", stmt.Expression)
+	}
+	if idx.Left.String() != "arr" || idx.Index.String() != "1" {
+		t.Fatalf("unexpected index expression: %s", idx.String())
+	}
+}
+
+func TestArrayIndexAssignmentParses(t *testing.T) {
+	p := New(lexer.New("arr[1] = 42;"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	stmt, ok := program.Statements[0].(*ast.IndexAssignStatement)
+	if !ok {
+		t.Fatalf("expected index assign statement, got=%T", program.Statements[0])
+	}
+	if stmt.Left.String() != "arr[1]" {
+		t.Fatalf("unexpected left side: %s", stmt.Left.String())
+	}
+	if stmt.Value.String() != "42" {
+		t.Fatalf("unexpected assignment value: %s", stmt.Value.String())
+	}
+}
+
+func TestArrayLengthMethodCallParses(t *testing.T) {
+	p := New(lexer.New("arr.length();"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+	if !ok {
+		t.Fatalf("expected expression statement, got=%T", program.Statements[0])
+	}
+	call, ok := stmt.Expression.(*ast.MethodCallExpression)
+	if !ok {
+		t.Fatalf("expected method call expression, got=%T", stmt.Expression)
+	}
+	if call.Object.String() != "arr" {
+		t.Fatalf("expected method receiver arr, got=%s", call.Object.String())
+	}
+	if call.Method == nil || call.Method.Value != "length" {
+		t.Fatalf("expected method length, got=%v", call.Method)
+	}
+	if len(call.Arguments) != 0 {
+		t.Fatalf("expected 0 arguments, got=%d", len(call.Arguments))
+	}
+}
+
 func TestAdditionalLiteralParsing(t *testing.T) {
 	p := New(lexer.New(`3.14; "abc"; 'z'; null;`))
 	program := p.ParseProgram()

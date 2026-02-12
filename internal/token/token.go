@@ -54,12 +54,15 @@ const (
 
 	// Delimiters
 	COMMA     TokenType = ","
+	DOT       TokenType = "."
 	SEMICOLON TokenType = ";"
 	COLON     TokenType = ":"
 	LPAREN    TokenType = "("
 	RPAREN    TokenType = ")"
 	LBRACE    TokenType = "{"
 	RBRACE    TokenType = "}"
+	LBRACKET  TokenType = "["
+	RBRACKET  TokenType = "]"
 
 	// Keywords
 	FUNCTION TokenType = "FUNCTION"

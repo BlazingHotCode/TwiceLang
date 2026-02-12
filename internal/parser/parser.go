@@ -27,6 +27,8 @@ const (
 	PRODUCT     // *
 	PREFIX      // -X or !X
 	CALL        // myFunction(X)
+	INDEX       // myArray[X]
+	METHOD      // obj.method(...)
 )
 
 // precedence table maps token types to their precedence level
@@ -49,6 +51,8 @@ var precedences = map[token.TokenType]int{
 	token.ASTERISK: PRODUCT,
 	token.PERCENT:  PRODUCT,
 	token.LPAREN:   CALL,
+	token.LBRACKET: INDEX,
+	token.DOT:      METHOD,
 }
 
 type Parser struct {
@@ -97,6 +101,7 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerPrefix(token.FALSE, p.parseBoolean)
 	p.registerPrefix(token.NULL, p.parseNullLiteral)
 	p.registerPrefix(token.LPAREN, p.parseGroupedExpression)
+	p.registerPrefix(token.LBRACE, p.parseArrayLiteral)
 	p.registerPrefix(token.IF, p.parseIfExpression)
 	p.registerPrefix(token.FUNCTION, p.parseFunctionLiteral)
 
@@ -119,6 +124,8 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerInfix(token.SHL, p.parseInfixExpression)
 	p.registerInfix(token.SHR, p.parseInfixExpression)
 	p.registerInfix(token.LPAREN, p.parseCallExpression)
+	p.registerInfix(token.LBRACKET, p.parseIndexExpression)
+	p.registerInfix(token.DOT, p.parseMethodCallExpression)
 
 	// Read two tokens to set curToken and peekToken
 	p.nextToken()
@@ -259,7 +266,11 @@ func (p *Parser) parseFunctionStatement() *ast.FunctionStatement {
 
 	if p.peekTokenIs(token.IDENT) {
 		p.nextToken()
-		lit.ReturnType = p.curToken.Literal
+		returnType, ok := p.parseOptionalArrayTypeSuffix(p.curToken.Literal)
+		if !ok {
+			return nil
+		}
+		lit.ReturnType = returnType
 	}
 
 	if !p.expectPeek(token.LBRACE) {
@@ -284,13 +295,14 @@ func (p *Parser) parseLetStatement() *ast.LetStatement {
 	// Create identifier node
 	stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
 
-	// Optional type annotation: let name: type ...
+	// Optional type annotation: let name: type or let name: type[len]
 	if p.peekTokenIs(token.COLON) {
 		p.nextToken()
-		if !p.expectPeek(token.IDENT) {
+		typeName, ok := p.parseTypeAnnotation()
+		if !ok {
 			return nil
 		}
-		stmt.TypeName = p.curToken.Literal
+		stmt.TypeName = typeName
 	}
 
 	// Optional initializer:
@@ -337,10 +349,11 @@ func (p *Parser) parseConstStatement() *ast.ConstStatement {
 
 	if p.peekTokenIs(token.COLON) {
 		p.nextToken()
-		if !p.expectPeek(token.IDENT) {
+		typeName, ok := p.parseTypeAnnotation()
+		if !ok {
 			return nil
 		}
-		stmt.TypeName = p.curToken.Literal
+		stmt.TypeName = typeName
 	}
 
 	if !p.expectPeek(token.ASSIGN) {
@@ -453,6 +466,24 @@ func (p *Parser) parseExpressionStatement() ast.Statement {
 
 	stmt.Expression = p.parseExpression(LOWEST)
 
+	// Support indexed assignment: arr[1] = value;
+	if p.peekTokenIs(token.ASSIGN) {
+		if left, ok := stmt.Expression.(*ast.IndexExpression); ok {
+			p.nextToken() // '='
+			assignTok := p.curToken
+			p.nextToken() // value expression start
+			value := p.parseExpression(LOWEST)
+			if !p.expectPeek(token.SEMICOLON) {
+				return nil
+			}
+			return &ast.IndexAssignStatement{
+				Token: assignTok,
+				Left:  left,
+				Value: value,
+			}
+		}
+	}
+
 	if p.peekTokenIs(token.SEMICOLON) {
 		p.nextToken()
 		return stmt
@@ -544,6 +575,31 @@ func (p *Parser) parseCharLiteral() ast.Expression {
 
 func (p *Parser) parseNullLiteral() ast.Expression {
 	return &ast.NullLiteral{Token: p.curToken}
+}
+
+func (p *Parser) parseArrayLiteral() ast.Expression {
+	lit := &ast.ArrayLiteral{Token: p.curToken}
+	lit.Elements = []ast.Expression{}
+
+	if p.peekTokenIs(token.RBRACE) {
+		p.nextToken()
+		return lit
+	}
+
+	p.nextToken()
+	lit.Elements = append(lit.Elements, p.parseExpression(LOWEST))
+
+	for p.peekTokenIs(token.COMMA) {
+		p.nextToken()
+		p.nextToken()
+		lit.Elements = append(lit.Elements, p.parseExpression(LOWEST))
+	}
+
+	if !p.expectPeek(token.RBRACE) {
+		return nil
+	}
+
+	return lit
 }
 
 // parsePrefixExpression handles !<expr> and -<expr>
@@ -688,7 +744,11 @@ func (p *Parser) parseFunctionLiteral() ast.Expression {
 
 	if p.peekTokenIs(token.IDENT) {
 		p.nextToken()
-		lit.ReturnType = p.curToken.Literal
+		returnType, ok := p.parseOptionalArrayTypeSuffix(p.curToken.Literal)
+		if !ok {
+			return nil
+		}
+		lit.ReturnType = returnType
 	}
 
 	// Expect {
@@ -749,10 +809,11 @@ func (p *Parser) parseFunctionParameter() *ast.FunctionParameter {
 
 	if p.peekTokenIs(token.COLON) {
 		p.nextToken()
-		if !p.expectPeek(token.IDENT) {
+		typeName, ok := p.parseTypeAnnotation()
+		if !ok {
 			return nil
 		}
-		param.TypeName = p.curToken.Literal
+		param.TypeName = typeName
 	}
 
 	if p.peekTokenIs(token.ASSIGN) {
@@ -768,6 +829,29 @@ func (p *Parser) parseFunctionParameter() *ast.FunctionParameter {
 // Called when we see ( after parsing a function expression
 func (p *Parser) parseCallExpression(function ast.Expression) ast.Expression {
 	exp := &ast.CallExpression{Token: p.curToken, Function: function}
+	exp.Arguments = p.parseCallArguments()
+	return exp
+}
+
+func (p *Parser) parseIndexExpression(left ast.Expression) ast.Expression {
+	exp := &ast.IndexExpression{Token: p.curToken, Left: left}
+	p.nextToken()
+	exp.Index = p.parseExpression(LOWEST)
+	if !p.expectPeek(token.RBRACKET) {
+		return nil
+	}
+	return exp
+}
+
+func (p *Parser) parseMethodCallExpression(left ast.Expression) ast.Expression {
+	exp := &ast.MethodCallExpression{Token: p.curToken, Object: left}
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	exp.Method = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	if !p.expectPeek(token.LPAREN) {
+		return nil
+	}
 	exp.Arguments = p.parseCallArguments()
 	return exp
 }
@@ -810,4 +894,39 @@ func (p *Parser) parseCallArgument() ast.Expression {
 		}
 	}
 	return p.parseExpression(LOWEST)
+}
+
+// parseTypeAnnotation parses type and optional array suffixes:
+// type, type[], type[len], type[][], type[][len], ...
+// Caller must have current token on ':'.
+func (p *Parser) parseTypeAnnotation() (string, bool) {
+	if !p.expectPeek(token.IDENT) {
+		return "", false
+	}
+	return p.parseArrayTypeSuffixes(p.curToken.Literal)
+}
+
+func (p *Parser) parseOptionalArrayTypeSuffix(base string) (string, bool) {
+	return p.parseArrayTypeSuffixes(base)
+}
+
+func (p *Parser) parseArrayTypeSuffixes(base string) (string, bool) {
+	out := base
+	for p.peekTokenIs(token.LBRACKET) {
+		p.nextToken() // '['
+		if p.peekTokenIs(token.RBRACKET) {
+			p.nextToken() // ']'
+			out += "[]"
+			continue
+		}
+		if !p.expectPeek(token.INT) {
+			return "", false
+		}
+		size := p.curToken.Literal
+		if !p.expectPeek(token.RBRACKET) {
+			return "", false
+		}
+		out += fmt.Sprintf("[%s]", size)
+	}
+	return out, true
 }

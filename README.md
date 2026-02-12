@@ -48,6 +48,7 @@ Notes:
 - Named functions with typed/default parameters and typed returns
 - Function calls with positional, named, and mixed arguments
 - Function calls before declaration (resolved by codegen)
+- Arrays with typed declarations, literals, indexing, mutation, and `length()`
 
 ## Quick Start
 
@@ -183,6 +184,33 @@ Notes:
 - Function return type can be declared and is validated.
 - Codegen resolves named functions independently of source order (you can call before declaration).
 
+### Arrays
+
+Supported declarations:
+
+```tw
+let a: int[3];
+let b: int[] = {1, 2, 3};
+let grid: int[][2] = {{1}, {2, 3}};
+```
+
+Indexing and mutation:
+
+```tw
+let arr = {1, 2, 3};
+print(arr[1]); // 2
+arr[1] = 99;
+print(arr[1]); // 99
+```
+
+Array length method:
+
+```tw
+print(arr.length()); // 3
+```
+
+Note: in current codegen, `length()` requires a compile-time-known array size (for example `int[3]` or `int[][2]`).
+
 ### Builtins
 
 - `print(expr)` supports: `int`, `bool`, `float`, `string`, `char`, `null`, `type`
@@ -248,6 +276,16 @@ fn add(a: int, b: int = 2) int {
 print(add(3));
 print(add(a = 3, b = 4));
 print(add(3, b = 10));
+
+let arr = {1, 2, 3};
+print(arr.length());
+print(arr[1]);
+arr[1] = 99;
+print(arr[1]);
+
+let grid: int[][2] = {{1}, {2, 3}};
+print(typeof(grid));
+print(grid.length());
 ```
 
 See `test.tw` for a fuller feature walkthrough.

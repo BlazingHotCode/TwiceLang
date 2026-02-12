@@ -11,31 +11,35 @@ import (
 
 // CodeGen holds the state for code generation
 type CodeGen struct {
-	output      strings.Builder
-	funcDefs    strings.Builder
-	labelCount  int
-	exitLabel   string
-	normalExit  string
-	variables   map[string]int // name -> stack offset
-	constVars   map[string]bool
-	varTypes    map[string]valueType
-	varDeclared map[string]valueType
-	varIsNull   map[string]bool
-	intVals     map[string]int64
-	charVals    map[string]rune
-	stringVals  map[string]string
-	floatVals   map[string]float64
-	stringLits  map[string]string
-	stackOffset int // current stack position
-	functions   map[string]*compiledFunction
-	funcByName  map[string]string
-	varFuncs    map[string]string
-	currentFn   string
-	nextAnonFn  int
-	inFunction  bool
-	funcRetLbl  string
-	funcRetType valueType
-	errors      []CodegenError
+	output           strings.Builder
+	funcDefs         strings.Builder
+	labelCount       int
+	exitLabel        string
+	normalExit       string
+	variables        map[string]int // name -> stack offset
+	constVars        map[string]bool
+	varTypes         map[string]valueType
+	varDeclared      map[string]valueType
+	varTypeNames     map[string]string
+	varDeclaredNames map[string]string
+	varIsNull        map[string]bool
+	varArrayLen      map[string]int
+	intVals          map[string]int64
+	charVals         map[string]rune
+	stringVals       map[string]string
+	floatVals        map[string]float64
+	stringLits       map[string]string
+	stackOffset      int // current stack position
+	functions        map[string]*compiledFunction
+	funcByName       map[string]string
+	varFuncs         map[string]string
+	currentFn        string
+	nextAnonFn       int
+	inFunction       bool
+	funcRetLbl       string
+	funcRetType      valueType
+	funcRetTypeName  string
+	errors           []CodegenError
 }
 
 type compiledFunction struct {
@@ -57,6 +61,7 @@ const (
 	typeChar
 	typeNull
 	typeType
+	typeArray
 )
 
 type CodegenError struct {
@@ -67,21 +72,24 @@ type CodegenError struct {
 // New creates a new code generator
 func New() *CodeGen {
 	return &CodeGen{
-		variables:   make(map[string]int),
-		constVars:   make(map[string]bool),
-		varTypes:    make(map[string]valueType),
-		varDeclared: make(map[string]valueType),
-		varIsNull:   make(map[string]bool),
-		intVals:     make(map[string]int64),
-		charVals:    make(map[string]rune),
-		stringVals:  make(map[string]string),
-		floatVals:   make(map[string]float64),
-		stringLits:  make(map[string]string),
-		functions:   make(map[string]*compiledFunction),
-		funcByName:  make(map[string]string),
-		varFuncs:    make(map[string]string),
-		stackOffset: 0,
-		errors:      []CodegenError{},
+		variables:        make(map[string]int),
+		constVars:        make(map[string]bool),
+		varTypes:         make(map[string]valueType),
+		varDeclared:      make(map[string]valueType),
+		varTypeNames:     make(map[string]string),
+		varDeclaredNames: make(map[string]string),
+		varIsNull:        make(map[string]bool),
+		varArrayLen:      make(map[string]int),
+		intVals:          make(map[string]int64),
+		charVals:         make(map[string]rune),
+		stringVals:       make(map[string]string),
+		floatVals:        make(map[string]float64),
+		stringLits:       make(map[string]string),
+		functions:        make(map[string]*compiledFunction),
+		funcByName:       make(map[string]string),
+		varFuncs:         make(map[string]string),
+		stackOffset:      0,
+		errors:           []CodegenError{},
 	}
 }
 
@@ -274,6 +282,8 @@ func (cg *CodeGen) generateStatement(stmt ast.Statement) {
 		cg.generateConst(s)
 	case *ast.AssignStatement:
 		cg.generateAssign(s)
+	case *ast.IndexAssignStatement:
+		cg.generateIndexAssign(s)
 	case *ast.ReturnStatement:
 		cg.generateReturn(s)
 	case *ast.ExpressionStatement:
@@ -298,6 +308,8 @@ func (cg *CodeGen) generateExpression(expr ast.Expression) {
 		cg.generateChar(e)
 	case *ast.NullLiteral:
 		cg.generateNull(e)
+	case *ast.ArrayLiteral:
+		cg.generateArrayLiteral(e)
 	case *ast.Boolean:
 		cg.generateBoolean(e)
 	case *ast.InfixExpression:
@@ -310,6 +322,10 @@ func (cg *CodeGen) generateExpression(expr ast.Expression) {
 		cg.generateIfExpression(e)
 	case *ast.CallExpression:
 		cg.generateCallExpression(e)
+	case *ast.IndexExpression:
+		cg.generateIndexExpression(e)
+	case *ast.MethodCallExpression:
+		cg.generateMethodCallExpression(e)
 	case *ast.FunctionLiteral:
 		cg.addNodeError("function literals are not supported in codegen yet", e)
 		cg.emit("    mov $0, %%rax")
@@ -343,6 +359,106 @@ func (cg *CodeGen) generateChar(cl *ast.CharLiteral) {
 
 func (cg *CodeGen) generateNull(_ *ast.NullLiteral) {
 	cg.emit("    lea null_lit(%%rip), %%rax")
+}
+
+func (cg *CodeGen) generateArrayLiteral(al *ast.ArrayLiteral) {
+	if al == nil || len(al.Elements) == 0 {
+		cg.addNodeError("empty array literals are not supported in codegen", al)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	elemTypeName, ok := cg.inferArrayLiteralTypeName(al)
+	if !ok {
+		cg.addNodeError("array literal elements must have the same type", al)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if elemTypeName == "null" {
+		cg.addNodeError("array literal elements cannot be null", al)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+
+	// Stack grows downward; push elements in reverse so index 0 is at the lowest address.
+	for i := len(al.Elements) - 1; i >= 0; i-- {
+		cg.generateExpression(al.Elements[i])
+		cg.emit("    push %%rax")
+		cg.stackOffset += 8
+	}
+	// Return pointer to first element (current top of stack).
+	cg.emit("    lea -%d(%%rbp), %%rax", cg.stackOffset)
+}
+
+func (cg *CodeGen) generateIndexExpression(ie *ast.IndexExpression) {
+	if ie == nil {
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if id, ok := ie.Left.(*ast.Identifier); ok && cg.varIsNull[id.Value] {
+		cg.addNodeError("cannot index null array", ie)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	leftTypeName := cg.inferExpressionTypeName(ie.Left)
+	elemTypeName, arrLen, ok := peelArrayType(leftTypeName)
+	if !ok {
+		cg.addNodeError("index operator not supported for non-array type", ie)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if cg.inferExpressionType(ie.Index) != typeInt {
+		cg.addNodeError("array index must be int", ie.Index)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if idx, ok := cg.constIntValue(ie.Index); ok && arrLen >= 0 {
+		if idx < 0 || int(idx) >= arrLen {
+			cg.addNodeError(fmt.Sprintf("array index out of bounds: %d", idx), ie)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+	}
+
+	cg.generateExpression(ie.Left) // array pointer
+	cg.emit("    push %%rax")
+	cg.generateExpression(ie.Index)
+	cg.emit("    imul $8, %%rax, %%rax")
+	cg.emit("    pop %%rcx")
+	cg.emit("    mov (%%rcx,%%rax), %%rax")
+
+	_ = elemTypeName
+}
+
+func (cg *CodeGen) generateMethodCallExpression(mce *ast.MethodCallExpression) {
+	if mce == nil || mce.Method == nil {
+		cg.addNodeError("invalid method call", mce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	switch mce.Method.Value {
+	case "length":
+		if len(mce.Arguments) != 0 {
+			cg.addNodeError(fmt.Sprintf("length expects 0 arguments, got=%d", len(mce.Arguments)), mce)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		typeName := cg.inferExpressionTypeName(mce.Object)
+		_, n, ok := peelArrayType(typeName)
+		if !ok {
+			cg.addNodeError("length is only supported on arrays", mce)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		if n < 0 {
+			cg.addNodeError("array length is unknown at compile time", mce)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		cg.emit("    mov $%d, %%rax", n)
+	default:
+		cg.addNodeError("unknown method: "+mce.Method.Value, mce)
+		cg.emit("    mov $0, %%rax")
+	}
 }
 
 func (cg *CodeGen) generateBoolean(b *ast.Boolean) {
@@ -518,6 +634,10 @@ func (cg *CodeGen) generateIdentifier(i *ast.Identifier) {
 		return
 	}
 	if cg.varIsNull[i.Value] {
+		if cg.varTypes[i.Value] == typeArray {
+			cg.emit("    mov $0, %%rax")
+			return
+		}
 		cg.emit("    lea null_lit(%%rip), %%rax")
 		return
 	}
@@ -538,13 +658,14 @@ func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
 	}
 
 	declared := parseTypeName(ls.TypeName)
-	if ls.TypeName != "" && declared == typeUnknown {
+	if ls.TypeName != "" && !isKnownTypeName(ls.TypeName) {
 		cg.addNodeError("unknown type: "+ls.TypeName, ls)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
 	if declared != typeUnknown {
 		cg.varDeclared[ls.Name.Value] = declared
+		cg.varDeclaredNames[ls.Name.Value] = ls.TypeName
 	}
 
 	if ls.Value == nil {
@@ -558,11 +679,17 @@ func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
 	name := ls.Name.Value
 	cg.variables[name] = cg.stackOffset
 	inferred := typeNull
+	inferredName := "null"
 	if ls.Value != nil {
 		inferred = cg.inferExpressionType(ls.Value)
+		inferredName = cg.inferExpressionTypeName(ls.Value)
 	}
-	if declared != typeUnknown && inferred != typeNull && declared != inferred {
-		cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", typeName(inferred), typeName(declared)), ls)
+	targetName := ls.TypeName
+	if targetName == "" {
+		targetName = inferredName
+	}
+	if targetName != "unknown" && inferredName != "unknown" && !isAssignableTypeName(targetName, inferredName) {
+		cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", inferredName, targetName), ls)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
@@ -570,6 +697,12 @@ func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
 		cg.varTypes[name] = declared
 	} else {
 		cg.varTypes[name] = inferred
+	}
+	cg.varTypeNames[name] = targetName
+	if _, n, ok := peelArrayType(targetName); ok {
+		cg.varArrayLen[name] = n
+	} else {
+		delete(cg.varArrayLen, name)
 	}
 	cg.varIsNull[name] = inferred == typeNull
 	cg.trackKnownValue(name, cg.varTypes[name], ls.Value)
@@ -586,13 +719,14 @@ func (cg *CodeGen) generateConst(cs *ast.ConstStatement) {
 	}
 
 	declared := parseTypeName(cs.TypeName)
-	if cs.TypeName != "" && declared == typeUnknown {
+	if cs.TypeName != "" && !isKnownTypeName(cs.TypeName) {
 		cg.addNodeError("unknown type: "+cs.TypeName, cs)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
 	if declared != typeUnknown {
 		cg.varDeclared[cs.Name.Value] = declared
+		cg.varDeclaredNames[cs.Name.Value] = cs.TypeName
 	}
 
 	cg.generateExpression(cs.Value)
@@ -602,8 +736,13 @@ func (cg *CodeGen) generateConst(cs *ast.ConstStatement) {
 	cg.variables[name] = cg.stackOffset
 	cg.constVars[name] = true
 	inferred := cg.inferExpressionType(cs.Value)
-	if declared != typeUnknown && inferred != typeNull && declared != inferred {
-		cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", typeName(inferred), typeName(declared)), cs)
+	inferredName := cg.inferExpressionTypeName(cs.Value)
+	targetName := cs.TypeName
+	if targetName == "" {
+		targetName = inferredName
+	}
+	if targetName != "unknown" && inferredName != "unknown" && !isAssignableTypeName(targetName, inferredName) {
+		cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", inferredName, targetName), cs)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
@@ -611,6 +750,12 @@ func (cg *CodeGen) generateConst(cs *ast.ConstStatement) {
 		cg.varTypes[name] = declared
 	} else {
 		cg.varTypes[name] = inferred
+	}
+	cg.varTypeNames[name] = targetName
+	if _, n, ok := peelArrayType(targetName); ok {
+		cg.varArrayLen[name] = n
+	} else {
+		delete(cg.varArrayLen, name)
 	}
 	cg.varIsNull[name] = inferred == typeNull
 	cg.trackKnownValue(name, cg.varTypes[name], cs.Value)
@@ -635,12 +780,20 @@ func (cg *CodeGen) generateAssign(as *ast.AssignStatement) {
 	cg.generateExpression(as.Value)
 	cg.emit("    mov %%rax, -%d(%%rbp)  # assign %s", offset, as.Name.Value)
 	inferred := cg.inferExpressionType(as.Value)
+	inferredName := cg.inferExpressionTypeName(as.Value)
 	target := cg.varTypes[as.Name.Value]
+	targetName := cg.varTypeNames[as.Name.Value]
 	if target == typeNull && inferred != typeNull {
 		target = inferred
 	}
 	if declared, ok := cg.varDeclared[as.Name.Value]; ok {
 		target = declared
+	}
+	if declaredName, ok := cg.varDeclaredNames[as.Name.Value]; ok {
+		targetName = declaredName
+	}
+	if targetName == "" {
+		targetName = typeName(target)
 	}
 	if inf, ok := as.Value.(*ast.InfixExpression); ok {
 		if inf.Token.Type == token.PLUSPLUS || inf.Token.Type == token.MINUSMIN {
@@ -651,8 +804,8 @@ func (cg *CodeGen) generateAssign(as *ast.AssignStatement) {
 			}
 		}
 	}
-	if inferred != typeNull && target != typeUnknown && target != inferred {
-		cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", typeName(inferred), typeName(target)), as)
+	if inferredName != "unknown" && targetName != "unknown" && !isAssignableTypeName(targetName, inferredName) {
+		cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", inferredName, targetName), as)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
@@ -661,8 +814,81 @@ func (cg *CodeGen) generateAssign(as *ast.AssignStatement) {
 	} else {
 		cg.varTypes[as.Name.Value] = target
 	}
+	cg.varTypeNames[as.Name.Value] = targetName
+	if _, n, ok := peelArrayType(targetName); ok {
+		cg.varArrayLen[as.Name.Value] = n
+	} else {
+		delete(cg.varArrayLen, as.Name.Value)
+	}
 	cg.varIsNull[as.Name.Value] = inferred == typeNull
 	cg.trackKnownValue(as.Name.Value, cg.varTypes[as.Name.Value], as.Value)
+}
+
+func (cg *CodeGen) generateIndexAssign(ias *ast.IndexAssignStatement) {
+	if ias == nil || ias.Left == nil {
+		cg.addNodeError("invalid indexed assignment", ias)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	id, ok := ias.Left.Left.(*ast.Identifier)
+	if !ok {
+		cg.addNodeError("indexed assignment target must be an identifier", ias.Left.Left)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	name := id.Value
+	offset, exists := cg.variables[name]
+	if !exists {
+		cg.addNodeError("identifier not found: "+name, ias)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if cg.constVars[name] {
+		cg.addNodeError("cannot reassign const: "+name, ias)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if cg.varIsNull[name] {
+		cg.addNodeError("cannot index null array", ias)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+
+	arrTypeName := cg.varTypeNames[name]
+	elemTypeName, arrLen, ok := peelArrayType(arrTypeName)
+	if !ok {
+		cg.addNodeError("indexed assignment target is not an array", ias)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if cg.inferExpressionType(ias.Left.Index) != typeInt {
+		cg.addNodeError("array index must be int", ias.Left.Index)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if idx, ok := cg.constIntValue(ias.Left.Index); ok && arrLen >= 0 {
+		if idx < 0 || int(idx) >= arrLen {
+			cg.addNodeError(fmt.Sprintf("array index out of bounds: %d", idx), ias)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+	}
+
+	valueTypeName := cg.inferExpressionTypeName(ias.Value)
+	if valueTypeName != "unknown" && !isAssignableTypeName(elemTypeName, valueTypeName) {
+		cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", valueTypeName, elemTypeName), ias)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+
+	cg.generateExpression(ias.Value)
+	cg.emit("    push %%rax")
+	cg.generateExpression(ias.Left.Index)
+	cg.emit("    imul $8, %%rax, %%rax")
+	cg.emit("    mov -%d(%%rbp), %%rcx  # load %s", offset, name)
+	cg.emit("    pop %%rdx")
+	cg.emit("    mov %%rdx, (%%rcx,%%rax)")
+	cg.emit("    mov %%rdx, %%rax")
 }
 
 // generateReturn handles return statements
@@ -671,8 +897,14 @@ func (cg *CodeGen) generateReturn(rs *ast.ReturnStatement) {
 	if cg.inFunction {
 		if cg.funcRetType != typeUnknown {
 			got := cg.inferExpressionType(rs.ReturnValue)
-			if got != typeNull && got != typeUnknown && got != cg.funcRetType {
+			if got != typeNull && got != typeUnknown && got != cg.funcRetType && cg.funcRetType != typeArray {
 				cg.addNodeError(fmt.Sprintf("cannot return %s from function returning %s", typeName(got), typeName(cg.funcRetType)), rs)
+			}
+		}
+		if cg.funcRetTypeName != "" {
+			gotName := cg.inferExpressionTypeName(rs.ReturnValue)
+			if gotName != "null" && gotName != "unknown" && !isAssignableTypeName(cg.funcRetTypeName, gotName) {
+				cg.addNodeError(fmt.Sprintf("cannot return %s from function returning %s", gotName, cg.funcRetTypeName), rs)
 			}
 		}
 		cg.emit("    jmp %s", cg.funcRetLbl)
@@ -758,8 +990,13 @@ func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 			cg.emit("    mov $0, %%rax")
 			return
 		}
-		t := cg.inferTypeofType(ce.Arguments[0])
-		label := cg.stringLabel(typeName(t) + "\n")
+		typeNameStr := cg.inferExpressionTypeName(ce.Arguments[0])
+		if id, ok := ce.Arguments[0].(*ast.Identifier); ok {
+			if declared, ok := cg.varDeclaredNames[id.Value]; ok && declared != "" {
+				typeNameStr = declared
+			}
+		}
+		label := cg.stringLabel(typeNameStr + "\n")
 		cg.emit("    lea %s(%%rip), %%rax", label)
 	case "int", "float", "string", "char", "bool":
 		cg.generateCastCall(fn.Value, ce)
@@ -843,10 +1080,15 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
 		if cg.varIsNull[e.Value] {
 			return typeNull
 		}
+		if tn, ok := cg.varTypeNames[e.Value]; ok {
+			return parseTypeName(tn)
+		}
 		if t, ok := cg.varTypes[e.Value]; ok {
 			return t
 		}
 		return typeUnknown
+	case *ast.ArrayLiteral:
+		return typeArray
 	case *ast.PrefixExpression:
 		switch e.Operator {
 		case "!":
@@ -943,11 +1185,77 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
 			}
 		}
 		return typeUnknown
+	case *ast.IndexExpression:
+		elemTypeName, _, ok := peelArrayType(cg.inferExpressionTypeName(e.Left))
+		if !ok {
+			return typeUnknown
+		}
+		return parseTypeName(elemTypeName)
+	case *ast.MethodCallExpression:
+		if e.Method != nil && e.Method.Value == "length" {
+			return typeInt
+		}
+		return typeUnknown
 	case *ast.NamedArgument:
 		return cg.inferExpressionType(e.Value)
 	default:
 		return typeUnknown
 	}
+}
+
+func (cg *CodeGen) inferExpressionTypeName(expr ast.Expression) string {
+	switch e := expr.(type) {
+	case *ast.Identifier:
+		if t, ok := cg.varTypeNames[e.Value]; ok && t != "" {
+			return t
+		}
+		return typeName(cg.inferExpressionType(e))
+	case *ast.ArrayLiteral:
+		t, ok := cg.inferArrayLiteralTypeName(e)
+		if !ok {
+			return "unknown"
+		}
+		return t
+	case *ast.IndexExpression:
+		elem, _, ok := peelArrayType(cg.inferExpressionTypeName(e.Left))
+		if !ok {
+			return "unknown"
+		}
+		return elem
+	case *ast.MethodCallExpression:
+		if e.Method != nil && e.Method.Value == "length" {
+			return "int"
+		}
+		return "unknown"
+	case *ast.CallExpression:
+		if fn, ok := e.Function.(*ast.Identifier); ok && (fn.Value == "int" || fn.Value == "float" || fn.Value == "string" || fn.Value == "char" || fn.Value == "bool" || fn.Value == "typeof") {
+			return typeName(cg.inferExpressionType(e))
+		}
+	}
+	return typeName(cg.inferExpressionType(expr))
+}
+
+func (cg *CodeGen) inferArrayLiteralTypeName(al *ast.ArrayLiteral) (string, bool) {
+	if al == nil || len(al.Elements) == 0 {
+		return "", false
+	}
+	elemType := ""
+	for _, el := range al.Elements {
+		cur := cg.inferExpressionTypeName(el)
+		if cur == "null" || cur == "unknown" {
+			return "", false
+		}
+		if elemType == "" {
+			elemType = cur
+			continue
+		}
+		merged, ok := mergeTypeNames(elemType, cur)
+		if !ok {
+			return "", false
+		}
+		elemType = merged
+	}
+	return withArrayDimension(elemType, len(al.Elements)), true
 }
 
 func (cg *CodeGen) inferBlockType(block *ast.BlockStatement) valueType {
@@ -987,7 +1295,10 @@ func (cg *CodeGen) reset() {
 	cg.constVars = make(map[string]bool)
 	cg.varTypes = make(map[string]valueType)
 	cg.varDeclared = make(map[string]valueType)
+	cg.varTypeNames = make(map[string]string)
+	cg.varDeclaredNames = make(map[string]string)
 	cg.varIsNull = make(map[string]bool)
+	cg.varArrayLen = make(map[string]int)
 	cg.intVals = make(map[string]int64)
 	cg.charVals = make(map[string]rune)
 	cg.stringVals = make(map[string]string)
@@ -1002,6 +1313,7 @@ func (cg *CodeGen) reset() {
 	cg.inFunction = false
 	cg.funcRetLbl = ""
 	cg.funcRetType = typeUnknown
+	cg.funcRetTypeName = ""
 	cg.errors = []CodegenError{}
 }
 
@@ -1069,6 +1381,14 @@ func (cg *CodeGen) collectFunctionsInStatement(stmt ast.Statement, scope map[str
 		if s != nil && s.Value != nil {
 			cg.collectFunctionsInExpression(s.Value, scope)
 		}
+	case *ast.IndexAssignStatement:
+		if s != nil && s.Left != nil {
+			cg.collectFunctionsInExpression(s.Left.Left, scope)
+			cg.collectFunctionsInExpression(s.Left.Index, scope)
+		}
+		if s != nil && s.Value != nil {
+			cg.collectFunctionsInExpression(s.Value, scope)
+		}
 	case *ast.ReturnStatement:
 		if s != nil && s.ReturnValue != nil {
 			cg.collectFunctionsInExpression(s.ReturnValue, scope)
@@ -1102,6 +1422,18 @@ func (cg *CodeGen) collectFunctionsInExpression(expr ast.Expression, scope map[s
 		}
 	case *ast.CallExpression:
 		cg.collectFunctionsInExpression(e.Function, scope)
+		for _, arg := range e.Arguments {
+			cg.collectFunctionsInExpression(arg, scope)
+		}
+	case *ast.ArrayLiteral:
+		for _, el := range e.Elements {
+			cg.collectFunctionsInExpression(el, scope)
+		}
+	case *ast.IndexExpression:
+		cg.collectFunctionsInExpression(e.Left, scope)
+		cg.collectFunctionsInExpression(e.Index, scope)
+	case *ast.MethodCallExpression:
+		cg.collectFunctionsInExpression(e.Object, scope)
 		for _, arg := range e.Arguments {
 			cg.collectFunctionsInExpression(arg, scope)
 		}
@@ -1146,40 +1478,48 @@ func (cg *CodeGen) generateFunctionDefinitions() {
 }
 
 type cgState struct {
-	variables   map[string]int
-	constVars   map[string]bool
-	varTypes    map[string]valueType
-	varDeclared map[string]valueType
-	varIsNull   map[string]bool
-	intVals     map[string]int64
-	charVals    map[string]rune
-	stringVals  map[string]string
-	floatVals   map[string]float64
-	varFuncs    map[string]string
-	stackOffset int
-	inFunction  bool
-	funcRetLbl  string
-	funcRetType valueType
-	currentFn   string
+	variables        map[string]int
+	constVars        map[string]bool
+	varTypes         map[string]valueType
+	varDeclared      map[string]valueType
+	varTypeNames     map[string]string
+	varDeclaredNames map[string]string
+	varIsNull        map[string]bool
+	varArrayLen      map[string]int
+	intVals          map[string]int64
+	charVals         map[string]rune
+	stringVals       map[string]string
+	floatVals        map[string]float64
+	varFuncs         map[string]string
+	stackOffset      int
+	inFunction       bool
+	funcRetLbl       string
+	funcRetType      valueType
+	funcRetTypeName  string
+	currentFn        string
 }
 
 func (cg *CodeGen) saveState() cgState {
 	return cgState{
-		variables:   cg.variables,
-		constVars:   cg.constVars,
-		varTypes:    cg.varTypes,
-		varDeclared: cg.varDeclared,
-		varIsNull:   cg.varIsNull,
-		intVals:     cg.intVals,
-		charVals:    cg.charVals,
-		stringVals:  cg.stringVals,
-		floatVals:   cg.floatVals,
-		varFuncs:    cg.varFuncs,
-		stackOffset: cg.stackOffset,
-		inFunction:  cg.inFunction,
-		funcRetLbl:  cg.funcRetLbl,
-		funcRetType: cg.funcRetType,
-		currentFn:   cg.currentFn,
+		variables:        cg.variables,
+		constVars:        cg.constVars,
+		varTypes:         cg.varTypes,
+		varDeclared:      cg.varDeclared,
+		varTypeNames:     cg.varTypeNames,
+		varDeclaredNames: cg.varDeclaredNames,
+		varIsNull:        cg.varIsNull,
+		varArrayLen:      cg.varArrayLen,
+		intVals:          cg.intVals,
+		charVals:         cg.charVals,
+		stringVals:       cg.stringVals,
+		floatVals:        cg.floatVals,
+		varFuncs:         cg.varFuncs,
+		stackOffset:      cg.stackOffset,
+		inFunction:       cg.inFunction,
+		funcRetLbl:       cg.funcRetLbl,
+		funcRetType:      cg.funcRetType,
+		funcRetTypeName:  cg.funcRetTypeName,
+		currentFn:        cg.currentFn,
 	}
 }
 
@@ -1188,7 +1528,10 @@ func (cg *CodeGen) restoreState(st cgState) {
 	cg.constVars = st.constVars
 	cg.varTypes = st.varTypes
 	cg.varDeclared = st.varDeclared
+	cg.varTypeNames = st.varTypeNames
+	cg.varDeclaredNames = st.varDeclaredNames
 	cg.varIsNull = st.varIsNull
+	cg.varArrayLen = st.varArrayLen
 	cg.intVals = st.intVals
 	cg.charVals = st.charVals
 	cg.stringVals = st.stringVals
@@ -1198,6 +1541,7 @@ func (cg *CodeGen) restoreState(st cgState) {
 	cg.inFunction = st.inFunction
 	cg.funcRetLbl = st.funcRetLbl
 	cg.funcRetType = st.funcRetType
+	cg.funcRetTypeName = st.funcRetTypeName
 	cg.currentFn = st.currentFn
 }
 
@@ -1210,7 +1554,10 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 	cg.constVars = make(map[string]bool)
 	cg.varTypes = make(map[string]valueType)
 	cg.varDeclared = make(map[string]valueType)
+	cg.varTypeNames = make(map[string]string)
+	cg.varDeclaredNames = make(map[string]string)
 	cg.varIsNull = make(map[string]bool)
+	cg.varArrayLen = make(map[string]int)
 	cg.intVals = make(map[string]int64)
 	cg.charVals = make(map[string]rune)
 	cg.stringVals = make(map[string]string)
@@ -1220,6 +1567,10 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 	cg.inFunction = true
 	cg.funcRetLbl = cg.newLabel()
 	cg.funcRetType = parseTypeName(fn.Literal.ReturnType)
+	cg.funcRetTypeName = fn.Literal.ReturnType
+	if fn.Literal.ReturnType != "" && !isKnownTypeName(fn.Literal.ReturnType) {
+		cg.addNodeError("unknown type: "+fn.Literal.ReturnType, fn.Literal)
+	}
 	cg.currentFn = fn.Key
 
 	label := fn.Label
@@ -1241,11 +1592,18 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 		cg.stackOffset += 8
 		cg.variables[p.Name.Value] = cg.stackOffset
 		pt := parseTypeName(p.TypeName)
-		if p.TypeName != "" && pt == typeUnknown {
+		if p.TypeName != "" && !isKnownTypeName(p.TypeName) {
 			cg.addNodeError("unknown type: "+p.TypeName, p.Name)
 		}
 		cg.varTypes[p.Name.Value] = pt
 		cg.varDeclared[p.Name.Value] = pt
+		if p.TypeName != "" {
+			cg.varTypeNames[p.Name.Value] = p.TypeName
+			cg.varDeclaredNames[p.Name.Value] = p.TypeName
+			if _, n, ok := peelArrayType(p.TypeName); ok {
+				cg.varArrayLen[p.Name.Value] = n
+			}
+		}
 		cg.varIsNull[p.Name.Value] = false
 	}
 
@@ -1259,6 +1617,7 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 		cg.variables[name] = cg.stackOffset
 		cg.varTypes[name] = typeUnknown
 		cg.varDeclared[name] = typeUnknown
+		cg.varTypeNames[name] = "unknown"
 		cg.varIsNull[name] = false
 	}
 
@@ -1347,7 +1706,17 @@ func (cg *CodeGen) generateUserFunctionCall(fn *compiledFunction, ce *ast.CallEx
 	for i, arg := range finalArgs {
 		want := parseTypeName(fn.Literal.Parameters[i].TypeName)
 		got := cg.inferExpressionType(arg)
-		if want != typeUnknown && got != typeUnknown && got != typeNull && got != want {
+		wantName := fn.Literal.Parameters[i].TypeName
+		if wantName == "" {
+			wantName = typeName(want)
+		}
+		gotName := cg.inferExpressionTypeName(arg)
+		if wantName != "unknown" && gotName != "unknown" && !isAssignableTypeName(wantName, gotName) {
+			cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", gotName, wantName), ce)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		if want != typeUnknown && got != typeUnknown && got != typeNull && got != want && parseTypeName(wantName) != typeArray {
 			cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", typeName(got), typeName(want)), ce)
 			cg.emit("    mov $0, %%rax")
 			return
@@ -1467,6 +1836,14 @@ func collectUsedNamesInStatement(stmt ast.Statement, used map[string]struct{}) {
 		if s != nil && s.Value != nil {
 			collectUsedNamesInExpression(s.Value, used)
 		}
+	case *ast.IndexAssignStatement:
+		if s != nil && s.Left != nil {
+			collectUsedNamesInExpression(s.Left.Left, used)
+			collectUsedNamesInExpression(s.Left.Index, used)
+		}
+		if s != nil && s.Value != nil {
+			collectUsedNamesInExpression(s.Value, used)
+		}
 	case *ast.ReturnStatement:
 		if s != nil && s.ReturnValue != nil {
 			collectUsedNamesInExpression(s.ReturnValue, used)
@@ -1496,6 +1873,18 @@ func collectUsedNamesInExpression(expr ast.Expression, used map[string]struct{})
 		collectUsedNamesInBlock(e.Alternative, used)
 	case *ast.CallExpression:
 		collectUsedNamesInExpression(e.Function, used)
+		for _, arg := range e.Arguments {
+			collectUsedNamesInExpression(arg, used)
+		}
+	case *ast.ArrayLiteral:
+		for _, el := range e.Elements {
+			collectUsedNamesInExpression(el, used)
+		}
+	case *ast.IndexExpression:
+		collectUsedNamesInExpression(e.Left, used)
+		collectUsedNamesInExpression(e.Index, used)
+	case *ast.MethodCallExpression:
+		collectUsedNamesInExpression(e.Object, used)
 		for _, arg := range e.Arguments {
 			collectUsedNamesInExpression(arg, used)
 		}
@@ -1734,6 +2123,9 @@ func isNumericType(t valueType) bool {
 }
 
 func parseTypeName(s string) valueType {
+	if _, _, ok := parseTypeDescriptor(s); ok && strings.Contains(s, "[") {
+		return typeArray
+	}
 	switch s {
 	case "int":
 		return typeInt
@@ -1770,8 +2162,134 @@ func typeName(t valueType) string {
 		return "null"
 	case typeType:
 		return "type"
+	case typeArray:
+		return "array"
 	default:
 		return "unknown"
+	}
+}
+
+func parseTypeDescriptor(t string) (string, []int, bool) {
+	if t == "" {
+		return "", nil, false
+	}
+	open := strings.IndexByte(t, '[')
+	if open == -1 {
+		return t, nil, true
+	}
+	if open == 0 {
+		return "", nil, false
+	}
+	base := t[:open]
+	rest := t[open:]
+	dims := make([]int, 0, 2)
+	for len(rest) > 0 {
+		if rest[0] != '[' {
+			return "", nil, false
+		}
+		closeIdx := strings.IndexByte(rest, ']')
+		if closeIdx == -1 {
+			return "", nil, false
+		}
+		sizeLit := rest[1:closeIdx]
+		if sizeLit == "" {
+			dims = append(dims, -1)
+		} else {
+			var size int
+			if _, err := fmt.Sscanf(sizeLit, "%d", &size); err != nil || size < 0 {
+				return "", nil, false
+			}
+			dims = append(dims, size)
+		}
+		rest = rest[closeIdx+1:]
+	}
+	return base, dims, true
+}
+
+func formatTypeDescriptor(base string, dims []int) string {
+	out := base
+	for _, d := range dims {
+		if d < 0 {
+			out += "[]"
+		} else {
+			out += fmt.Sprintf("[%d]", d)
+		}
+	}
+	return out
+}
+
+func peelArrayType(t string) (string, int, bool) {
+	base, dims, ok := parseTypeDescriptor(t)
+	if !ok || len(dims) == 0 {
+		return "", 0, false
+	}
+	elem := formatTypeDescriptor(base, dims[:len(dims)-1])
+	return elem, dims[len(dims)-1], true
+}
+
+func withArrayDimension(elem string, n int) string {
+	if n < 0 {
+		return elem + "[]"
+	}
+	return fmt.Sprintf("%s[%d]", elem, n)
+}
+
+func mergeTypeNames(a, b string) (string, bool) {
+	if a == b {
+		return a, true
+	}
+	baseA, dimsA, okA := parseTypeDescriptor(a)
+	baseB, dimsB, okB := parseTypeDescriptor(b)
+	if !okA || !okB || baseA != baseB || len(dimsA) != len(dimsB) {
+		return "", false
+	}
+	merged := make([]int, len(dimsA))
+	for i := range dimsA {
+		if dimsA[i] == dimsB[i] {
+			merged[i] = dimsA[i]
+		} else {
+			merged[i] = -1
+		}
+	}
+	return formatTypeDescriptor(baseA, merged), true
+}
+
+func isAssignableTypeName(target, value string) bool {
+	if target == "" || target == "unknown" {
+		return true
+	}
+	if value == "null" {
+		return true
+	}
+	if target == value {
+		return true
+	}
+	tb, td, okT := parseTypeDescriptor(target)
+	vb, vd, okV := parseTypeDescriptor(value)
+	if !okT || !okV || tb != vb || len(td) != len(vd) {
+		return false
+	}
+	for i := range td {
+		if td[i] == -1 {
+			continue
+		}
+		if td[i] != vd[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func isKnownTypeName(t string) bool {
+	base, _, ok := parseTypeDescriptor(t)
+	if !ok {
+		return false
+	}
+	switch base {
+	case "int", "bool", "float", "string", "char", "null", "type":
+		return true
+	default:
+		return false
 	}
 }
 

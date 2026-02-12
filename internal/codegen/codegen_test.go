@@ -242,6 +242,54 @@ func TestCodegenFunctionCallBeforeDeclaration(t *testing.T) {
 	}
 }
 
+func TestCodegenArrayIndexGetAndSet(t *testing.T) {
+	asm, cg := generateAssembly(t, "let arr = {1, 2, 3}; print(arr[1]); arr[1] = 9; print(arr[1]);")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "mov (%rcx,%rax), %rax") {
+		t.Fatalf("expected indexed load sequence, got:\n%s", asm)
+	}
+	if !strings.Contains(asm, "mov %rdx, (%rcx,%rax)") {
+		t.Fatalf("expected indexed store sequence, got:\n%s", asm)
+	}
+}
+
+func TestCodegenArrayTypesAndTypeof(t *testing.T) {
+	asm, cg := generateAssembly(t, "let arr: int[] = {1,2,3}; print(typeof(arr)); let grid: int[][] = {{1}, {2,3}}; print(typeof(grid));")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "int[]\\n") {
+		t.Fatalf("expected typeof(arr) literal int[], got:\n%s", asm)
+	}
+	if !strings.Contains(asm, "int[][]\\n") {
+		t.Fatalf("expected typeof(grid) literal int[][], got:\n%s", asm)
+	}
+}
+
+func TestCodegenArrayTypeValidation(t *testing.T) {
+	_, cg := generateAssembly(t, "let arr: int[2] = {1, 2, 3};")
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen errors for array length mismatch, got none")
+	}
+
+	_, cg = generateAssembly(t, "let arr = {1, 2, 3}; arr[1] = true;")
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen errors for indexed assignment type mismatch, got none")
+	}
+}
+
+func TestCodegenArrayLengthMethod(t *testing.T) {
+	asm, cg := generateAssembly(t, "let arr = {1,2,3}; print(arr.length());")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "mov $3, %rax") {
+		t.Fatalf("expected constant length load in assembly, got:\n%s", asm)
+	}
+}
+
 func generateAssembly(t *testing.T, input string) (string, *CodeGen) {
 	t.Helper()
 	p := parser.New(lexer.New(input))

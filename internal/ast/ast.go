@@ -109,6 +109,26 @@ func (nl *NullLiteral) expressionNode()      {}
 func (nl *NullLiteral) TokenLiteral() string { return nl.Token.Literal }
 func (nl *NullLiteral) String() string       { return "null" }
 
+// ArrayLiteral represents {expr1, expr2, ...}
+type ArrayLiteral struct {
+	Token    token.Token
+	Elements []Expression
+}
+
+func (al *ArrayLiteral) expressionNode()      {}
+func (al *ArrayLiteral) TokenLiteral() string { return al.Token.Literal }
+func (al *ArrayLiteral) String() string {
+	var out bytes.Buffer
+	parts := make([]string, 0, len(al.Elements))
+	for _, el := range al.Elements {
+		parts = append(parts, el.String())
+	}
+	out.WriteString("{")
+	out.WriteString(strings.Join(parts, ", "))
+	out.WriteString("}")
+	return out.String()
+}
+
 // LetStatement represents: let <name> = <value>;
 type LetStatement struct {
 	Token    token.Token // The LET token
@@ -179,6 +199,26 @@ func (as *AssignStatement) String() string {
 	out.WriteString(" = ")
 	if as.Value != nil {
 		out.WriteString(as.Value.String())
+	}
+	out.WriteString(";")
+	return out.String()
+}
+
+// IndexAssignStatement represents: <arrayExpr>[<indexExpr>] = <value>;
+type IndexAssignStatement struct {
+	Token token.Token // The ASSIGN token
+	Left  *IndexExpression
+	Value Expression
+}
+
+func (ias *IndexAssignStatement) statementNode()       {}
+func (ias *IndexAssignStatement) TokenLiteral() string { return ias.Token.Literal }
+func (ias *IndexAssignStatement) String() string {
+	var out bytes.Buffer
+	out.WriteString(ias.Left.String())
+	out.WriteString(" = ")
+	if ias.Value != nil {
+		out.WriteString(ias.Value.String())
 	}
 	out.WriteString(";")
 	return out.String()
@@ -268,6 +308,24 @@ func (ie *InfixExpression) String() string {
 	out.WriteString(" " + ie.Operator + " ")
 	out.WriteString(ie.Right.String())
 	out.WriteString(")")
+	return out.String()
+}
+
+// IndexExpression represents: <left>[<index>]
+type IndexExpression struct {
+	Token token.Token // The '[' token
+	Left  Expression
+	Index Expression
+}
+
+func (ie *IndexExpression) expressionNode()      {}
+func (ie *IndexExpression) TokenLiteral() string { return ie.Token.Literal }
+func (ie *IndexExpression) String() string {
+	var out bytes.Buffer
+	out.WriteString(ie.Left.String())
+	out.WriteString("[")
+	out.WriteString(ie.Index.String())
+	out.WriteString("]")
 	return out.String()
 }
 
@@ -391,6 +449,33 @@ func (ce *CallExpression) String() string {
 		args = append(args, a.String())
 	}
 	out.WriteString(ce.Function.String())
+	out.WriteString("(")
+	out.WriteString(strings.Join(args, ", "))
+	out.WriteString(")")
+	return out.String()
+}
+
+// MethodCallExpression represents <object>.<method>(<arguments>)
+type MethodCallExpression struct {
+	Token     token.Token // The . token
+	Object    Expression
+	Method    *Identifier
+	Arguments []Expression
+}
+
+func (mce *MethodCallExpression) expressionNode()      {}
+func (mce *MethodCallExpression) TokenLiteral() string { return mce.Token.Literal }
+func (mce *MethodCallExpression) String() string {
+	var out bytes.Buffer
+	args := make([]string, 0, len(mce.Arguments))
+	for _, a := range mce.Arguments {
+		args = append(args, a.String())
+	}
+	out.WriteString(mce.Object.String())
+	out.WriteString(".")
+	if mce.Method != nil {
+		out.WriteString(mce.Method.String())
+	}
 	out.WriteString("(")
 	out.WriteString(strings.Join(args, ", "))
 	out.WriteString(")")

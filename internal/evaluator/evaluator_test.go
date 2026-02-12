@@ -295,6 +295,89 @@ func TestStringConcatWithNumericAndCharEval(t *testing.T) {
 	}
 }
 
+func TestArrayLiteralAndTypedArrayEval(t *testing.T) {
+	evaluated := testEval("let arr = {1, 2, 3}; typeof(arr)")
+	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "int[3]" {
+		t.Fatalf("expected type(int[3]), got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+
+	evaluated = testEval("let arr: int[3] = {1, 2, 3}; typeof(arr)")
+	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "int[3]" {
+		t.Fatalf("expected type(int[3]), got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+
+	evaluated = testEval("let arr: int[] = {1, 2, 3}; typeof(arr)")
+	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "int[]" {
+		t.Fatalf("expected type(int[]), got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+
+	evaluated = testEval("let grid: int[][] = {{1}, {2, 3}}; typeof(grid)")
+	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "int[][]" {
+		t.Fatalf("expected type(int[][]), got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+
+	evaluated = testEval("let grid = {{1}, {2, 3}}; typeof(grid)")
+	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "int[][2]" {
+		t.Fatalf("expected type(int[][2]), got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+}
+
+func TestArrayTypeValidationEval(t *testing.T) {
+	evaluated := testEval("let arr: int[2] = {1, 2, 3};")
+	errObj, ok := evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "cannot assign int[3] to int[2]" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+
+	evaluated = testEval("let arr = {1, true};")
+	errObj, ok = evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "array literal elements must have the same type" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+}
+
+func TestArrayIndexGetAndSetEval(t *testing.T) {
+	evaluated := testEval("let arr = {1, 2, 3}; arr[1]")
+	testIntegerObject(t, evaluated, 2)
+
+	evaluated = testEval("let arr = {1, 2, 3}; arr[1] = 99; arr[1]")
+	testIntegerObject(t, evaluated, 99)
+}
+
+func TestArrayIndexErrorsEval(t *testing.T) {
+	evaluated := testEval("let arr = {1, 2, 3}; arr[9]")
+	errObj, ok := evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "array index out of bounds: 9" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+
+	evaluated = testEval("let arr = {1, 2, 3}; arr[1] = true;")
+	errObj, ok = evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "cannot assign bool to int" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+}
+
+func TestArrayLengthMethodEval(t *testing.T) {
+	evaluated := testEval("let arr = {1, 2, 3}; arr.length()")
+	testIntegerObject(t, evaluated, 3)
+
+	evaluated = testEval("let grid = {{1}, {2, 3}}; grid.length()")
+	testIntegerObject(t, evaluated, 2)
+}
+
 func testEval(input string) object.Object {
 	l := lexer.New(input)
 	p := parser.New(l)

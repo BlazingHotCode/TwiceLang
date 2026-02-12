@@ -255,3 +255,69 @@ func TestModuloAndCompoundOperatorTokens(t *testing.T) {
 		}
 	}
 }
+
+func TestArrayTokensAndVarIdentifier(t *testing.T) {
+	input := `let arr: int[3]; var x = 1;`
+	tests := []struct {
+		expectedType    token.TokenType
+		expectedLiteral string
+	}{
+		{token.LET, "let"},
+		{token.IDENT, "arr"},
+		{token.COLON, ":"},
+		{token.IDENT, "int"},
+		{token.LBRACKET, "["},
+		{token.INT, "3"},
+		{token.RBRACKET, "]"},
+		{token.SEMICOLON, ";"},
+		{token.IDENT, "var"},
+		{token.IDENT, "x"},
+		{token.ASSIGN, "="},
+		{token.INT, "1"},
+		{token.SEMICOLON, ";"},
+		{token.EOF, ""},
+	}
+
+	l := New(input)
+	for i, tt := range tests {
+		tok := l.NextToken()
+		if tok.Type != tt.expectedType || tok.Literal != tt.expectedLiteral {
+			t.Fatalf("tests[%d] - got=(%q,%q) want=(%q,%q)", i, tok.Type, tok.Literal, tt.expectedType, tt.expectedLiteral)
+		}
+	}
+}
+
+func TestArrayLengthMethodTokens(t *testing.T) {
+	input := `let arr = {1,2,3}; arr.length();`
+	tests := []struct {
+		expectedType    token.TokenType
+		expectedLiteral string
+	}{
+		{token.LET, "let"},
+		{token.IDENT, "arr"},
+		{token.ASSIGN, "="},
+		{token.LBRACE, "{"},
+		{token.INT, "1"},
+		{token.COMMA, ","},
+		{token.INT, "2"},
+		{token.COMMA, ","},
+		{token.INT, "3"},
+		{token.RBRACE, "}"},
+		{token.SEMICOLON, ";"},
+		{token.IDENT, "arr"},
+		{token.DOT, "."},
+		{token.IDENT, "length"},
+		{token.LPAREN, "("},
+		{token.RPAREN, ")"},
+		{token.SEMICOLON, ";"},
+		{token.EOF, ""},
+	}
+
+	l := New(input)
+	for i, tt := range tests {
+		tok := l.NextToken()
+		if tok.Type != tt.expectedType || tok.Literal != tt.expectedLiteral {
+			t.Fatalf("tests[%d] - got=(%q,%q) want=(%q,%q)", i, tok.Type, tok.Literal, tt.expectedType, tt.expectedLiteral)
+		}
+	}
+}

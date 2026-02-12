@@ -16,6 +16,7 @@ const (
 	STRING_OBJ       ObjectType = "STRING"
 	CHAR_OBJ         ObjectType = "CHAR"
 	BOOLEAN_OBJ      ObjectType = "BOOLEAN"
+	ARRAY_OBJ        ObjectType = "ARRAY"
 	TYPE_OBJ         ObjectType = "TYPE"
 	NULL_OBJ         ObjectType = "NULL"
 	RETURN_VALUE_OBJ ObjectType = "RETURN_VALUE"
@@ -70,6 +71,25 @@ type Boolean struct {
 
 func (b *Boolean) Type() ObjectType { return BOOLEAN_OBJ }
 func (b *Boolean) Inspect() string  { return fmt.Sprintf("%t", b.Value) }
+
+// Array is a fixed-size homogeneous array value.
+type Array struct {
+	ElementType string
+	Elements    []Object
+}
+
+func (a *Array) Type() ObjectType { return ARRAY_OBJ }
+func (a *Array) Inspect() string {
+	var out bytes.Buffer
+	parts := make([]string, 0, len(a.Elements))
+	for _, el := range a.Elements {
+		parts = append(parts, el.Inspect())
+	}
+	out.WriteString("{")
+	out.WriteString(strings.Join(parts, ", "))
+	out.WriteString("}")
+	return out.String()
+}
 
 // TypeValue represents a runtime type descriptor returned by typeof.
 type TypeValue struct {

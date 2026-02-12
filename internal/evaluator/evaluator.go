@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 
 	"twice/internal/ast"
 	"twice/internal/object"
@@ -144,6 +145,8 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			return newError("cannot assign %s to %s", valType, targetType)
 		}
 		env.Assign(node.Name.Value, val)
+	case *ast.IndexAssignStatement:
+		return evalIndexAssignStatement(node, env)
 	case *ast.FunctionStatement:
 		fnObj := Eval(node.Function, env)
 		if isError(fnObj) {
@@ -168,6 +171,9 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 	case *ast.NullLiteral:
 		return NULL
 
+	case *ast.ArrayLiteral:
+		return evalArrayLiteral(node, env)
+
 	case *ast.Boolean:
 		return nativeBoolToBooleanObject(node.Value)
 
@@ -191,6 +197,16 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			return right
 		}
 		return evalInfixExpression(node.Operator, left, right)
+	case *ast.IndexExpression:
+		left := Eval(node.Left, env)
+		if isError(left) {
+			return left
+		}
+		index := Eval(node.Index, env)
+		if isError(index) {
+			return index
+		}
+		return evalIndexExpression(left, index)
 
 	case *ast.IfExpression:
 		return evalIfExpression(node, env)
@@ -233,6 +249,8 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			return argErr
 		}
 		return applyFunction(function, args, namedArgs)
+	case *ast.MethodCallExpression:
+		return evalMethodCallExpression(node, env)
 	}
 
 	return nil
@@ -710,6 +728,124 @@ func functionHasParam(fn *object.Function, name string) bool {
 	return false
 }
 
+func evalIndexExpression(left object.Object, index object.Object) object.Object {
+	arr, ok := left.(*object.Array)
+	if !ok {
+		return newError("index operator not supported: %s", left.Type())
+	}
+	idxObj, ok := index.(*object.Integer)
+	if !ok {
+		return newError("array index must be int, got %s", runtimeTypeName(index))
+	}
+	idx := int(idxObj.Value)
+	if idx < 0 || idx >= len(arr.Elements) {
+		return newError("array index out of bounds: %d", idx)
+	}
+	return arr.Elements[idx]
+}
+
+func evalIndexAssignStatement(node *ast.IndexAssignStatement, env *object.Environment) object.Object {
+	if node.Left == nil {
+		return newError("invalid indexed assignment")
+	}
+
+	ident, ok := node.Left.Left.(*ast.Identifier)
+	if !ok {
+		return newError("indexed assignment target must be an identifier")
+	}
+	if env.IsConst(ident.Value) {
+		return newError("cannot reassign const: %s", ident.Value)
+	}
+
+	targetObj, exists := env.Get(ident.Value)
+	if !exists {
+		return newError("identifier not found: %s", ident.Value)
+	}
+	arr, ok := targetObj.(*object.Array)
+	if !ok {
+		return newError("indexed assignment target is not an array")
+	}
+
+	indexObj := Eval(node.Left.Index, env)
+	if isError(indexObj) {
+		return indexObj
+	}
+	idxInt, ok := indexObj.(*object.Integer)
+	if !ok {
+		return newError("array index must be int, got %s", runtimeTypeName(indexObj))
+	}
+	idx := int(idxInt.Value)
+	if idx < 0 || idx >= len(arr.Elements) {
+		return newError("array index out of bounds: %d", idx)
+	}
+
+	val := Eval(node.Value, env)
+	if isError(val) {
+		return val
+	}
+	valType := runtimeTypeName(val)
+	if !isAssignableToType(arr.ElementType, valType) {
+		return newError("cannot assign %s to %s", valType, arr.ElementType)
+	}
+	arr.Elements[idx] = val
+	return val
+}
+
+func evalMethodCallExpression(node *ast.MethodCallExpression, env *object.Environment) object.Object {
+	if node == nil || node.Method == nil {
+		return newError("invalid method call")
+	}
+	obj := Eval(node.Object, env)
+	if isError(obj) {
+		return obj
+	}
+	switch node.Method.Value {
+	case "length":
+		if len(node.Arguments) != 0 {
+			return newError("length expects 0 arguments, got=%d", len(node.Arguments))
+		}
+		arr, ok := obj.(*object.Array)
+		if !ok {
+			return newError("length is only supported on arrays")
+		}
+		return &object.Integer{Value: int64(len(arr.Elements))}
+	default:
+		return newError("unknown method: %s", node.Method.Value)
+	}
+}
+
+func evalArrayLiteral(lit *ast.ArrayLiteral, env *object.Environment) object.Object {
+	if len(lit.Elements) == 0 {
+		return newError("empty array literals are not supported")
+	}
+
+	elements := make([]object.Object, 0, len(lit.Elements))
+	elemType := ""
+	for _, el := range lit.Elements {
+		val := Eval(el, env)
+		if isError(val) {
+			return val
+		}
+		t := runtimeTypeName(val)
+		if t == "null" {
+			return newError("array literal elements cannot be null")
+		}
+		if elemType == "" {
+			elemType = t
+		} else if merged, ok := mergeTypeNames(elemType, t); ok {
+			elemType = merged
+		} else {
+			return newError("array literal elements must have the same type")
+		}
+		elements = append(elements, val)
+	}
+
+	return &object.Array{
+		ElementType: elemType,
+		Elements:    elements,
+	}
+}
+
 // unwrapReturnValue extracts the actual value from a ReturnValue
 func unwrapReturnValue(obj object.Object) object.Object {
 	if returnValue, ok := obj.(*object.ReturnValue); ok {
@@ -732,7 +868,7 @@ func isError(obj object.Object) bool {
 }
 
 func runtimeTypeName(obj object.Object) string {
-	switch obj.(type) {
+	switch v := obj.(type) {
 	case *object.Integer:
 		return "int"
 	case *object.Float:
@@ -743,6 +879,8 @@ func runtimeTypeName(obj object.Object) string {
 		return "char"
 	case *object.Boolean:
 		return "bool"
+	case *object.Array:
+		return fmt.Sprintf("%s[%d]", v.ElementType, len(v.Elements))
 	case *object.Null:
 		return "null"
 	case *object.TypeValue:
@@ -759,16 +897,116 @@ func isAssignableToType(targetType string, valueType string) bool {
 	if valueType == "null" {
 		return true
 	}
-	return targetType == valueType
+
+	if targetType == valueType {
+		return true
+	}
+
+	targetBase, targetDims, okTarget := parseTypeName(targetType)
+	valueBase, valueDims, okValue := parseTypeName(valueType)
+	if !okTarget || !okValue {
+		return false
+	}
+	if targetBase != valueBase || len(targetDims) != len(valueDims) {
+		return false
+	}
+	for i := range targetDims {
+		if targetDims[i] == -1 {
+			continue
+		}
+		if targetDims[i] != valueDims[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func isKnownTypeName(t string) bool {
-	switch t {
+	base, _, ok := parseTypeName(t)
+	if !ok {
+		return false
+	}
+	switch base {
 	case "int", "float", "string", "char", "bool", "null", "type":
 		return true
 	default:
 		return false
 	}
+}
+
+func mergeTypeNames(a, b string) (string, bool) {
+	if a == b {
+		return a, true
+	}
+	baseA, dimsA, okA := parseTypeName(a)
+	baseB, dimsB, okB := parseTypeName(b)
+	if !okA || !okB {
+		return "", false
+	}
+	if baseA != baseB || len(dimsA) != len(dimsB) {
+		return "", false
+	}
+	merged := make([]int, len(dimsA))
+	for i := range dimsA {
+		if dimsA[i] == dimsB[i] {
+			merged[i] = dimsA[i]
+			continue
+		}
+		merged[i] = -1
+	}
+	return formatTypeName(baseA, merged), true
+}
+
+// parseTypeName parses scalar and array types such as:
+// int, int[], int[3], int[][], int[][2]
+// Returns base type name and per-dimension sizes where -1 means unsized ([]).
+func parseTypeName(t string) (string, []int, bool) {
+	if t == "" {
+		return "", nil, false
+	}
+	open := strings.IndexByte(t, '[')
+	if open == -1 {
+		return t, nil, true
+	}
+	if open == 0 {
+		return "", nil, false
+	}
+	base := t[:open]
+	rest := t[open:]
+	dims := make([]int, 0, 2)
+	for len(rest) > 0 {
+		if rest[0] != '[' {
+			return "", nil, false
+		}
+		closeIdx := strings.IndexByte(rest, ']')
+		if closeIdx == -1 {
+			return "", nil, false
+		}
+		sizeLit := rest[1:closeIdx]
+		if sizeLit == "" {
+			dims = append(dims, -1)
+		} else {
+			size, err := strconv.Atoi(sizeLit)
+			if err != nil || size < 0 {
+				return "", nil, false
+			}
+			dims = append(dims, size)
+		}
+		rest = rest[closeIdx+1:]
+	}
+	return base, dims, true
+}
+
+func formatTypeName(base string, dims []int) string {
+	out := base
+	for _, d := range dims {
+		if d == -1 {
+			out += "[]"
+			continue
+		}
+		out += fmt.Sprintf("[%d]", d)
+	}
+	return out
 }
 
 func castToInt(args []object.Object) object.Object {
