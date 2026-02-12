@@ -122,6 +122,51 @@ func TestCodegenTypeofAndCast(t *testing.T) {
 	}
 }
 
+func TestCodegenStringConcatAndFloatAdd(t *testing.T) {
+	asm, cg := generateAssembly(t, `let greeting = "Hello, " + "Twice!"; let pi = 1.25 + 2.75; print(greeting); print(pi);`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "Hello, Twice!\\n") {
+		t.Fatalf("expected concatenated string literal in assembly, got:\n%s", asm)
+	}
+	if !strings.Contains(asm, "4\\n") {
+		t.Fatalf("expected folded float addition literal in assembly, got:\n%s", asm)
+	}
+}
+
+func TestCodegenCharPlusCharPrintsAsChar(t *testing.T) {
+	asm, cg := generateAssembly(t, "print('A' + 'B');")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "call print_char") {
+		t.Fatalf("expected char+char to be printed via print_char, got:\n%s", asm)
+	}
+}
+
+func TestCodegenMixedNumericOpsAndStringCoercion(t *testing.T) {
+	asm, cg := generateAssembly(t, `print(1 + 2.5); print(6 - 2.5); print(3 * 2.0); print(7 / 2.0); print("x:" + 7); print("x:" + 3.5); print("x:" + 'A');`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	for _, want := range []string{"3.5\\n", "6\\n", "x:7\\n", "x:3.5\\n", "x:A\\n"} {
+		if !strings.Contains(asm, want) {
+			t.Fatalf("expected folded literal %q in assembly, got:\n%s", want, asm)
+		}
+	}
+}
+
+func TestCodegenCharPlusIntPrintsAsChar(t *testing.T) {
+	asm, cg := generateAssembly(t, "print('A' + 1);")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "call print_char") {
+		t.Fatalf("expected char+int to be printed via print_char, got:\n%s", asm)
+	}
+}
+
 func generateAssembly(t *testing.T, input string) (string, *CodeGen) {
 	t.Helper()
 	p := parser.New(lexer.New(input))

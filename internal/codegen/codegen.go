@@ -18,6 +18,10 @@ type CodeGen struct {
 	varTypes    map[string]valueType
 	varDeclared map[string]valueType
 	varIsNull   map[string]bool
+	intVals     map[string]int64
+	charVals    map[string]rune
+	stringVals  map[string]string
+	floatVals   map[string]float64
 	stringLits  map[string]string
 	stackOffset int // current stack position
 	errors      []CodegenError
@@ -49,6 +53,10 @@ func New() *CodeGen {
 		varTypes:    make(map[string]valueType),
 		varDeclared: make(map[string]valueType),
 		varIsNull:   make(map[string]bool),
+		intVals:     make(map[string]int64),
+		charVals:    make(map[string]rune),
+		stringVals:  make(map[string]string),
+		floatVals:   make(map[string]float64),
 		stringLits:  make(map[string]string),
 		stackOffset: 0,
 		errors:      []CodegenError{},
@@ -309,8 +317,58 @@ func (cg *CodeGen) generateBoolean(b *ast.Boolean) {
 func (cg *CodeGen) generateInfix(ie *ast.InfixExpression) {
 	leftType := cg.inferExpressionType(ie.Left)
 	rightType := cg.inferExpressionType(ie.Right)
+
+	if leftType == typeString && ie.Operator == "+" {
+		combined, ok := cg.constStringValue(ie)
+		if !ok {
+			cg.addNodeError("string concatenation in codegen requires compile-time known values", ie)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		label := cg.stringLabel(combined + "\n")
+		cg.emit("    lea %s(%%rip), %%rax", label)
+		return
+	}
+
+	if isNumericType(leftType) && isNumericType(rightType) {
+		v, ok := cg.constFloatValue(ie)
+		if !ok {
+			cg.addNodeError("numeric infix with float result requires compile-time known values in codegen", ie)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		label := cg.stringLabel(fmt.Sprintf("%g\n", v))
+		cg.emit("    lea %s(%%rip), %%rax", label)
+		return
+	}
+
+	if leftType == typeChar && rightType == typeChar {
+		if ie.Operator != "+" {
+			cg.addNodeError("char infix supports only + in codegen", ie)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		// char + char -> char
+		cg.generateExpression(ie.Right)
+		cg.emit("    push %%rax")
+		cg.generateExpression(ie.Left)
+		cg.emit("    pop %%rcx")
+		cg.emit("    add %%rcx, %%rax")
+		return
+	}
+
+	if leftType == typeChar && rightType == typeInt && ie.Operator == "+" {
+		// char + int -> char
+		cg.generateExpression(ie.Right)
+		cg.emit("    push %%rax")
+		cg.generateExpression(ie.Left)
+		cg.emit("    pop %%rcx")
+		cg.emit("    add %%rcx, %%rax")
+		return
+	}
+
 	if leftType != typeInt || rightType != typeInt {
-		cg.addNodeError("infix operations currently support int operands only in codegen", ie)
+		cg.addNodeError("unsupported infix operand types in codegen", ie)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
@@ -432,6 +490,7 @@ func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
 		cg.varTypes[name] = inferred
 	}
 	cg.varIsNull[name] = inferred == typeNull
+	cg.trackKnownValue(name, cg.varTypes[name], ls.Value)
 
 	cg.emit("    push %%rax           # let %s", name)
 }
@@ -472,6 +531,7 @@ func (cg *CodeGen) generateConst(cs *ast.ConstStatement) {
 		cg.varTypes[name] = inferred
 	}
 	cg.varIsNull[name] = inferred == typeNull
+	cg.trackKnownValue(name, cg.varTypes[name], cs.Value)
 
 	cg.emit("    push %%rax           # const %s", name)
 }
@@ -511,6 +571,7 @@ func (cg *CodeGen) generateAssign(as *ast.AssignStatement) {
 		cg.varTypes[as.Name.Value] = target
 	}
 	cg.varIsNull[as.Name.Value] = inferred == typeNull
+	cg.trackKnownValue(as.Name.Value, cg.varTypes[as.Name.Value], as.Value)
 }
 
 // generateReturn handles return statements
@@ -672,8 +733,9 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
 		case "!":
 			return typeBool
 		case "-":
-			if cg.inferExpressionType(e.Right) == typeInt {
-				return typeInt
+			t := cg.inferExpressionType(e.Right)
+			if t == typeInt || t == typeFloat {
+				return t
 			}
 		}
 		return typeUnknown
@@ -681,9 +743,29 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
 		left := cg.inferExpressionType(e.Left)
 		right := cg.inferExpressionType(e.Right)
 		switch e.Operator {
-		case "+", "-", "*", "/":
+		case "+":
 			if left == typeInt && right == typeInt {
 				return typeInt
+			}
+			if isNumericType(left) && isNumericType(right) && (left == typeFloat || right == typeFloat) {
+				return typeFloat
+			}
+			if left == typeString && (right == typeString || right == typeInt || right == typeFloat || right == typeChar) {
+				return typeString
+			}
+			if left == typeChar && right == typeChar {
+				return typeChar
+			}
+			if left == typeChar && right == typeInt {
+				return typeChar
+			}
+			return typeUnknown
+		case "-", "*", "/":
+			if left == typeInt && right == typeInt {
+				return typeInt
+			}
+			if isNumericType(left) && isNumericType(right) {
+				return typeFloat
 			}
 			return typeUnknown
 		case "<", ">", "==", "!=":
@@ -760,6 +842,10 @@ func (cg *CodeGen) reset() {
 	cg.varTypes = make(map[string]valueType)
 	cg.varDeclared = make(map[string]valueType)
 	cg.varIsNull = make(map[string]bool)
+	cg.intVals = make(map[string]int64)
+	cg.charVals = make(map[string]rune)
+	cg.stringVals = make(map[string]string)
+	cg.floatVals = make(map[string]float64)
 	cg.stringLits = make(map[string]string)
 	cg.stackOffset = 0
 	cg.errors = []CodegenError{}
@@ -805,6 +891,186 @@ func (cg *CodeGen) generateCastCall(castName string, ce *ast.CallExpression) {
 
 	cg.addNodeError(fmt.Sprintf("cannot cast %s to %s", typeName(argType), castName), ce)
 	cg.emit("    mov $0, %%rax")
+}
+
+func (cg *CodeGen) constStringValue(expr ast.Expression) (string, bool) {
+	switch e := expr.(type) {
+	case *ast.StringLiteral:
+		return e.Value, true
+	case *ast.Identifier:
+		v, ok := cg.stringVals[e.Value]
+		return v, ok
+	case *ast.InfixExpression:
+		if e.Operator != "+" {
+			return "", false
+		}
+		left, ok := cg.constStringValue(e.Left)
+		if !ok {
+			return "", false
+		}
+		if right, ok := cg.constStringValue(e.Right); ok {
+			return left + right, true
+		}
+		if right, ok := cg.constIntValue(e.Right); ok {
+			return left + fmt.Sprintf("%d", right), true
+		}
+		if right, ok := cg.constFloatValue(e.Right); ok {
+			return left + fmt.Sprintf("%g", right), true
+		}
+		if right, ok := cg.constCharValue(e.Right); ok {
+			return left + string(right), true
+		}
+		return "", false
+	default:
+		return "", false
+	}
+}
+
+func (cg *CodeGen) constFloatValue(expr ast.Expression) (float64, bool) {
+	switch e := expr.(type) {
+	case *ast.IntegerLiteral:
+		return float64(e.Value), true
+	case *ast.FloatLiteral:
+		return e.Value, true
+	case *ast.Identifier:
+		if v, ok := cg.floatVals[e.Value]; ok {
+			return v, true
+		}
+		if v, ok := cg.intVals[e.Value]; ok {
+			return float64(v), true
+		}
+		return 0, false
+	case *ast.PrefixExpression:
+		if e.Operator != "-" {
+			return 0, false
+		}
+		v, ok := cg.constFloatValue(e.Right)
+		if !ok {
+			return 0, false
+		}
+		return -v, true
+	case *ast.InfixExpression:
+		left, ok := cg.constFloatValue(e.Left)
+		if !ok {
+			return 0, false
+		}
+		right, ok := cg.constFloatValue(e.Right)
+		if !ok {
+			return 0, false
+		}
+		switch e.Operator {
+		case "+":
+			return left + right, true
+		case "-":
+			return left - right, true
+		case "*":
+			return left * right, true
+		case "/":
+			return left / right, true
+		default:
+			return 0, false
+		}
+	default:
+		return 0, false
+	}
+}
+
+func (cg *CodeGen) constIntValue(expr ast.Expression) (int64, bool) {
+	switch e := expr.(type) {
+	case *ast.IntegerLiteral:
+		return e.Value, true
+	case *ast.Identifier:
+		v, ok := cg.intVals[e.Value]
+		return v, ok
+	case *ast.PrefixExpression:
+		if e.Operator != "-" {
+			return 0, false
+		}
+		v, ok := cg.constIntValue(e.Right)
+		if !ok {
+			return 0, false
+		}
+		return -v, true
+	case *ast.InfixExpression:
+		left, ok := cg.constIntValue(e.Left)
+		if !ok {
+			return 0, false
+		}
+		right, ok := cg.constIntValue(e.Right)
+		if !ok {
+			return 0, false
+		}
+		switch e.Operator {
+		case "+":
+			return left + right, true
+		case "-":
+			return left - right, true
+		case "*":
+			return left * right, true
+		case "/":
+			return left / right, true
+		default:
+			return 0, false
+		}
+	default:
+		return 0, false
+	}
+}
+
+func (cg *CodeGen) constCharValue(expr ast.Expression) (rune, bool) {
+	switch e := expr.(type) {
+	case *ast.CharLiteral:
+		return e.Value, true
+	case *ast.Identifier:
+		v, ok := cg.charVals[e.Value]
+		return v, ok
+	case *ast.InfixExpression:
+		if e.Operator == "+" {
+			if left, ok := cg.constCharValue(e.Left); ok {
+				if right, ok := cg.constCharValue(e.Right); ok {
+					return left + right, true
+				}
+				if right, ok := cg.constIntValue(e.Right); ok {
+					return left + rune(right), true
+				}
+			}
+		}
+		return 0, false
+	default:
+		return 0, false
+	}
+}
+
+func (cg *CodeGen) trackKnownValue(name string, t valueType, expr ast.Expression) {
+	delete(cg.intVals, name)
+	delete(cg.charVals, name)
+	delete(cg.stringVals, name)
+	delete(cg.floatVals, name)
+	if expr == nil {
+		return
+	}
+	switch t {
+	case typeInt:
+		if v, ok := cg.constIntValue(expr); ok {
+			cg.intVals[name] = v
+		}
+	case typeChar:
+		if v, ok := cg.constCharValue(expr); ok {
+			cg.charVals[name] = v
+		}
+	case typeString:
+		if v, ok := cg.constStringValue(expr); ok {
+			cg.stringVals[name] = v
+		}
+	case typeFloat:
+		if v, ok := cg.constFloatValue(expr); ok {
+			cg.floatVals[name] = v
+		}
+	}
+}
+
+func isNumericType(t valueType) bool {
+	return t == typeInt || t == typeFloat
 }
 
 func parseTypeName(s string) valueType {

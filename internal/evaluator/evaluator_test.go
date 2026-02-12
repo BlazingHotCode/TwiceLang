@@ -154,6 +154,91 @@ func TestTypeofAndCasts(t *testing.T) {
 	}
 }
 
+func TestStringConcatenationEval(t *testing.T) {
+	evaluated := testEval(`"Hello, " + "Twice!"`)
+	got, ok := unwrapReturn(evaluated).(*object.String)
+	if !ok {
+		t.Fatalf("expected string object, got=%T", evaluated)
+	}
+	if got.Value != "Hello, Twice!" {
+		t.Fatalf("wrong string concat value: got=%q", got.Value)
+	}
+}
+
+func TestFloatAdditionEval(t *testing.T) {
+	evaluated := testEval("1.25 + 2.75")
+	got, ok := unwrapReturn(evaluated).(*object.Float)
+	if !ok {
+		t.Fatalf("expected float object, got=%T", evaluated)
+	}
+	if got.Value != 4.0 {
+		t.Fatalf("wrong float addition value: got=%g", got.Value)
+	}
+}
+
+func TestCharPlusCharReturnsCharEval(t *testing.T) {
+	evaluated := testEval("'A' + 'B'")
+	got, ok := unwrapReturn(evaluated).(*object.Char)
+	if !ok {
+		t.Fatalf("expected char object, got=%T", evaluated)
+	}
+	if got.Value != rune('A'+'B') {
+		t.Fatalf("wrong char addition value: got=%q want=%q", got.Value, rune('A'+'B'))
+	}
+}
+
+func TestMixedNumericOpsReturnFloatEval(t *testing.T) {
+	tests := []struct {
+		input string
+		want  float64
+	}{
+		{"1 + 2.5", 3.5},
+		{"5 - 1.5", 3.5},
+		{"3 * 1.5", 4.5},
+		{"7 / 2.0", 3.5},
+		{"1.5 + 2.0", 3.5},
+		{"5.0 - 1.5", 3.5},
+		{"1.5 * 2.0", 3.0},
+		{"7.0 / 2.0", 3.5},
+	}
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		got, ok := unwrapReturn(evaluated).(*object.Float)
+		if !ok {
+			t.Fatalf("expected float object for %q, got=%T", tt.input, evaluated)
+		}
+		if got.Value != tt.want {
+			t.Fatalf("wrong value for %q: got=%g want=%g", tt.input, got.Value, tt.want)
+		}
+	}
+}
+
+func TestCharPlusIntReturnsCharEval(t *testing.T) {
+	evaluated := testEval("'A' + 1")
+	got, ok := unwrapReturn(evaluated).(*object.Char)
+	if !ok {
+		t.Fatalf("expected char object, got=%T", evaluated)
+	}
+	if got.Value != 'B' {
+		t.Fatalf("wrong char+int value: got=%q want=%q", got.Value, 'B')
+	}
+}
+
+func TestStringConcatWithNumericAndCharEval(t *testing.T) {
+	evaluated := testEval(`"x:" + 7`)
+	if got := unwrapReturn(evaluated).Inspect(); got != "x:7" {
+		t.Fatalf("wrong string+int value: got=%q", got)
+	}
+	evaluated = testEval(`"x:" + 3.5`)
+	if got := unwrapReturn(evaluated).Inspect(); got != "x:3.5" {
+		t.Fatalf("wrong string+float value: got=%q", got)
+	}
+	evaluated = testEval(`"x:" + 'A'`)
+	if got := unwrapReturn(evaluated).Inspect(); got != "x:A" {
+		t.Fatalf("wrong string+char value: got=%q", got)
+	}
+}
+
 func testEval(input string) object.Object {
 	l := lexer.New(input)
 	p := parser.New(l)

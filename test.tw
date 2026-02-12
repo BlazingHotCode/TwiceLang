@@ -17,3 +17,27 @@ print(typeof(n));
 print(int(true));
 print(bool(0));
 print(char(66));
+
+// New `+` behavior demos:
+let greeting = "Hello, " + "Twice!";
+print(greeting);
+
+let n_one = 1 + 2.5;
+let n_two = 6 - 2.5;
+let n_three = 3 * 2.0;
+let n_four = 7 / 2.0;
+print(n_one);
+print(n_two);
+print(n_three);
+print(n_four);
+
+// char + char => char (sum of ASCII/codepoint values)
+let char_sum = 'A' + 'B';
+print(char_sum);
+let char_next = 'A' + 1;
+print(char_next);
+
+// string + int/float/char => string
+print("x:" + 7);
+print("x:" + 3.5);
+print("x:" + 'A');

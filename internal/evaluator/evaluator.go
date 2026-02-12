@@ -308,14 +308,113 @@ func evalInfixExpression(operator string, left, right object.Object) object.Obje
 	switch {
 	case left.Type() == object.INTEGER_OBJ && right.Type() == object.INTEGER_OBJ:
 		return evalIntegerInfixExpression(operator, left, right)
+	case isNumeric(left) && isNumeric(right):
+		return evalMixedNumericInfixExpression(operator, left, right)
 	case left.Type() == object.FLOAT_OBJ && right.Type() == object.FLOAT_OBJ:
 		return evalFloatInfixExpression(operator, left, right)
+	case left.Type() == object.STRING_OBJ && right.Type() == object.STRING_OBJ:
+		return evalStringInfixExpression(operator, left, right)
+	case left.Type() == object.STRING_OBJ && operator == "+":
+		return evalStringConcatWithCoercion(left, right)
+	case left.Type() == object.CHAR_OBJ && right.Type() == object.CHAR_OBJ:
+		return evalCharInfixExpression(operator, left, right)
+	case left.Type() == object.CHAR_OBJ && right.Type() == object.INTEGER_OBJ && operator == "+":
+		return &object.Char{Value: left.(*object.Char).Value + rune(right.(*object.Integer).Value)}
 	case operator == "==":
 		return nativeBoolToBooleanObject(left == right) // Pointer comparison works for singletons
 	case operator == "!=":
 		return nativeBoolToBooleanObject(left != right)
 	case left.Type() != right.Type():
 		return newError("type mismatch: %s %s %s", left.Type(), operator, right.Type())
+	default:
+		return newError("unknown operator: %s %s %s", left.Type(), operator, right.Type())
+	}
+}
+
+func isNumeric(obj object.Object) bool {
+	return obj.Type() == object.INTEGER_OBJ || obj.Type() == object.FLOAT_OBJ
+}
+
+func toFloat64(obj object.Object) float64 {
+	switch v := obj.(type) {
+	case *object.Integer:
+		return float64(v.Value)
+	case *object.Float:
+		return v.Value
+	default:
+		return 0
+	}
+}
+
+func evalMixedNumericInfixExpression(operator string, left, right object.Object) object.Object {
+	leftVal := toFloat64(left)
+	rightVal := toFloat64(right)
+
+	switch operator {
+	case "+":
+		return &object.Float{Value: leftVal + rightVal}
+	case "-":
+		return &object.Float{Value: leftVal - rightVal}
+	case "*":
+		return &object.Float{Value: leftVal * rightVal}
+	case "/":
+		return &object.Float{Value: leftVal / rightVal}
+	case "<":
+		return nativeBoolToBooleanObject(leftVal < rightVal)
+	case ">":
+		return nativeBoolToBooleanObject(leftVal > rightVal)
+	case "==":
+		return nativeBoolToBooleanObject(leftVal == rightVal)
+	case "!=":
+		return nativeBoolToBooleanObject(leftVal != rightVal)
+	default:
+		return newError("unknown operator: %s %s %s", left.Type(), operator, right.Type())
+	}
+}
+
+func evalStringConcatWithCoercion(left, right object.Object) object.Object {
+	leftVal := left.(*object.String).Value
+	switch v := right.(type) {
+	case *object.String:
+		return &object.String{Value: leftVal + v.Value}
+	case *object.Integer:
+		return &object.String{Value: leftVal + strconv.FormatInt(v.Value, 10)}
+	case *object.Float:
+		return &object.String{Value: leftVal + strconv.FormatFloat(v.Value, 'g', -1, 64)}
+	case *object.Char:
+		return &object.String{Value: leftVal + string(v.Value)}
+	default:
+		return newError("type mismatch: %s + %s", left.Type(), right.Type())
+	}
+}
+
+func evalCharInfixExpression(operator string, left, right object.Object) object.Object {
+	leftVal := left.(*object.Char).Value
+	rightVal := right.(*object.Char).Value
+
+	switch operator {
+	case "+":
+		return &object.Char{Value: leftVal + rightVal}
+	case "==":
+		return nativeBoolToBooleanObject(leftVal == rightVal)
+	case "!=":
+		return nativeBoolToBooleanObject(leftVal != rightVal)
+	default:
+		return newError("unknown operator: %s %s %s", left.Type(), operator, right.Type())
+	}
+}
+
+func evalStringInfixExpression(operator string, left, right object.Object) object.Object {
+	leftVal := left.(*object.String).Value
+	rightVal := right.(*object.String).Value
+
+	switch operator {
+	case "+":
+		return &object.String{Value: leftVal + rightVal}
+	case "==":
+		return nativeBoolToBooleanObject(leftVal == rightVal)
+	case "!=":
+		return nativeBoolToBooleanObject(leftVal != rightVal)
 	default:
 		return newError("unknown operator: %s %s %s", left.Type(), operator, right.Type())
 	}
