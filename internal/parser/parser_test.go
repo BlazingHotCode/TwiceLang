@@ -146,6 +146,20 @@ func TestNestedArrayTypeParses(t *testing.T) {
 	}
 }
 
+func TestUnionTypeParses(t *testing.T) {
+	p := New(lexer.New("let xs: (int || string)[];"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	stmt, ok := program.Statements[0].(*ast.LetStatement)
+	if !ok {
+		t.Fatalf("expected let statement, got=%T", program.Statements[0])
+	}
+	if stmt.TypeName != "(int||string)[]" {
+		t.Fatalf("expected type annotation (int||string)[], got=%q", stmt.TypeName)
+	}
+}
+
 func TestArrayLiteralParsesInLet(t *testing.T) {
 	p := New(lexer.New("let arr = {1, 2, 3};"))
 	program := p.ParseProgram()

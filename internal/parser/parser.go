@@ -3,6 +3,7 @@ package parser
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"twice/internal/ast"
 	"twice/internal/lexer"
@@ -264,9 +265,9 @@ func (p *Parser) parseFunctionStatement() *ast.FunctionStatement {
 		return nil
 	}
 
-	if p.peekTokenIs(token.IDENT) {
+	if p.peekTokenIs(token.IDENT) || p.peekTokenIs(token.LPAREN) {
 		p.nextToken()
-		returnType, ok := p.parseOptionalArrayTypeSuffix(p.curToken.Literal)
+		returnType, ok := p.parseTypeExpressionFromCurrent()
 		if !ok {
 			return nil
 		}
@@ -742,9 +743,9 @@ func (p *Parser) parseFunctionLiteral() ast.Expression {
 		return nil
 	}
 
-	if p.peekTokenIs(token.IDENT) {
+	if p.peekTokenIs(token.IDENT) || p.peekTokenIs(token.LPAREN) {
 		p.nextToken()
-		returnType, ok := p.parseOptionalArrayTypeSuffix(p.curToken.Literal)
+		returnType, ok := p.parseTypeExpressionFromCurrent()
 		if !ok {
 			return nil
 		}
@@ -900,13 +901,54 @@ func (p *Parser) parseCallArgument() ast.Expression {
 // type, type[], type[len], type[][], type[][len], ...
 // Caller must have current token on ':'.
 func (p *Parser) parseTypeAnnotation() (string, bool) {
-	if !p.expectPeek(token.IDENT) {
-		return "", false
-	}
-	return p.parseArrayTypeSuffixes(p.curToken.Literal)
+	p.nextToken()
+	return p.parseTypeExpressionFromCurrent()
 }
 
 func (p *Parser) parseOptionalArrayTypeSuffix(base string) (string, bool) {
+	return p.parseArrayTypeSuffixes(base)
+}
+
+func (p *Parser) parseTypeExpressionFromCurrent() (string, bool) {
+	left, ok := p.parseTypeTermFromCurrent()
+	if !ok {
+		return "", false
+	}
+	parts := []string{left}
+	for p.peekTokenIs(token.OR) {
+		p.nextToken() // ||
+		p.nextToken() // start of next term
+		right, ok := p.parseTypeTermFromCurrent()
+		if !ok {
+			return "", false
+		}
+		parts = append(parts, right)
+	}
+	if len(parts) == 1 {
+		return parts[0], true
+	}
+	return strings.Join(parts, "||"), true
+}
+
+func (p *Parser) parseTypeTermFromCurrent() (string, bool) {
+	base := ""
+	switch p.curToken.Type {
+	case token.IDENT:
+		base = p.curToken.Literal
+	case token.LPAREN:
+		p.nextToken()
+		inner, ok := p.parseTypeExpressionFromCurrent()
+		if !ok {
+			return "", false
+		}
+		if !p.expectPeek(token.RPAREN) {
+			return "", false
+		}
+		base = "(" + inner + ")"
+	default:
+		p.errors = append(p.errors, fmt.Sprintf("expected type, got %s", p.curToken.Type))
+		return "", false
+	}
 	return p.parseArrayTypeSuffixes(base)
 }
 

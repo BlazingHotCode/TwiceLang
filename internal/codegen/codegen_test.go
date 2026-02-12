@@ -303,6 +303,19 @@ func TestCodegenStringIndexing(t *testing.T) {
 	}
 }
 
+func TestCodegenUnionTypes(t *testing.T) {
+	asm, cg := generateAssembly(t, `let v: int||string = 1; v = "ok"; print(typeof(v)); let xs: (int||string)[] = {1, "two", 3}; print(typeof(xs));`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "int||string\\n") {
+		t.Fatalf("expected typeof(v) literal int||string, got:\n%s", asm)
+	}
+	if !strings.Contains(asm, "(int||string)[]\\n") {
+		t.Fatalf("expected typeof(xs) literal (int||string)[], got:\n%s", asm)
+	}
+}
+
 func generateAssembly(t *testing.T, input string) (string, *CodeGen) {
 	t.Helper()
 	p := parser.New(lexer.New(input))

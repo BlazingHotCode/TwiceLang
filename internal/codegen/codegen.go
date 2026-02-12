@@ -2148,7 +2148,7 @@ func isNumericType(t valueType) bool {
 }
 
 func parseTypeName(s string) valueType {
-	if _, _, ok := parseTypeDescriptor(s); ok && strings.Contains(s, "[") {
+	if _, dims, ok := parseTypeDescriptor(s); ok && len(dims) > 0 {
 		return typeArray
 	}
 	switch s {
@@ -2198,40 +2198,42 @@ func parseTypeDescriptor(t string) (string, []int, bool) {
 	if t == "" {
 		return "", nil, false
 	}
-	open := strings.IndexByte(t, '[')
-	if open == -1 {
-		return t, nil, true
-	}
-	if open == 0 {
-		return "", nil, false
-	}
-	base := t[:open]
-	rest := t[open:]
-	dims := make([]int, 0, 2)
-	for len(rest) > 0 {
-		if rest[0] != '[' {
+	base := t
+	dimsRev := make([]int, 0, 2)
+	for strings.HasSuffix(base, "]") {
+		open := strings.LastIndexByte(base, '[')
+		if open <= 0 {
 			return "", nil, false
 		}
-		closeIdx := strings.IndexByte(rest, ']')
-		if closeIdx == -1 {
-			return "", nil, false
-		}
-		sizeLit := rest[1:closeIdx]
+		sizeLit := base[open+1 : len(base)-1]
 		if sizeLit == "" {
-			dims = append(dims, -1)
+			dimsRev = append(dimsRev, -1)
 		} else {
 			var size int
 			if _, err := fmt.Sscanf(sizeLit, "%d", &size); err != nil || size < 0 {
 				return "", nil, false
 			}
-			dims = append(dims, size)
+			dimsRev = append(dimsRev, size)
 		}
-		rest = rest[closeIdx+1:]
+		base = base[:open]
+	}
+	base = stripOuterParens(base)
+	if base == "" {
+		return "", nil, false
+	}
+	dims := make([]int, len(dimsRev))
+	for i := range dimsRev {
+		dims[len(dimsRev)-1-i] = dimsRev[i]
 	}
 	return base, dims, true
 }
 
 func formatTypeDescriptor(base string, dims []int) string {
+	if len(dims) > 0 {
+		if _, isUnion := splitTopLevelUnion(base); isUnion && !isWrappedInParens(base) {
+			base = "(" + base + ")"
+		}
+	}
 	out := base
 	for _, d := range dims {
 		if d < 0 {
@@ -2254,9 +2256,9 @@ func peelArrayType(t string) (string, int, bool) {
 
 func withArrayDimension(elem string, n int) string {
 	if n < 0 {
-		return elem + "[]"
+		return formatTypeDescriptor(elem, []int{-1})
 	}
-	return fmt.Sprintf("%s[%d]", elem, n)
+	return formatTypeDescriptor(elem, []int{n})
 }
 
 func mergeTypeNames(a, b string) (string, bool) {
@@ -2265,7 +2267,7 @@ func mergeTypeNames(a, b string) (string, bool) {
 	}
 	baseA, dimsA, okA := parseTypeDescriptor(a)
 	baseB, dimsB, okB := parseTypeDescriptor(b)
-	if !okA || !okB || baseA != baseB || len(dimsA) != len(dimsB) {
+	if !okA || !okB || len(dimsA) != len(dimsB) {
 		return "", false
 	}
 	merged := make([]int, len(dimsA))
@@ -2276,7 +2278,11 @@ func mergeTypeNames(a, b string) (string, bool) {
 			merged[i] = -1
 		}
 	}
-	return formatTypeDescriptor(baseA, merged), true
+	mergedBase, ok := mergeUnionBases(baseA, baseB)
+	if !ok {
+		return "", false
+	}
+	return formatTypeDescriptor(mergedBase, merged), true
 }
 
 func isAssignableTypeName(target, value string) bool {
@@ -2289,9 +2295,25 @@ func isAssignableTypeName(target, value string) bool {
 	if target == value {
 		return true
 	}
+	if targetMembers, targetIsUnion := splitTopLevelUnion(target); targetIsUnion {
+		for _, m := range targetMembers {
+			if isAssignableTypeName(m, value) {
+				return true
+			}
+		}
+		return false
+	}
+	if valueMembers, valueIsUnion := splitTopLevelUnion(value); valueIsUnion {
+		for _, m := range valueMembers {
+			if !isAssignableTypeName(target, m) {
+				return false
+			}
+		}
+		return true
+	}
 	tb, td, okT := parseTypeDescriptor(target)
 	vb, vd, okV := parseTypeDescriptor(value)
-	if !okT || !okV || tb != vb || len(td) != len(vd) {
+	if !okT || !okV || len(td) != len(vd) {
 		return false
 	}
 	for i := range td {
@@ -2302,7 +2324,10 @@ func isAssignableTypeName(target, value string) bool {
 			return false
 		}
 	}
-	return true
+	if len(td) == 0 {
+		return tb == vb
+	}
+	return isAssignableTypeName(tb, vb)
 }
 
 func isKnownTypeName(t string) bool {
@@ -2310,12 +2335,118 @@ func isKnownTypeName(t string) bool {
 	if !ok {
 		return false
 	}
+	if parts, isUnion := splitTopLevelUnion(base); isUnion {
+		for _, p := range parts {
+			if !isKnownTypeName(p) {
+				return false
+			}
+		}
+		return true
+	}
 	switch base {
 	case "int", "bool", "float", "string", "char", "null", "type":
 		return true
 	default:
 		return false
 	}
+}
+
+func splitTopLevelUnion(t string) ([]string, bool) {
+	s := stripOuterParens(t)
+	parts := []string{}
+	depth := 0
+	start := 0
+	found := false
+	for i := 0; i < len(s)-1; i++ {
+		switch s[i] {
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		case '|':
+			if depth == 0 && s[i+1] == '|' {
+				part := strings.TrimSpace(s[start:i])
+				if part == "" {
+					return nil, false
+				}
+				parts = append(parts, stripOuterParens(part))
+				start = i + 2
+				found = true
+				i++
+			}
+		}
+	}
+	if !found {
+		return nil, false
+	}
+	last := strings.TrimSpace(s[start:])
+	if last == "" {
+		return nil, false
+	}
+	parts = append(parts, stripOuterParens(last))
+	return parts, true
+}
+
+func stripOuterParens(s string) string {
+	out := strings.TrimSpace(s)
+	for isWrappedInParens(out) {
+		out = strings.TrimSpace(out[1 : len(out)-1])
+	}
+	return out
+}
+
+func isWrappedInParens(s string) bool {
+	if len(s) < 2 || s[0] != '(' || s[len(s)-1] != ')' {
+		return false
+	}
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 && i != len(s)-1 {
+				return false
+			}
+		}
+		if depth < 0 {
+			return false
+		}
+	}
+	return depth == 0
+}
+
+func mergeUnionBases(a, b string) (string, bool) {
+	listA := []string{stripOuterParens(a)}
+	if parts, ok := splitTopLevelUnion(a); ok {
+		listA = parts
+	}
+	listB := []string{stripOuterParens(b)}
+	if parts, ok := splitTopLevelUnion(b); ok {
+		listB = parts
+	}
+	merged := make([]string, 0, len(listA)+len(listB))
+	seen := map[string]struct{}{}
+	for _, x := range append(listA, listB...) {
+		if x == "" {
+			return "", false
+		}
+		if _, ok := seen[x]; ok {
+			continue
+		}
+		seen[x] = struct{}{}
+		merged = append(merged, x)
+	}
+	if len(merged) == 0 {
+		return "", false
+	}
+	if len(merged) == 1 {
+		return merged[0], true
+	}
+	return strings.Join(merged, "||"), true
 }
 
 func (cg *CodeGen) stringLabel(lit string) string {

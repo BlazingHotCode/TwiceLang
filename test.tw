@@ -116,3 +116,14 @@ print(typeof(fixed));
 let grid: int[][2] = {{1}, {2, 3}};
 print(typeof(grid));
 print(grid.length());
+
+// union types
+let value: int||string = 1;
+print(typeof(value));
+value = "twice";
+print(typeof(value));
+
+// array of union values
+let mixed = {1, "two", 3};
+print(typeof(mixed));   // (int||string)[3]
+print(mixed.length());  // 3

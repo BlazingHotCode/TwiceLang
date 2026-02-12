@@ -50,6 +50,7 @@ Notes:
 - Function calls with positional, named, and mixed arguments
 - Function calls before declaration (resolved by codegen)
 - Arrays with typed declarations, literals, indexing, mutation, and `length()`
+- Union types (`type1||type2`) including array forms like `(int||string)[]`
 
 ## Quick Start
 
@@ -99,6 +100,15 @@ let maybe: int;      // initialized to null
 
 const limit = 100;
 const label: string = "prod";
+```
+
+Union type declarations are supported:
+
+```tw
+let value: int||string = 1;
+value = "twice";
+
+let mixed: (int||string)[] = {1, "two", 3};
 ```
 
 ### Assignment
@@ -209,6 +219,9 @@ let arr = {1, 2, 3};
 print(arr[1]); // 2
 arr[1] = 99;
 print(arr[1]); // 99
+
+let mixed = {1, "two", 3}; // inferred as (int||string)[3]
+print(typeof(mixed));
 ```
 
 Array length method:

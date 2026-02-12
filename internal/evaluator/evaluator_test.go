@@ -333,12 +333,13 @@ func TestArrayTypeValidationEval(t *testing.T) {
 	}
 
 	evaluated = testEval("let arr = {1, true};")
-	errObj, ok = evaluated.(*object.Error)
-	if !ok {
-		t.Fatalf("expected error object, got=%T", evaluated)
+	if evaluated != nil {
+		t.Fatalf("expected nil result for declaration statement, got=%T", evaluated)
 	}
-	if errObj.Message != "array literal elements must have the same type" {
-		t.Fatalf("wrong error message: %q", errObj.Message)
+
+	evaluated = testEval("let arr = {1, true}; typeof(arr)")
+	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "(int||bool)[2]" {
+		t.Fatalf("expected type((int||bool)[2]), got=%s (%s)", evaluated.Type(), evaluated.Inspect())
 	}
 }
 
@@ -415,6 +416,23 @@ func TestStringIndexingErrorsEval(t *testing.T) {
 	}
 	if errObj.Message != "index must be int, got bool" {
 		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+}
+
+func TestUnionTypesEval(t *testing.T) {
+	evaluated := testEval(`let v: int||string = 1; v = "ok"; v`)
+	if evaluated.Type() != object.STRING_OBJ || evaluated.Inspect() != "ok" {
+		t.Fatalf("expected string value ok, got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+
+	evaluated = testEval(`let v: int||string = 1; typeof(v)`)
+	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "int||string" {
+		t.Fatalf("expected type(int||string), got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+
+	evaluated = testEval(`let xs: (int||string)[] = {1, "two", 3}; typeof(xs)`)
+	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "(int||string)[]" {
+		t.Fatalf("expected type((int||string)[]), got=%s (%s)", evaluated.Type(), evaluated.Inspect())
 	}
 }
 
