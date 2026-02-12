@@ -1,12 +1,13 @@
 # twice
 
 A small language/compiler project built twice:
+
 - Phase 1 in Go (current implementation)
-- Phase 2 in OCaml (in progress)
 
 ## Current Status (Go)
 
 The Go pipeline is wired end-to-end:
+
 - Lexer
 - Pratt parser
 - AST
