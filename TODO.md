@@ -30,11 +30,3 @@
 
 - Fix `-run` execution path handling to support absolute and relative `-o` values.
 - Avoid assuming outputs are always run as `./<name>`.
-
-## 6. Test Coverage
-
-- Add lexer unit tests.
-- Add parser unit tests (including semicolon + implicit return behavior).
-- Add evaluator tests for existing expression/control-flow/function behavior.
-- Add codegen tests (assembly snapshots and/or executable behavior tests).
-- Add CLI integration smoke tests.
