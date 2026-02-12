@@ -9,6 +9,7 @@
 - Add class declarations and object instantiation.
 - Add access modifiers (`public` / `private`) for fields and methods.
 - Add `static` fields and functions on classes.
+- Add `main` function for what to run.
 - Add instance methods and method dispatch on objects.
 - Add constructors and initialization hooks.
 - Add inheritance (or another clear composition model) with overriding rules.
