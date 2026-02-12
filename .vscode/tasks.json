@@ -1,0 +1,45 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build twice compiler",
+            "type": "shell",
+            "command": "cd ${workspaceFolder} && go build -o twice cmd/twice/main.go && echo 'Compiler built successfully'",
+            "group": "build",
+            "problemMatcher": ["$go"]
+        },
+        {
+            "label": "Compile current file",
+            "type": "shell",
+            "command": "cd ${workspaceFolder} && ./twice -o '${fileBasenameNoExtension}_bin' '${file}' && echo 'Compiled to ${fileBasenameNoExtension}_bin'",
+            "group": "build",
+            "dependsOn": "Build twice compiler",
+            "problemMatcher": []
+        },
+        {
+            "label": "Compile and run current file",
+            "type": "shell",
+            "command": "cd ${workspaceFolder} && ./twice -o '${fileBasenameNoExtension}_bin' '${file}' && echo '=== Running ===' && ./'${fileBasenameNoExtension}_bin'; echo \"Exit code: $?\"",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "dependsOn": "Build twice compiler",
+            "problemMatcher": []
+        },
+        {
+            "label": "Run compiled binary",
+            "type": "shell",
+            "command": "cd ${workspaceFolder} && ./'${fileBasenameNoExtension}_bin' && echo \"Exit code: $?\"",
+            "group": "test",
+            "problemMatcher": []
+        },
+        {
+            "label": "Clean build artifacts",
+            "type": "shell",
+            "command": "cd ${workspaceFolder} && rm -f twice *_bin && echo 'Cleaned'",
+            "group": "none",
+            "problemMatcher": []
+        }
+    ]
+}

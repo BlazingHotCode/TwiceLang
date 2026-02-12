@@ -2,27 +2,21 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Run twice",
+            "name": "Compile and debug current file",
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "${workspaceFolder}/cmd/twice",
+            "program": "${workspaceFolder}/cmd/twice/main.go",
+            "args": ["${file}", "-o", "${fileBasenameNoExtension}_bin"],
             "console": "integratedTerminal"
         },
         {
-            "name": "Run current file",
+            "name": "Compile, run and debug current file",
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "${file}",
-            "console": "integratedTerminal"
-        },
-        {
-            "name": "Test current package",
-            "type": "go",
-            "request": "launch",
-            "mode": "test",
-            "program": "${fileDirname}",
+            "program": "${workspaceFolder}/cmd/twice/main.go",
+            "args": ["${file}", "-o", "${fileBasenameNoExtension}_bin", "-run"],
             "console": "integratedTerminal"
         }
     ]

@@ -1,9 +1,9 @@
 {
-    "gopls": {
-        "formatting.gofumpt": true
-    },
-    "[go]": {
-        "editor.formatOnSave": true,
-        "editor.defaultFormatter": "golang.go"
-    }
+    "keybindings": [
+        {
+            "key": "ctrl+shift+b",
+            "command": "workbench.action.tasks.runTask",
+            "args": "Compile and run current file"
+        }
+    ]
 }
