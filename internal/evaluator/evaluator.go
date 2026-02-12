@@ -323,6 +323,9 @@ func evalInfixExpression(operator string, left, right object.Object) object.Obje
 
 	switch {
 	case left.Type() == object.INTEGER_OBJ && right.Type() == object.INTEGER_OBJ:
+		if operator == "&" || operator == "|" || operator == "^" || operator == "<<" || operator == ">>" {
+			return evalIntegerBitwiseInfixExpression(operator, left, right)
+		}
 		return evalIntegerInfixExpression(operator, left, right)
 	case isNumeric(left) && isNumeric(right):
 		return evalMixedNumericInfixExpression(operator, left, right)
@@ -342,6 +345,26 @@ func evalInfixExpression(operator string, left, right object.Object) object.Obje
 		return nativeBoolToBooleanObject(left != right)
 	case left.Type() != right.Type():
 		return newError("type mismatch: %s %s %s", left.Type(), operator, right.Type())
+	default:
+		return newError("unknown operator: %s %s %s", left.Type(), operator, right.Type())
+	}
+}
+
+func evalIntegerBitwiseInfixExpression(operator string, left, right object.Object) object.Object {
+	leftVal := left.(*object.Integer).Value
+	rightVal := right.(*object.Integer).Value
+
+	switch operator {
+	case "&":
+		return &object.Integer{Value: leftVal & rightVal}
+	case "|":
+		return &object.Integer{Value: leftVal | rightVal}
+	case "^":
+		return &object.Integer{Value: leftVal ^ rightVal}
+	case "<<":
+		return &object.Integer{Value: leftVal << uint(rightVal)}
+	case ">>":
+		return &object.Integer{Value: leftVal >> uint(rightVal)}
 	default:
 		return newError("unknown operator: %s %s %s", left.Type(), operator, right.Type())
 	}

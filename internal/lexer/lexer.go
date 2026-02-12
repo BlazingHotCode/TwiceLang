@@ -82,7 +82,7 @@ func (l *Lexer) NextToken() token.Token {
 			literal := string(ch) + string(l.ch)
 			tok = token.Token{Type: token.AND, Literal: literal}
 		} else {
-			tok = newToken(token.ILLEGAL, l.ch)
+			tok = newToken(token.BIT_AND, l.ch)
 		}
 	case '|':
 		if l.peekChar() == '|' {
@@ -91,7 +91,7 @@ func (l *Lexer) NextToken() token.Token {
 			literal := string(ch) + string(l.ch)
 			tok = token.Token{Type: token.OR, Literal: literal}
 		} else {
-			tok = newToken(token.ILLEGAL, l.ch)
+			tok = newToken(token.BIT_OR, l.ch)
 		}
 	case '^':
 		if l.peekChar() == '^' {
@@ -100,16 +100,30 @@ func (l *Lexer) NextToken() token.Token {
 			literal := string(ch) + string(l.ch)
 			tok = token.Token{Type: token.XOR, Literal: literal}
 		} else {
-			tok = newToken(token.ILLEGAL, l.ch)
+			tok = newToken(token.BIT_XOR, l.ch)
 		}
 	case '/':
 		tok = newToken(token.SLASH, l.ch)
 	case '*':
 		tok = newToken(token.ASTERISK, l.ch)
 	case '<':
-		tok = newToken(token.LT, l.ch)
+		if l.peekChar() == '<' {
+			ch := l.ch
+			l.readChar()
+			literal := string(ch) + string(l.ch)
+			tok = token.Token{Type: token.SHL, Literal: literal}
+		} else {
+			tok = newToken(token.LT, l.ch)
+		}
 	case '>':
-		tok = newToken(token.GT, l.ch)
+		if l.peekChar() == '>' {
+			ch := l.ch
+			l.readChar()
+			literal := string(ch) + string(l.ch)
+			tok = token.Token{Type: token.SHR, Literal: literal}
+		} else {
+			tok = newToken(token.GT, l.ch)
+		}
 	case ';':
 		tok = newToken(token.SEMICOLON, l.ch)
 	case ':':

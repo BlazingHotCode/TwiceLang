@@ -419,6 +419,18 @@ func (cg *CodeGen) generateInfix(ie *ast.InfixExpression) {
 	case "/":
 		cg.emit("    cqo                 # sign extend rax to rdx:rax")
 		cg.emit("    idiv %%rcx          # rax = rdx:rax / rcx")
+	case "&":
+		cg.emit("    and %%rcx, %%rax")
+	case "|":
+		cg.emit("    or %%rcx, %%rax")
+	case "^":
+		cg.emit("    xor %%rcx, %%rax")
+	case "<<":
+		cg.emit("    mov %%ecx, %%ecx")
+		cg.emit("    shl %%cl, %%rax")
+	case ">>":
+		cg.emit("    mov %%ecx, %%ecx")
+		cg.emit("    sar %%cl, %%rax")
 	case "<":
 		cg.emit("    cmp %%rcx, %%rax")
 		cg.emit("    setl %%al           # set al to 1 if less, 0 otherwise")
@@ -796,6 +808,11 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
 			}
 			if isNumericType(left) && isNumericType(right) {
 				return typeFloat
+			}
+			return typeUnknown
+		case "&", "|", "^", "<<", ">>":
+			if left == typeInt && right == typeInt {
+				return typeInt
 			}
 			return typeUnknown
 		case "<", ">", "==", "!=":

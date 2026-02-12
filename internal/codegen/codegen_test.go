@@ -177,6 +177,21 @@ func TestCodegenBooleanOperators(t *testing.T) {
 	}
 }
 
+func TestCodegenBitwiseOperators(t *testing.T) {
+	asm, cg := generateAssembly(t, "print(5 & 3); print(5 | 2); print(5 ^ 1); print(5 << 1); print(5 >> 1);")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if strings.Count(asm, "call print_int") < 5 {
+		t.Fatalf("expected bitwise operator results to print via print_int, got:\n%s", asm)
+	}
+	for _, instr := range []string{"and %rcx, %rax", "or %rcx, %rax", "xor %rcx, %rax", "shl %cl, %rax", "sar %cl, %rax"} {
+		if !strings.Contains(asm, instr) {
+			t.Fatalf("expected instruction %q in assembly, got:\n%s", instr, asm)
+		}
+	}
+}
+
 func generateAssembly(t *testing.T, input string) (string, *CodeGen) {
 	t.Helper()
 	p := parser.New(lexer.New(input))

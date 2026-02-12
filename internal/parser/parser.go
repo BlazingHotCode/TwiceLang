@@ -17,8 +17,12 @@ const (
 	LOGICOR     // ||
 	LOGICXOR    // ^^
 	LOGICAND    // &&
+	BITOR       // |
+	BITXOR      // ^
+	BITAND      // &
 	EQUALS      // ==
 	LESSGREATER // > or <
+	SHIFT       // << or >>
 	SUM         // +
 	PRODUCT     // *
 	PREFIX      // -X or !X
@@ -30,10 +34,15 @@ var precedences = map[token.TokenType]int{
 	token.OR:       LOGICOR,
 	token.XOR:      LOGICXOR,
 	token.AND:      LOGICAND,
+	token.BIT_OR:   BITOR,
+	token.BIT_XOR:  BITXOR,
+	token.BIT_AND:  BITAND,
 	token.EQ:       EQUALS,
 	token.NOT_EQ:   EQUALS,
 	token.LT:       LESSGREATER,
 	token.GT:       LESSGREATER,
+	token.SHL:      SHIFT,
+	token.SHR:      SHIFT,
 	token.PLUS:     SUM,
 	token.MINUS:    SUM,
 	token.SLASH:    PRODUCT,
@@ -100,8 +109,13 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerInfix(token.AND, p.parseInfixExpression)
 	p.registerInfix(token.OR, p.parseInfixExpression)
 	p.registerInfix(token.XOR, p.parseInfixExpression)
+	p.registerInfix(token.BIT_AND, p.parseInfixExpression)
+	p.registerInfix(token.BIT_OR, p.parseInfixExpression)
+	p.registerInfix(token.BIT_XOR, p.parseInfixExpression)
 	p.registerInfix(token.LT, p.parseInfixExpression)
 	p.registerInfix(token.GT, p.parseInfixExpression)
+	p.registerInfix(token.SHL, p.parseInfixExpression)
+	p.registerInfix(token.SHR, p.parseInfixExpression)
 	p.registerInfix(token.LPAREN, p.parseCallExpression)
 
 	// Read two tokens to set curToken and peekToken

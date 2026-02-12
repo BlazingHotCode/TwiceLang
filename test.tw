@@ -46,3 +46,10 @@ print("x:" + 'A');
 print(true && false);
 print(true || false);
 print(true ^^ false);
+
+// bitwise operators: &, |, ^, <<, >>
+print(5 & 3);
+print(5 | 2);
+print(5 ^ 1);
+print(5 << 1);
+print(5 >> 1);

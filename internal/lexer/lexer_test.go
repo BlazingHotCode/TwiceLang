@@ -17,6 +17,11 @@ if (five < ten) { return true; } else { return false; }
 true && false;
 true || false;
 true ^^ false;
+5 & 3;
+5 | 2;
+5 ^ 1;
+5 << 1;
+5 >> 1;
 `
 
 	tests := []struct {
@@ -74,6 +79,26 @@ true ^^ false;
 		{token.TRUE, "true"},
 		{token.XOR, "^^"},
 		{token.FALSE, "false"},
+		{token.SEMICOLON, ";"},
+		{token.INT, "5"},
+		{token.BIT_AND, "&"},
+		{token.INT, "3"},
+		{token.SEMICOLON, ";"},
+		{token.INT, "5"},
+		{token.BIT_OR, "|"},
+		{token.INT, "2"},
+		{token.SEMICOLON, ";"},
+		{token.INT, "5"},
+		{token.BIT_XOR, "^"},
+		{token.INT, "1"},
+		{token.SEMICOLON, ";"},
+		{token.INT, "5"},
+		{token.SHL, "<<"},
+		{token.INT, "1"},
+		{token.SEMICOLON, ";"},
+		{token.INT, "5"},
+		{token.SHR, ">>"},
+		{token.INT, "1"},
 		{token.SEMICOLON, ";"},
 		{token.EOF, ""},
 	}

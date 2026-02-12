@@ -38,6 +38,11 @@ const (
 	AND      TokenType = "&&"
 	OR       TokenType = "||"
 	XOR      TokenType = "^^"
+	BIT_AND  TokenType = "&"
+	BIT_OR   TokenType = "|"
+	BIT_XOR  TokenType = "^"
+	SHL      TokenType = "<<"
+	SHR      TokenType = ">>"
 
 	// Delimiters
 	COMMA     TokenType = ","

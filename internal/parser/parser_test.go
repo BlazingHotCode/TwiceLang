@@ -148,6 +148,38 @@ func TestBooleanOperatorPrecedenceParsing(t *testing.T) {
 	}
 }
 
+func TestBitwiseOperatorPrecedenceParsing(t *testing.T) {
+	p := New(lexer.New("1 | 2 & 3 ^ 4 << 1;"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+	if !ok {
+		t.Fatalf("expected expression statement, got=%T", program.Statements[0])
+	}
+
+	// 1 | ((2 & 3) ^ (4 << 1))
+	top, ok := stmt.Expression.(*ast.InfixExpression)
+	if !ok || top.Operator != "|" {
+		t.Fatalf("expected top-level | infix expression, got=%T (%v)", stmt.Expression, stmt.Expression)
+	}
+	xorNode, ok := top.Right.(*ast.InfixExpression)
+	if !ok || xorNode.Operator != "^" {
+		t.Fatalf("expected right side to be ^ infix expression, got=%T (%v)", top.Right, top.Right)
+	}
+	andNode, ok := xorNode.Left.(*ast.InfixExpression)
+	if !ok || andNode.Operator != "&" {
+		t.Fatalf("expected nested & infix expression, got=%T (%v)", xorNode.Left, xorNode.Left)
+	}
+	shiftNode, ok := xorNode.Right.(*ast.InfixExpression)
+	if !ok || shiftNode.Operator != "<<" {
+		t.Fatalf("expected nested << infix expression, got=%T (%v)", xorNode.Right, xorNode.Right)
+	}
+}
+
 func checkNoParserErrors(t *testing.T, p *Parser) {
 	t.Helper()
 	if len(p.Errors()) == 0 {
