@@ -32,7 +32,7 @@ print(n3);
 print(n4);
 
 // char + char => char (sum of ASCII/codepoint values)
-let char_sum = 'A' + 'B';
+let char_sum = 'A' + '1';
 print(char_sum);
 let char_next = 'A' + 1;
 print(char_next);
