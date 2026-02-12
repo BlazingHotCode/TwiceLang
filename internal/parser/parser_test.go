@@ -76,6 +76,22 @@ func TestAssignStatementParses(t *testing.T) {
 	}
 }
 
+func TestCommentsIgnoredByParser(t *testing.T) {
+	input := `
+let x = 1; // inline comment
+/* block
+comment */
+x = x + 1;
+`
+	p := New(lexer.New(input))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	if len(program.Statements) != 2 {
+		t.Fatalf("expected 2 statements, got=%d", len(program.Statements))
+	}
+}
+
 func checkNoParserErrors(t *testing.T, p *Parser) {
 	t.Helper()
 	if len(p.Errors()) == 0 {

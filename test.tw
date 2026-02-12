@@ -1,6 +1,10 @@
-let x = 1;
+// single-line comment
+let x = 1; // end-line comment
+
+/* multi-line
+   block comment */
 x = x + 4;
-print(x);
+
+print(x); // prints 5
 print(true);
-print(false);
-print(y);
+print(false); /* block comment at end of line */

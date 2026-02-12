@@ -47,7 +47,7 @@ func (l *Lexer) peekChar() byte {
 func (l *Lexer) NextToken() token.Token {
 	var tok token.Token
 
-	l.skipWhitespace() // Ignore spaces, tabs, newlines
+	l.skipIgnored() // Ignore spaces/newlines/comments
 
 	// Check current character and decide what token to make
 	switch l.ch {
@@ -121,10 +121,57 @@ func (l *Lexer) NextToken() token.Token {
 	return tok
 }
 
+// skipIgnored skips whitespace and comments.
+func (l *Lexer) skipIgnored() {
+	for {
+		l.skipWhitespace()
+
+		// Line comment: // ...
+		if l.ch == '/' && l.peekChar() == '/' {
+			l.skipLineComment()
+			continue
+		}
+
+		// Block comment: /* ... */
+		if l.ch == '/' && l.peekChar() == '*' {
+			l.skipBlockComment()
+			continue
+		}
+
+		return
+	}
+}
+
 // skipWhitespace ignores spaces, tabs, newlines, carriage returns
 // These have no meaning in our language except to separate tokens
 func (l *Lexer) skipWhitespace() {
 	for l.ch == ' ' || l.ch == '\t' || l.ch == '\n' || l.ch == '\r' {
+		l.readChar()
+	}
+}
+
+func (l *Lexer) skipLineComment() {
+	// Skip leading "//"
+	l.readChar()
+	l.readChar()
+	for l.ch != '\n' && l.ch != '\r' && l.ch != 0 {
+		l.readChar()
+	}
+}
+
+func (l *Lexer) skipBlockComment() {
+	// Skip leading "/*"
+	l.readChar()
+	l.readChar()
+	for {
+		if l.ch == 0 {
+			return
+		}
+		if l.ch == '*' && l.peekChar() == '/' {
+			l.readChar()
+			l.readChar()
+			return
+		}
 		l.readChar()
 	}
 }

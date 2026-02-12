@@ -19,9 +19,3 @@
 - Infer variable type automatically from assigned value when no explicit type is provided.
 - Store inferred type metadata for later validations and codegen decisions.
 - Validate reassignment/update operations against inferred type rules (once reassignment exists).
-
-## 4. Comment Syntax Support
-
-- Add single-line comment support (e.g. `// comment`).
-- Add block comment support (e.g. `/* comment */`), including multi-line blocks.
-- Update lexer/parser tests to cover comment skipping behavior.
