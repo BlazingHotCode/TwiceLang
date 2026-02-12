@@ -22,14 +22,14 @@ print(char(66));
 let greeting = "Hello, " + "Twice!";
 print(greeting);
 
-let n_one = 1 + 2.5;
-let n_two = 6 - 2.5;
-let n_three = 3 * 2.0;
-let n_four = 7 / 2.0;
-print(n_one);
-print(n_two);
-print(n_three);
-print(n_four);
+let n1 = 1 + 2.5;
+let n2 = 6 - 2.5;
+let n3 = 3 * 2.0;
+let n4 = 7 / 2.0;
+print(n1);
+print(n2);
+print(n3);
+print(n4);
 
 // char + char => char (sum of ASCII/codepoint values)
 let char_sum = 'A' + 'B';

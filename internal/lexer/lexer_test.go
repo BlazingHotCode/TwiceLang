@@ -157,3 +157,33 @@ func TestAdditionalLiteralTokens(t *testing.T) {
 		}
 	}
 }
+
+func TestIdentifierWithDigits(t *testing.T) {
+	input := `let n1 = 1; let value2x = n1 + 2;`
+	tests := []struct {
+		expectedType    token.TokenType
+		expectedLiteral string
+	}{
+		{token.LET, "let"},
+		{token.IDENT, "n1"},
+		{token.ASSIGN, "="},
+		{token.INT, "1"},
+		{token.SEMICOLON, ";"},
+		{token.LET, "let"},
+		{token.IDENT, "value2x"},
+		{token.ASSIGN, "="},
+		{token.IDENT, "n1"},
+		{token.PLUS, "+"},
+		{token.INT, "2"},
+		{token.SEMICOLON, ";"},
+		{token.EOF, ""},
+	}
+
+	l := New(input)
+	for i, tt := range tests {
+		tok := l.NextToken()
+		if tok.Type != tt.expectedType || tok.Literal != tt.expectedLiteral {
+			t.Fatalf("tests[%d] - got=(%q,%q) want=(%q,%q)", i, tok.Type, tok.Literal, tt.expectedType, tt.expectedLiteral)
+		}
+	}
+}

@@ -185,11 +185,12 @@ func (l *Lexer) skipBlockComment() {
 	}
 }
 
-// readIdentifier reads a sequence of letters (and underscores)
-// Stops when it hits a non-letter character
+// readIdentifier reads an identifier.
+// First char is guaranteed to be a letter/underscore by caller.
+// Subsequent chars may include digits.
 func (l *Lexer) readIdentifier() string {
 	position := l.position
-	for isLetter(l.ch) {
+	for isLetter(l.ch) || isDigit(l.ch) {
 		l.readChar()
 	}
 	return l.input[position:l.position]
