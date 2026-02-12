@@ -35,10 +35,13 @@ func TestPrintIntSupportsSignedNumbers(t *testing.T) {
 	}
 }
 
-func TestPrintArgumentValidation(t *testing.T) {
-	_, cg := generateAssembly(t, "print(true);")
-	if len(cg.Errors()) == 0 {
-		t.Fatalf("expected codegen errors for print(true), got none")
+func TestPrintBooleanSupported(t *testing.T) {
+	asm, cg := generateAssembly(t, "print(true);")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("expected no codegen errors for print(true), got: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "call print_bool") {
+		t.Fatalf("expected assembly to call print_bool, got:\n%s", asm)
 	}
 }
 
@@ -46,6 +49,13 @@ func TestPrintArityValidation(t *testing.T) {
 	_, cg := generateAssembly(t, "print();")
 	if len(cg.Errors()) == 0 {
 		t.Fatalf("expected codegen errors for print(), got none")
+	}
+}
+
+func TestPrintUnsupportedTypeValidation(t *testing.T) {
+	_, cg := generateAssembly(t, "print(fn(x) { x; });")
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen errors for print(function), got none")
 	}
 }
 

@@ -25,9 +25,3 @@
 - Infer variable type automatically from assigned value when no explicit type is provided.
 - Store inferred type metadata for later validations and codegen decisions.
 - Validate reassignment/update operations against inferred type rules (once reassignment exists).
-
-## 5. Print All Current Types
-
-- Extend `print` support to handle both integers and booleans.
-- Emit correct runtime output for booleans (`true`/`false`) in codegen path.
-- Add CLI/codegen tests for boolean printing.

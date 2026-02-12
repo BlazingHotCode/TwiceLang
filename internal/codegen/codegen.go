@@ -120,6 +120,29 @@ func (cg *CodeGen) emitHeader() {
 	cg.emit("    ret")
 	cg.emit("")
 
+	// Print boolean function using write syscall
+	// Input: rax = 0/1
+	cg.emit("# Function: print_bool")
+	cg.emit("# Input: rax = boolean (0/1)")
+	cg.emit("print_bool:")
+	cg.emit("    push %%rbp")
+	cg.emit("    mov %%rsp, %%rbp")
+	cg.emit("    cmp $0, %%rax")
+	cg.emit("    je print_bool_false")
+	cg.emit("    lea bool_true(%%rip), %%rsi")
+	cg.emit("    mov $5, %%rdx")
+	cg.emit("    jmp print_bool_write")
+	cg.emit("print_bool_false:")
+	cg.emit("    lea bool_false(%%rip), %%rsi")
+	cg.emit("    mov $6, %%rdx")
+	cg.emit("print_bool_write:")
+	cg.emit("    mov $1, %%rax")
+	cg.emit("    mov $1, %%rdi")
+	cg.emit("    syscall")
+	cg.emit("    pop %%rbp")
+	cg.emit("    ret")
+	cg.emit("")
+
 	// Entry point
 	cg.emit("_start:")
 	cg.emit("    push %%rbp")
@@ -140,6 +163,10 @@ func (cg *CodeGen) emitFooter() {
 	cg.emit("    pop %%rbp")
 	cg.emit("    mov $60, %%rax         # syscall: exit")
 	cg.emit("    syscall")
+	cg.emit("")
+	cg.emit("    .section .rodata")
+	cg.emit("bool_true:  .ascii \"true\\n\"")
+	cg.emit("bool_false: .ascii \"false\\n\"")
 }
 
 func (cg *CodeGen) generateStatement(stmt ast.Statement) {
@@ -373,14 +400,18 @@ func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 			return
 		}
 		argType := cg.inferExpressionType(ce.Arguments[0])
-		if argType == typeBool {
-			cg.addError("print expects integer argument, got boolean")
-			cg.emit("    # ERROR: print expects integer argument, got boolean")
+		if argType == typeUnknown {
+			cg.addError("print supports only int and bool arguments")
+			cg.emit("    # ERROR: print supports only int and bool arguments")
 			cg.emit("    mov $0, %%rax")
 			return
 		}
 		cg.generateExpression(ce.Arguments[0])
-		cg.emit("    call print_int")
+		if argType == typeBool {
+			cg.emit("    call print_bool")
+		} else {
+			cg.emit("    call print_int")
+		}
 	default:
 		cg.addError("unknown function " + fn.Value)
 		cg.emit("    # ERROR: unknown function %s", fn.Value)
