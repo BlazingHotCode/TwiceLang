@@ -87,6 +87,8 @@ func (cg *CodeGen) generateExpression(expr ast.Expression) {
 		cg.generatePrefix(e)
 	case *ast.Identifier:
 		cg.generateIdentifier(e)
+	case *ast.IfExpression:
+		cg.generateIfExpression(e)
 	}
 }
 
@@ -187,4 +189,41 @@ func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
 func (cg *CodeGen) generateReturn(rs *ast.ReturnStatement) {
 	cg.generateExpression(rs.ReturnValue)
 	// Result is already in rax, which is our return value convention
+}
+
+func (cg *CodeGen) generateIfExpression(ie *ast.IfExpression) {
+	elseLabel := cg.newLabel()
+	endLabel := cg.newLabel()
+
+	// Generate condition
+	cg.generateExpression(ie.Condition)
+	
+	// Test if false (0)
+	cg.emit("    test %%rax, %%rax")
+	cg.emit("    jz %s              # jump if condition is false", elseLabel)
+	
+	// Generate consequence (if block)
+	cg.generateBlockStatement(ie.Consequence)
+	cg.emit("    jmp %s             # jump to end", endLabel)
+	
+	// Else block
+	cg.emit("%s:", elseLabel)
+	if ie.Alternative != nil {
+		cg.generateBlockStatement(ie.Alternative)
+	}
+	
+	// End
+	cg.emit("%s:", endLabel)
+}
+
+func (cg *CodeGen) generateBlockStatement(block *ast.BlockStatement) {
+	for _, stmt := range block.Statements {
+		cg.generateStatement(stmt)
+	}
+}
+
+func (cg *CodeGen) newLabel() string {
+	label := fmt.Sprintf(".L%d", cg.labelCount)
+	cg.labelCount++
+	return label
 }
