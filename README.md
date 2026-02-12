@@ -137,6 +137,31 @@ if (x > 10) {
 }
 ```
 
+### Functions
+
+Supported declaration syntax:
+
+```tw
+fn add(a: int, b: int = 2) int {
+  return a + b;
+}
+```
+
+Supported call styles:
+
+```tw
+add(3);             // positional + default
+add(a = 3, b = 4);  // named arguments
+add(3, b = 10);     // mixed positional + named
+```
+
+Notes:
+
+- Parameters may be typed and may have default values.
+- Function return type can be declared and is validated.
+- For now, codegen supports named function declarations and calls.
+- Anonymous function literals/closures are still evaluator-oriented and not fully codegen-supported.
+
 ### Builtins
 
 - `print(expr)` supports: `int`, `bool`, `float`, `string`, `char`, `null`, `type`
@@ -190,6 +215,13 @@ print(5 ^ 1);
 print(5 << 1);
 print(5 >> 1);
 
+fn add(a: int, b: int = 2) int {
+  return a + b;
+}
+print(add(3));
+print(add(a = 3, b = 4));
+print(add(3, b = 10));
+
 n1
 ```
 
@@ -214,4 +246,4 @@ go test ./...
 
 ## Roadmap
 
-See `TODO.md` for planned work (custom libraries, function codegen expansion).
+See `TODO.md` for planned work (custom libraries and remaining function/closure codegen gaps).
