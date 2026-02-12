@@ -95,6 +95,78 @@ func TestCLICompileAndRunPrintWithAbsoluteOutputPath(t *testing.T) {
 	}
 }
 
+func TestCLICompileAndRunPrintNegativeNumber(t *testing.T) {
+	root := repoRoot(t)
+	ensureToolchain(t)
+
+	srcPath := filepath.Join(t.TempDir(), "neg.tw")
+	source := "print(-17);\n"
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	outputName := "twice_cli_negative_bin"
+	outputPath := filepath.Join(root, outputName)
+	_ = os.Remove(outputPath)
+	t.Cleanup(func() { _ = os.Remove(outputPath) })
+
+	cmd := exec.Command("go", "run", "./cmd/twice", "-run", "-o", outputName, srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("compile/run failed: %v\n%s", err, out)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "\n-17\n") {
+		t.Fatalf("expected runtime print output. output:\n%s", output)
+	}
+}
+
+func TestCLICodegenErrorForPrintBoolean(t *testing.T) {
+	root := repoRoot(t)
+
+	srcPath := filepath.Join(t.TempDir(), "bad_print_bool.tw")
+	source := "print(true);\n"
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	cmd := exec.Command("go", "run", "./cmd/twice", srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected codegen failure, got success. output:\n%s", out)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "Codegen error: print expects integer argument, got boolean") {
+		t.Fatalf("missing codegen type diagnostic. output:\n%s", output)
+	}
+}
+
+func TestCLICodegenErrorForPrintArity(t *testing.T) {
+	root := repoRoot(t)
+
+	srcPath := filepath.Join(t.TempDir(), "bad_print_arity.tw")
+	source := "print();\n"
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	cmd := exec.Command("go", "run", "./cmd/twice", srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected codegen failure, got success. output:\n%s", out)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "Codegen error: print expects exactly 1 argument") {
+		t.Fatalf("missing codegen arity diagnostic. output:\n%s", output)
+	}
+}
+
 func ensureToolchain(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("as"); err != nil {

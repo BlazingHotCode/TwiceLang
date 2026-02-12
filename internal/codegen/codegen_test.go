@@ -9,14 +9,14 @@ import (
 )
 
 func TestGenerateIncludesPrintCall(t *testing.T) {
-	asm := generateAssembly(t, "print(123);")
+	asm, _ := generateAssembly(t, "print(123);")
 	if !strings.Contains(asm, "call print_int") {
 		t.Fatalf("expected assembly to call print_int, got:\n%s", asm)
 	}
 }
 
 func TestGenerateReturnSetsExitCodeAndJumpsToExit(t *testing.T) {
-	asm := generateAssembly(t, "return 7;")
+	asm, _ := generateAssembly(t, "return 7;")
 	if !strings.Contains(asm, "mov %rax, %rdi") {
 		t.Fatalf("expected return to move result into exit register, got:\n%s", asm)
 	}
@@ -25,7 +25,31 @@ func TestGenerateReturnSetsExitCodeAndJumpsToExit(t *testing.T) {
 	}
 }
 
-func generateAssembly(t *testing.T, input string) string {
+func TestPrintIntSupportsSignedNumbers(t *testing.T) {
+	asm, _ := generateAssembly(t, "print(-42);")
+	if !strings.Contains(asm, "neg %rcx") {
+		t.Fatalf("expected sign normalization in print_int, got:\n%s", asm)
+	}
+	if !strings.Contains(asm, "movb $45, (%rsi)") {
+		t.Fatalf("expected '-' emission in print_int, got:\n%s", asm)
+	}
+}
+
+func TestPrintArgumentValidation(t *testing.T) {
+	_, cg := generateAssembly(t, "print(true);")
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen errors for print(true), got none")
+	}
+}
+
+func TestPrintArityValidation(t *testing.T) {
+	_, cg := generateAssembly(t, "print();")
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen errors for print(), got none")
+	}
+}
+
+func generateAssembly(t *testing.T, input string) (string, *CodeGen) {
 	t.Helper()
 	p := parser.New(lexer.New(input))
 	program := p.ParseProgram()
@@ -33,5 +57,5 @@ func generateAssembly(t *testing.T, input string) string {
 		t.Fatalf("parser errors: %v", p.Errors())
 	}
 	cg := New()
-	return cg.Generate(program)
+	return cg.Generate(program), cg
 }

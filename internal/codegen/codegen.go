@@ -14,14 +14,26 @@ type CodeGen struct {
 	exitLabel   string
 	normalExit  string
 	variables   map[string]int // name -> stack offset
-	stackOffset int            // current stack position
+	varTypes    map[string]valueType
+	stackOffset int // current stack position
+	errors      []string
 }
+
+type valueType int
+
+const (
+	typeUnknown valueType = iota
+	typeInt
+	typeBool
+)
 
 // New creates a new code generator
 func New() *CodeGen {
 	return &CodeGen{
 		variables:   make(map[string]int),
+		varTypes:    make(map[string]valueType),
 		stackOffset: 0,
+		errors:      []string{},
 	}
 }
 
@@ -59,12 +71,19 @@ func (cg *CodeGen) emitHeader() {
 	cg.emit("print_int:")
 	cg.emit("    push %%rbp")
 	cg.emit("    mov %%rsp, %%rbp")
-	cg.emit("    sub $16, %%rsp         # allocate buffer space")
+	cg.emit("    push %%rbx             # preserve callee-saved register")
+	cg.emit("    sub $40, %%rsp         # local buffer space")
 	cg.emit("    mov %%rax, %%rcx        # save number")
-	cg.emit("    lea -1(%%rbp), %%rsi    # buffer end (write backwards)")
+	cg.emit("    lea -9(%%rbp), %%rsi    # buffer end (write backwards)")
 	cg.emit("    movb $10, (%%rsi)      # newline character")
 	cg.emit("    dec %%rsi")
 	cg.emit("    mov $1, %%rbx          # digit count (at least 1 for newline)")
+	cg.emit("    xor %%r8d, %%r8d        # sign flag: 0 = non-negative")
+	cg.emit("    test %%rcx, %%rcx")
+	cg.emit("    jge print_int_abs_ready")
+	cg.emit("    neg %%rcx")
+	cg.emit("    mov $1, %%r8b")
+	cg.emit("print_int_abs_ready:")
 	cg.emit("")
 	cg.emit("print_int_loop:")
 	cg.emit("    xor %%rdx, %%rdx")
@@ -80,13 +99,21 @@ func (cg *CodeGen) emitHeader() {
 	cg.emit("    test %%rcx, %%rcx")
 	cg.emit("    jnz print_int_loop")
 	cg.emit("")
+	cg.emit("    test %%r8b, %%r8b")
+	cg.emit("    jz print_int_write")
+	cg.emit("    movb $45, (%%rsi)      # '-' sign")
+	cg.emit("    dec %%rsi")
+	cg.emit("    inc %%rbx")
+	cg.emit("")
+	cg.emit("print_int_write:")
 	cg.emit("    inc %%rsi              # point to first digit")
 	cg.emit("    mov $1, %%rax          # syscall: write")
 	cg.emit("    mov $1, %%rdi          # fd: stdout")
 	cg.emit("    mov %%rbx, %%rdx        # length")
 	cg.emit("    syscall")
 	cg.emit("")
-	cg.emit("    mov %%rbp, %%rsp")
+	cg.emit("    add $40, %%rsp")
+	cg.emit("    pop %%rbx")
 	cg.emit("    pop %%rbp")
 	cg.emit("    ret")
 	cg.emit("")
@@ -233,6 +260,7 @@ func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
 	cg.stackOffset += 8 // 8 bytes for int64
 	name := ls.Name.Value
 	cg.variables[name] = cg.stackOffset
+	cg.varTypes[name] = cg.inferExpressionType(ls.Value)
 
 	cg.emit("    push %%rax           # let %s", name)
 }
@@ -272,20 +300,33 @@ func (cg *CodeGen) generateIfExpression(ie *ast.IfExpression) {
 func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 	fn, ok := ce.Function.(*ast.Identifier)
 	if !ok {
+		cg.addError("unsupported call target")
 		cg.emit("    # ERROR: unsupported call target")
+		cg.emit("    mov $0, %%rax")
 		return
 	}
 
 	switch fn.Value {
 	case "print":
 		if len(ce.Arguments) != 1 {
+			cg.addError("print expects exactly 1 argument")
 			cg.emit("    # ERROR: print expects exactly 1 argument")
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		argType := cg.inferExpressionType(ce.Arguments[0])
+		if argType == typeBool {
+			cg.addError("print expects integer argument, got boolean")
+			cg.emit("    # ERROR: print expects integer argument, got boolean")
+			cg.emit("    mov $0, %%rax")
 			return
 		}
 		cg.generateExpression(ce.Arguments[0])
 		cg.emit("    call print_int")
 	default:
+		cg.addError("unknown function " + fn.Value)
 		cg.emit("    # ERROR: unknown function %s", fn.Value)
+		cg.emit("    mov $0, %%rax")
 	}
 }
 
@@ -299,4 +340,76 @@ func (cg *CodeGen) newLabel() string {
 	label := fmt.Sprintf(".L%d", cg.labelCount)
 	cg.labelCount++
 	return label
+}
+
+func (cg *CodeGen) addError(msg string) {
+	cg.errors = append(cg.errors, msg)
+}
+
+func (cg *CodeGen) Errors() []string {
+	return cg.errors
+}
+
+func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
+	switch e := expr.(type) {
+	case *ast.IntegerLiteral:
+		return typeInt
+	case *ast.Boolean:
+		return typeBool
+	case *ast.Identifier:
+		if t, ok := cg.varTypes[e.Value]; ok {
+			return t
+		}
+		return typeUnknown
+	case *ast.PrefixExpression:
+		switch e.Operator {
+		case "!":
+			return typeBool
+		case "-":
+			if cg.inferExpressionType(e.Right) == typeInt {
+				return typeInt
+			}
+		}
+		return typeUnknown
+	case *ast.InfixExpression:
+		left := cg.inferExpressionType(e.Left)
+		right := cg.inferExpressionType(e.Right)
+		switch e.Operator {
+		case "+", "-", "*", "/":
+			if left == typeInt && right == typeInt {
+				return typeInt
+			}
+			return typeUnknown
+		case "<", ">", "==", "!=":
+			return typeBool
+		}
+		return typeUnknown
+	case *ast.IfExpression:
+		if e.Alternative == nil {
+			return typeUnknown
+		}
+		cons := cg.inferBlockType(e.Consequence)
+		alt := cg.inferBlockType(e.Alternative)
+		if cons == alt {
+			return cons
+		}
+		return typeUnknown
+	default:
+		return typeUnknown
+	}
+}
+
+func (cg *CodeGen) inferBlockType(block *ast.BlockStatement) valueType {
+	if block == nil || len(block.Statements) == 0 {
+		return typeUnknown
+	}
+	last := block.Statements[len(block.Statements)-1]
+	switch s := last.(type) {
+	case *ast.ExpressionStatement:
+		return cg.inferExpressionType(s.Expression)
+	case *ast.ReturnStatement:
+		return cg.inferExpressionType(s.ReturnValue)
+	default:
+		return typeUnknown
+	}
 }

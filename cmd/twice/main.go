@@ -57,6 +57,12 @@ func main() {
 	// Generate code
 	cg := codegen.New()
 	assembly := cg.Generate(program)
+	if len(cg.Errors()) > 0 {
+		for _, err := range cg.Errors() {
+			fmt.Printf("Codegen error: %s\n", err)
+		}
+		os.Exit(1)
+	}
 
 	// Print assembly for debugging
 	fmt.Println("=== Generated Assembly ===")

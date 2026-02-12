@@ -19,9 +19,3 @@
 - Replace assembly comment errors with real Go errors (e.g. undefined variable, unknown function, invalid call target).
 - Propagate codegen failures up to CLI and stop compilation on error.
 - Improve user-facing error messages with source context when possible.
-
-## 4. Improve `print` Runtime Support
-
-- Handle signed integers in `print_int` (negative values).
-- Decide and enforce argument/type constraints for `print`.
-- Add validation for wrong argument counts/types.
