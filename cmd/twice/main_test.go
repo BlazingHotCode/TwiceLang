@@ -65,6 +65,36 @@ func TestCLICompileAndRunPrint(t *testing.T) {
 	}
 }
 
+func TestCLICompileAndRunPrintWithAbsoluteOutputPath(t *testing.T) {
+	root := repoRoot(t)
+	ensureToolchain(t)
+
+	srcPath := filepath.Join(t.TempDir(), "ok_abs.tw")
+	source := "print(9);\n"
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	outputPath := filepath.Join(t.TempDir(), "twice_cli_abs_bin")
+	_ = os.Remove(outputPath)
+	t.Cleanup(func() { _ = os.Remove(outputPath) })
+
+	cmd := exec.Command("go", "run", "./cmd/twice", "-run", "-o", outputPath, srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("compile/run failed: %v\n%s", err, out)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "Compiled to: "+outputPath) {
+		t.Fatalf("missing compile success message. output:\n%s", output)
+	}
+	if !strings.Contains(output, "\n9\n") {
+		t.Fatalf("expected runtime print output. output:\n%s", output)
+	}
+}
+
 func ensureToolchain(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("as"); err != nil {

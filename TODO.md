@@ -25,8 +25,3 @@
 - Handle signed integers in `print_int` (negative values).
 - Decide and enforce argument/type constraints for `print`.
 - Add validation for wrong argument counts/types.
-
-## 5. CLI Run Path Handling
-
-- Fix `-run` execution path handling to support absolute and relative `-o` values.
-- Avoid assuming outputs are always run as `./<name>`.

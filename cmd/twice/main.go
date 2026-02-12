@@ -3,9 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io"  // Add this import
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"twice/internal/codegen"
 	"twice/internal/lexer"
 	"twice/internal/parser"
@@ -25,17 +26,17 @@ func main() {
 	}
 
 	sourceFile := args[0]
-	
+
 	// If source is "-", read from stdin
 	var source []byte
 	var err error
-	
+
 	if sourceFile == "-" {
-		source, err = io.ReadAll(os.Stdin)  // Use io.ReadAll, not os.ReadAll
+		source, err = io.ReadAll(os.Stdin)
 	} else {
 		source, err = os.ReadFile(sourceFile)
 	}
-	
+
 	if err != nil {
 		fmt.Printf("Error reading input: %v\n", err)
 		os.Exit(1)
@@ -72,7 +73,7 @@ func main() {
 
 	// Optionally run
 	if *run {
-		cmd := exec.Command("./" + *output)
+		cmd := exec.Command(runPath(*output))
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
@@ -80,4 +81,11 @@ func main() {
 			os.Exit(1)
 		}
 	}
+}
+
+func runPath(output string) string {
+	if filepath.IsAbs(output) || filepath.Dir(output) != "." {
+		return output
+	}
+	return "." + string(os.PathSeparator) + output
 }
