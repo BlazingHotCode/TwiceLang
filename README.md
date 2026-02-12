@@ -16,19 +16,30 @@ The Go pipeline is wired end-to-end:
 
 ## Language Features (Current)
 
-- Integers and booleans
+- Primitive values: `int`, `bool`, `float`, `string`, `char`, `null`
 - Prefix operators: `!`, `-`
 - Infix operators: `+`, `-`, `*`, `/`, `<`, `>`, `==`, `!=`
-- `let` bindings
+- `let` and `const` bindings
+- Optional type annotations:
+  - `let name = value;`
+  - `let name: type = value;`
+  - `let name: type;` (initialized as `null`)
+  - `const name = value;`
+  - `const name: type = value;`
+- Variable reassignment (`x = value;`) with const protection and type checks
 - `if / elif / else`
 - `return`
-- Function call syntax parsing
-- Builtin codegen support for `print(<expr>)` (single argument)
+- Builtins:
+  - `print(<expr>)` for `int`, `bool`, `float`, `string`, `char`, `null`, and `type`
+  - `typeof(<expr>)` returns the static/runtime type name
+  - Casts: `int(...)`, `float(...)`, `string(...)`, `char(...)`, `bool(...)`
+- Line and block comments:
+  - `// comment`
+  - `/* block comment */`
 
 ## Statement Terminators
 
-- `let` and explicit `return` statements require `;`
-- Expression statements with `;` are normal statements
+- Most statements require `;` (including `let`, `const`, assignment, `return`, and expression statements)
 - Expression statements without `;` are treated as implicit `return`
   - Example: `x` behaves like `return x`
 - Newlines are not statement terminators by themselves
@@ -64,16 +75,23 @@ Note: the CLI currently runs outputs as `./<name>`, so use a relative `-o` path 
 ## Example
 
 ```tw
-print(123);
-let x = 7;
-print(x + 5);
-x
+// Single-line and block comments work.
+/* test program */
+const banner: string = "Twice";
+let n: int;
+n = 41;
+print(banner);
+print(n + 1);
+print(typeof(n));
+print(float(3));
+print(char(65));
+n
 ```
 
-The last line (`x`) is an implicit return (no semicolon).
+The last line (`n`) is an implicit return (no semicolon), so process exit code is `41`.
 
 ## Next Work
 
 - Expand callable function codegen beyond builtin `print`
-- Improve diagnostics and parser recovery
+- Improve parser recovery
 - Complete the OCaml implementation track
