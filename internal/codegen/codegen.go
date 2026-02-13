@@ -587,21 +587,21 @@ type lexicalScopeState struct {
 
 func (cg *CodeGen) snapshotLexicalState() lexicalScopeState {
 	return lexicalScopeState{
-		variables:        cloneIntMap(cg.variables),
-		constVars:        cloneBoolMap(cg.constVars),
-		varTypes:         cloneValueTypeMap(cg.varTypes),
-		varDeclared:      cloneValueTypeMap(cg.varDeclared),
-		varTypeNames:     cloneStringMap(cg.varTypeNames),
-		varDeclaredNames: cloneStringMap(cg.varDeclaredNames),
-		varValueTypeName: cloneStringMap(cg.varValueTypeName),
-		varIsNull:        cloneBoolMap(cg.varIsNull),
-		varArrayLen:      cloneIntMap(cg.varArrayLen),
-		intVals:          cloneInt64Map(cg.intVals),
-		charVals:         cloneRuneMap(cg.charVals),
-		stringVals:       cloneStringMap(cg.stringVals),
-		floatVals:        cloneFloat64Map(cg.floatVals),
-		varFuncs:         cloneStringMap(cg.varFuncs),
-		typeAliases:      cloneStringMap(cg.typeAliases),
+		variables:        cloneMap(cg.variables),
+		constVars:        cloneMap(cg.constVars),
+		varTypes:         cloneMap(cg.varTypes),
+		varDeclared:      cloneMap(cg.varDeclared),
+		varTypeNames:     cloneMap(cg.varTypeNames),
+		varDeclaredNames: cloneMap(cg.varDeclaredNames),
+		varValueTypeName: cloneMap(cg.varValueTypeName),
+		varIsNull:        cloneMap(cg.varIsNull),
+		varArrayLen:      cloneMap(cg.varArrayLen),
+		intVals:          cloneMap(cg.intVals),
+		charVals:         cloneMap(cg.charVals),
+		stringVals:       cloneMap(cg.stringVals),
+		floatVals:        cloneMap(cg.floatVals),
+		varFuncs:         cloneMap(cg.varFuncs),
+		typeAliases:      cloneMap(cg.typeAliases),
 	}
 }
 
@@ -623,66 +623,10 @@ func (cg *CodeGen) restoreLexicalState(st lexicalScopeState) {
 	cg.typeAliases = st.typeAliases
 }
 
-func cloneIntMap(in map[string]int) map[string]int {
-	out := make(map[string]int, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
-}
-
-func cloneBoolMap(in map[string]bool) map[string]bool {
-	out := make(map[string]bool, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
-}
-
-func cloneValueTypeMap(in map[string]valueType) map[string]valueType {
-	out := make(map[string]valueType, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
-}
-
-func cloneStringMap(in map[string]string) map[string]string {
-	out := make(map[string]string, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
-}
-
-func cloneInt64Map(in map[string]int64) map[string]int64 {
-	out := make(map[string]int64, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
-}
-
-func cloneRuneMap(in map[string]rune) map[string]rune {
-	out := make(map[string]rune, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
-}
-
-func cloneFloat64Map(in map[string]float64) map[string]float64 {
-	out := make(map[string]float64, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
-}
-
-func cloneStructMap(in map[string]struct{}) map[string]struct{} {
-	out := make(map[string]struct{}, len(in))
+func cloneMap[K comparable, V any](in map[K]V) map[K]V {
+	out := make(map[K]V, len(in))
 	for k := range in {
-		out[k] = struct{}{}
+		out[k] = in[k]
 	}
 	return out
 }
