@@ -30,6 +30,7 @@ type CodeGen struct {
 	floatVals        map[string]float64
 	stringLits       map[string]string
 	stackOffset      int // current stack position
+	maxStackOffset   int
 	functions        map[string]*compiledFunction
 	funcByName       map[string]string
 	varFuncs         map[string]string
@@ -41,6 +42,7 @@ type CodeGen struct {
 	funcRetTypeName  string
 	loopBreakLabels  []string
 	loopContLabels   []string
+	arraySlots       map[*ast.ArrayLiteral]int
 	errors           []CodegenError
 }
 
@@ -91,6 +93,8 @@ func New() *CodeGen {
 		funcByName:       make(map[string]string),
 		varFuncs:         make(map[string]string),
 		stackOffset:      0,
+		maxStackOffset:   0,
+		arraySlots:       make(map[*ast.ArrayLiteral]int),
 		errors:           []CodegenError{},
 	}
 }
@@ -110,7 +114,9 @@ func (cg *CodeGen) Generate(program *ast.Program) string {
 	cg.generateFunctionDefinitions()
 
 	cg.emitFooter()
-	return cg.output.String()
+	asm := cg.output.String()
+	asm = strings.ReplaceAll(asm, "__STACK_ALLOC_MAIN__", cg.stackAllocLine())
+	return asm
 }
 
 // emit adds a line of assembly
@@ -384,6 +390,7 @@ func (cg *CodeGen) emitHeader() {
 	cg.emit("_start:")
 	cg.emit("    push %%rbp")
 	cg.emit("    mov %%rsp, %%rbp")
+	cg.emit("__STACK_ALLOC_MAIN__")
 	cg.emit("    xor %%rdi, %%rdi        # default exit code 0")
 }
 
@@ -415,6 +422,34 @@ func (cg *CodeGen) emitFooter() {
 	cg.emit("")
 	cg.emit("    .section .bss")
 	cg.emit("    .lcomm concat_buf, 4096")
+}
+
+func (cg *CodeGen) stackAllocLine() string {
+	if cg.maxStackOffset <= 0 {
+		return "    # no local stack allocation"
+	}
+	aligned := ((cg.maxStackOffset + 15) / 16) * 16
+	return fmt.Sprintf("    sub $%d, %%rsp", aligned)
+}
+
+func (cg *CodeGen) allocateSlots(n int) int {
+	if n <= 0 {
+		return cg.stackOffset
+	}
+	cg.stackOffset += n * 8
+	if cg.stackOffset > cg.maxStackOffset {
+		cg.maxStackOffset = cg.stackOffset
+	}
+	return cg.stackOffset
+}
+
+func (cg *CodeGen) ensureArrayLiteralSlot(al *ast.ArrayLiteral) int {
+	if off, ok := cg.arraySlots[al]; ok {
+		return off
+	}
+	off := cg.allocateSlots(len(al.Elements))
+	cg.arraySlots[al] = off
+	return off
 }
 
 func (cg *CodeGen) generateStatement(stmt ast.Statement) {
@@ -532,14 +567,12 @@ func (cg *CodeGen) generateArrayLiteral(al *ast.ArrayLiteral) {
 		return
 	}
 
-	// Stack grows downward; push elements in reverse so index 0 is at the lowest address.
-	for i := len(al.Elements) - 1; i >= 0; i-- {
-		cg.generateExpression(al.Elements[i])
-		cg.emit("    push %%rax")
-		cg.stackOffset += 8
+	baseOffset := cg.ensureArrayLiteralSlot(al)
+	for i, el := range al.Elements {
+		cg.generateExpression(el)
+		cg.emit("    mov %%rax, -%d(%%rbp)", baseOffset-i*8)
 	}
-	// Return pointer to first element (current top of stack).
-	cg.emit("    lea -%d(%%rbp), %%rax", cg.stackOffset)
+	cg.emit("    lea -%d(%%rbp), %%rax", baseOffset)
 }
 
 func (cg *CodeGen) generateIndexExpression(ie *ast.IndexExpression) {
@@ -890,10 +923,9 @@ func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
 		cg.generateExpression(ls.Value)
 	}
 
-	// Allocate space on stack and store
-	cg.stackOffset += 8 // 8 bytes for int64
 	name := ls.Name.Value
-	cg.variables[name] = cg.stackOffset
+	offset := cg.allocateSlots(1)
+	cg.variables[name] = offset
 	inferred := typeNull
 	inferredName := "null"
 	if ls.Value != nil {
@@ -923,7 +955,7 @@ func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
 	cg.varIsNull[name] = inferred == typeNull
 	cg.trackKnownValue(name, cg.varTypes[name], ls.Value)
 
-	cg.emit("    push %%rax           # let %s", name)
+	cg.emit("    mov %%rax, -%d(%%rbp)  # let %s", offset, name)
 }
 
 // generateConst handles immutable variable declarations.
@@ -947,9 +979,9 @@ func (cg *CodeGen) generateConst(cs *ast.ConstStatement) {
 
 	cg.generateExpression(cs.Value)
 
-	cg.stackOffset += 8
 	name := cs.Name.Value
-	cg.variables[name] = cg.stackOffset
+	offset := cg.allocateSlots(1)
+	cg.variables[name] = offset
 	cg.constVars[name] = true
 	inferred := cg.inferExpressionType(cs.Value)
 	inferredName := cg.inferExpressionTypeName(cs.Value)
@@ -976,7 +1008,7 @@ func (cg *CodeGen) generateConst(cs *ast.ConstStatement) {
 	cg.varIsNull[name] = inferred == typeNull
 	cg.trackKnownValue(name, cg.varTypes[name], cs.Value)
 
-	cg.emit("    push %%rax           # const %s", name)
+	cg.emit("    mov %%rax, -%d(%%rbp)  # const %s", offset, name)
 }
 
 // generateAssign handles variable reassignment.
@@ -1664,6 +1696,7 @@ func (cg *CodeGen) reset() {
 	cg.funcByName = make(map[string]string)
 	cg.varFuncs = make(map[string]string)
 	cg.stackOffset = 0
+	cg.maxStackOffset = 0
 	cg.currentFn = ""
 	cg.nextAnonFn = 0
 	cg.inFunction = false
@@ -1672,6 +1705,7 @@ func (cg *CodeGen) reset() {
 	cg.funcRetTypeName = ""
 	cg.loopBreakLabels = nil
 	cg.loopContLabels = nil
+	cg.arraySlots = make(map[*ast.ArrayLiteral]int)
 	cg.errors = []CodegenError{}
 }
 
@@ -1880,6 +1914,7 @@ type cgState struct {
 	floatVals        map[string]float64
 	varFuncs         map[string]string
 	stackOffset      int
+	maxStackOffset   int
 	inFunction       bool
 	funcRetLbl       string
 	funcRetType      valueType
@@ -1887,6 +1922,7 @@ type cgState struct {
 	currentFn        string
 	loopBreakLabels  []string
 	loopContLabels   []string
+	arraySlots       map[*ast.ArrayLiteral]int
 }
 
 func (cg *CodeGen) saveState() cgState {
@@ -1905,6 +1941,7 @@ func (cg *CodeGen) saveState() cgState {
 		floatVals:        cg.floatVals,
 		varFuncs:         cg.varFuncs,
 		stackOffset:      cg.stackOffset,
+		maxStackOffset:   cg.maxStackOffset,
 		inFunction:       cg.inFunction,
 		funcRetLbl:       cg.funcRetLbl,
 		funcRetType:      cg.funcRetType,
@@ -1912,6 +1949,7 @@ func (cg *CodeGen) saveState() cgState {
 		currentFn:        cg.currentFn,
 		loopBreakLabels:  cg.loopBreakLabels,
 		loopContLabels:   cg.loopContLabels,
+		arraySlots:       cg.arraySlots,
 	}
 }
 
@@ -1930,6 +1968,7 @@ func (cg *CodeGen) restoreState(st cgState) {
 	cg.floatVals = st.floatVals
 	cg.varFuncs = st.varFuncs
 	cg.stackOffset = st.stackOffset
+	cg.maxStackOffset = st.maxStackOffset
 	cg.inFunction = st.inFunction
 	cg.funcRetLbl = st.funcRetLbl
 	cg.funcRetType = st.funcRetType
@@ -1937,6 +1976,7 @@ func (cg *CodeGen) restoreState(st cgState) {
 	cg.currentFn = st.currentFn
 	cg.loopBreakLabels = st.loopBreakLabels
 	cg.loopContLabels = st.loopContLabels
+	cg.arraySlots = st.arraySlots
 }
 
 func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
@@ -1958,6 +1998,7 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 	cg.floatVals = make(map[string]float64)
 	cg.varFuncs = make(map[string]string)
 	cg.stackOffset = 0
+	cg.maxStackOffset = 0
 	cg.inFunction = true
 	cg.funcRetLbl = cg.newLabel()
 	cg.funcRetType = parseTypeName(fn.Literal.ReturnType)
@@ -1966,11 +2007,13 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 		cg.addNodeError("unknown type: "+fn.Literal.ReturnType, fn.Literal)
 	}
 	cg.currentFn = fn.Key
+	cg.arraySlots = make(map[*ast.ArrayLiteral]int)
 
 	label := fn.Label
 	cg.emit("%s:", label)
 	cg.emit("    push %%rbp")
 	cg.emit("    mov %%rsp, %%rbp")
+	cg.emit("__STACK_ALLOC_FUNC__")
 
 	paramRegs := []string{"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"}
 	totalParams := len(fn.Literal.Parameters) + len(fn.Captures)
@@ -1982,9 +2025,9 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 		if idx >= len(paramRegs) {
 			break
 		}
-		cg.emit("    push %s           # param %s", paramRegs[idx], p.Name.Value)
-		cg.stackOffset += 8
-		cg.variables[p.Name.Value] = cg.stackOffset
+		offset := cg.allocateSlots(1)
+		cg.variables[p.Name.Value] = offset
+		cg.emit("    mov %s, -%d(%%rbp)  # param %s", paramRegs[idx], offset, p.Name.Value)
 		pt := parseTypeName(p.TypeName)
 		if p.TypeName != "" && !isKnownTypeName(p.TypeName) {
 			cg.addNodeError("unknown type: "+p.TypeName, p.Name)
@@ -2006,9 +2049,9 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 		if regIdx >= len(paramRegs) {
 			break
 		}
-		cg.emit("    push %s           # capture %s", paramRegs[regIdx], name)
-		cg.stackOffset += 8
-		cg.variables[name] = cg.stackOffset
+		offset := cg.allocateSlots(1)
+		cg.variables[name] = offset
+		cg.emit("    mov %s, -%d(%%rbp)  # capture %s", paramRegs[regIdx], offset, name)
 		cg.varTypes[name] = typeUnknown
 		cg.varDeclared[name] = typeUnknown
 		cg.varTypeNames[name] = "unknown"
@@ -2029,8 +2072,9 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 	cg.emit("    mov %%rbp, %%rsp")
 	cg.emit("    pop %%rbp")
 	cg.emit("    ret")
-
-	cg.funcDefs.WriteString(cg.output.String())
+	fnAsm := cg.output.String()
+	fnAsm = strings.ReplaceAll(fnAsm, "__STACK_ALLOC_FUNC__", cg.stackAllocLine())
+	cg.funcDefs.WriteString(fnAsm)
 	cg.output = prevOutput
 	cg.restoreState(state)
 }

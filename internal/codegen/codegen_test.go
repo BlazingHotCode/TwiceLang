@@ -157,6 +157,35 @@ func TestCodegenForLoop(t *testing.T) {
 	}
 }
 
+func TestCodegenLoopLocalVarsUseFrameSlots(t *testing.T) {
+	asm, cg := generateAssembly(t, "let i = 0; while (i < 3) { let tmp = i; i++; }; print(i);")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if strings.Contains(asm, "push %rax           # let tmp") {
+		t.Fatalf("expected frame-slot local storage, found push-based local allocation:\n%s", asm)
+	}
+	if !strings.Contains(asm, "# let tmp") || !strings.Contains(asm, "mov %rax, -") {
+		t.Fatalf("expected stack-slot store for loop local, got:\n%s", asm)
+	}
+	if !strings.Contains(asm, "sub $") {
+		t.Fatalf("expected function/frame stack reservation, got:\n%s", asm)
+	}
+}
+
+func TestCodegenLoopArrayLiteralsUseFrameSlots(t *testing.T) {
+	asm, cg := generateAssembly(t, "let i = 0; while (i < 2) { let a = {1, 2, 3}; i++; print(a[0]); };")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if strings.Contains(asm, "push %rax           # let a") {
+		t.Fatalf("expected frame-slot local array binding, found push-based local allocation:\n%s", asm)
+	}
+	if !strings.Contains(asm, "# let a") {
+		t.Fatalf("expected let-binding comment for loop array local, got:\n%s", asm)
+	}
+}
+
 func TestCodegenBreakAndContinue(t *testing.T) {
 	asm, cg := generateAssembly(t, "let i = 0; while (true) { i++; if (i == 2) { continue; }; if (i == 4) { break; }; } print(i);")
 	if len(cg.Errors()) != 0 {

@@ -210,6 +210,7 @@ Notes:
 - `loop {}` is equivalent to `while (true) {}`.
 - `break;` exits the nearest loop.
 - `continue;` skips to the next iteration of the nearest loop.
+- Current codegen uses fixed frame-slot allocation for loop-local values and array literals, so loop iterations reuse storage instead of growing stack usage per iteration.
 
 ### Functions
 
