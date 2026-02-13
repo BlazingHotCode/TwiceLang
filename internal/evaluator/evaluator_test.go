@@ -185,6 +185,13 @@ func TestFunctionCallEval(t *testing.T) {
 	testIntegerObject(t, evaluated, 5)
 }
 
+func TestFunctionEmptyReturnEval(t *testing.T) {
+	evaluated := testEval("fn noop() { return; } noop()")
+	if evaluated.Type() != object.NULL_OBJ {
+		t.Fatalf("expected null from empty return, got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+}
+
 func TestNamedFunctionWithDefaultsAndTypedReturnEval(t *testing.T) {
 	evaluated := testEval("fn add(a: int, b: int = 2) int { return a + b; } add(3)")
 	testIntegerObject(t, evaluated, 5)

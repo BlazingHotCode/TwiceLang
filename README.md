@@ -294,7 +294,18 @@ Notes:
 
 - Parameters may be typed and may have default values.
 - Function return type can be declared and is validated.
+- Return type can be omitted for no-return functions.
+- `return;` is supported and returns `null` (useful for side-effect functions).
 - Codegen resolves named functions independently of source order (you can call before declaration).
+
+Example no-return function:
+
+```tw
+fn logValue(x: int) {
+  print(x);
+  return;
+}
+```
 
 ### Arrays
 

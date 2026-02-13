@@ -1501,16 +1501,26 @@ func (cg *CodeGen) generateIndexAssign(ias *ast.IndexAssignStatement) {
 
 // generateReturn handles return statements
 func (cg *CodeGen) generateReturn(rs *ast.ReturnStatement) {
-	cg.generateExpression(rs.ReturnValue)
+	if rs.ReturnValue == nil {
+		cg.generateNull(&ast.NullLiteral{})
+	} else {
+		cg.generateExpression(rs.ReturnValue)
+	}
 	if cg.inFunction {
 		if cg.funcRetType != typeUnknown {
-			got := cg.inferExpressionType(rs.ReturnValue)
+			got := typeNull
+			if rs.ReturnValue != nil {
+				got = cg.inferExpressionType(rs.ReturnValue)
+			}
 			if got != typeNull && got != typeUnknown && got != cg.funcRetType && cg.funcRetType != typeArray {
 				cg.addNodeError(fmt.Sprintf("cannot return %s from function returning %s", typeName(got), typeName(cg.funcRetType)), rs)
 			}
 		}
 		if cg.funcRetTypeName != "" {
-			gotName := cg.inferExpressionTypeName(rs.ReturnValue)
+			gotName := "null"
+			if rs.ReturnValue != nil {
+				gotName = cg.inferExpressionTypeName(rs.ReturnValue)
+			}
 			if gotName != "null" && gotName != "unknown" && !cg.isAssignableTypeName(cg.funcRetTypeName, gotName) {
 				cg.addNodeError(fmt.Sprintf("cannot return %s from function returning %s", gotName, cg.funcRetTypeName), rs)
 			}
@@ -1923,6 +1933,9 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
 			if key, ok := cg.varFuncs[fn.Value]; ok {
 				fl := cg.functions[key]
 				if fl.Literal.ReturnType == "" {
+					if functionReturnsOnlyNull(fl.Literal.Body) {
+						return typeNull
+					}
 					return typeUnknown
 				}
 				return cg.parseTypeName(fl.Literal.ReturnType)
@@ -1930,6 +1943,9 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
 			if key, ok := cg.funcByName[fn.Value]; ok {
 				fl := cg.functions[key]
 				if fl.Literal.ReturnType == "" {
+					if functionReturnsOnlyNull(fl.Literal.Body) {
+						return typeNull
+					}
 					return typeUnknown
 				}
 				return cg.parseTypeName(fl.Literal.ReturnType)
@@ -2066,6 +2082,36 @@ func (cg *CodeGen) inferBlockType(block *ast.BlockStatement) valueType {
 	default:
 		return typeUnknown
 	}
+}
+
+func functionReturnsOnlyNull(block *ast.BlockStatement) bool {
+	if block == nil {
+		return true
+	}
+	foundReturn := false
+	for _, st := range block.Statements {
+		switch s := st.(type) {
+		case *ast.ReturnStatement:
+			foundReturn = true
+			if s.ReturnValue != nil {
+				return false
+			}
+		case *ast.BlockStatement:
+			if !functionReturnsOnlyNull(s) {
+				return false
+			}
+		case *ast.ExpressionStatement:
+			if ie, ok := s.Expression.(*ast.IfExpression); ok {
+				if !functionReturnsOnlyNull(ie.Consequence) {
+					return false
+				}
+				if ie.Alternative != nil && !functionReturnsOnlyNull(ie.Alternative) {
+					return false
+				}
+			}
+		}
+	}
+	return foundReturn
 }
 
 func (cg *CodeGen) inferTypeofType(expr ast.Expression) valueType {

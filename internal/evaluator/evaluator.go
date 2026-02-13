@@ -77,6 +77,9 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		return Eval(node.Expression, env)
 
 	case *ast.ReturnStatement:
+		if node.ReturnValue == nil {
+			return &object.ReturnValue{Value: NULL}
+		}
 		val := Eval(node.ReturnValue, env)
 		if isError(val) {
 			return val

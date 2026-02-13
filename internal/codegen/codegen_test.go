@@ -379,6 +379,16 @@ func TestCodegenNamedFunctionCall(t *testing.T) {
 	}
 }
 
+func TestCodegenFunctionEmptyReturn(t *testing.T) {
+	asm, cg := generateAssembly(t, `fn noop() { return; } print(noop());`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors for empty return: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "lea null_lit(%rip), %rax") {
+		t.Fatalf("expected empty return to load null literal, got:\n%s", asm)
+	}
+}
+
 func TestCodegenNamedArgumentsCall(t *testing.T) {
 	_, cg := generateAssembly(t, "fn sub(a: int, b: int) int { return a - b; } print(sub(b = 2, a = 7));")
 	if len(cg.Errors()) != 0 {

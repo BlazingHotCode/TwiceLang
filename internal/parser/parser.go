@@ -489,6 +489,12 @@ func (p *Parser) parseAssignStatementCore(requireSemicolon bool) *ast.AssignStat
 func (p *Parser) parseReturnStatement() *ast.ReturnStatement {
 	stmt := &ast.ReturnStatement{Token: p.curToken}
 
+	if p.peekTokenIs(token.SEMICOLON) {
+		p.nextToken()
+		stmt.ReturnValue = nil
+		return stmt
+	}
+
 	p.nextToken()
 
 	stmt.ReturnValue = p.parseExpression(LOWEST)

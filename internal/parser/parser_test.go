@@ -44,6 +44,24 @@ func TestExpressionWithSemicolonIsExpressionStatement(t *testing.T) {
 	}
 }
 
+func TestReturnWithoutValueParses(t *testing.T) {
+	p := New(lexer.New("fn noop() { return; }"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	fnStmt, ok := program.Statements[0].(*ast.FunctionStatement)
+	if !ok {
+		t.Fatalf("expected function statement, got=%T", program.Statements[0])
+	}
+	ret, ok := fnStmt.Function.Body.Statements[0].(*ast.ReturnStatement)
+	if !ok {
+		t.Fatalf("expected return statement, got=%T", fnStmt.Function.Body.Statements[0])
+	}
+	if ret.ReturnValue != nil {
+		t.Fatalf("expected nil return value for `return;`, got=%T", ret.ReturnValue)
+	}
+}
+
 func TestConstStatementParses(t *testing.T) {
 	p := New(lexer.New("const x = 5;"))
 	program := p.ParseProgram()
