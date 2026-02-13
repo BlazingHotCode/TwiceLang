@@ -88,6 +88,30 @@ if (score > 10) {
   print("small");
 };
 
+// scopes: block shadowing + outer assignment
+let scoped = 1;
+if (true) {
+  let scoped = 2;
+  print(scoped); // 2 (inner)
+};
+print(scoped); // 1 (outer)
+
+if (true) {
+  scoped = 9;
+};
+print(scoped); // 9 (updated outer)
+
+// standalone block scope for temporary vars/functions
+{
+  let temp = 77;
+  print(temp);
+
+  fn tempFn(x: int) int {
+    return x + 1;
+  }
+  print(tempFn(10));
+}
+
 // loops
 let while_i = 0;
 while (while_i < 3) {
@@ -100,6 +124,11 @@ for (let j = 0; j < 4; j++) {
   for_sum = for_sum + j;
 };
 print(for_sum);
+
+for (let scoped_i = 0; scoped_i < 2; scoped_i++) {
+  let loop_local = scoped_i;
+  print(loop_local);
+};
 
 let control_sum = 0;
 for (let k = 0; k < 6; k++) {

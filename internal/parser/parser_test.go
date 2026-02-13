@@ -181,6 +181,19 @@ func TestArrayLiteralParsesInLet(t *testing.T) {
 	}
 }
 
+func TestStandaloneBlockStatementParses(t *testing.T) {
+	p := New(lexer.New("{ let x = 1; }"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	if _, ok := program.Statements[0].(*ast.BlockStatement); !ok {
+		t.Fatalf("expected block statement, got=%T", program.Statements[0])
+	}
+}
+
 func TestArrayIndexExpressionParses(t *testing.T) {
 	p := New(lexer.New("arr[1];"))
 	program := p.ParseProgram()

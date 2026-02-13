@@ -129,6 +129,43 @@ x = 2;
 - Reassigning `const` is an error.
 - Type constraints are enforced.
 
+### Scope Rules
+
+Twice uses lexical scopes for blocks and loops:
+
+- `let`/`const` declarations are local to the current block.
+- Redeclaration checks are scope-local (shadowing outer variables is allowed).
+- Assigning an existing outer variable inside a nested block updates that outer variable.
+- `for (let i = ...; ...)` keeps `i` local to the `for` scope.
+- Standalone blocks `{ ... }` create a temporary scope outside loops/functions.
+
+Example:
+
+```tw
+let x = 1;
+if (true) {
+  let x = 2;
+  print(x); // 2
+};
+print(x);   // 1
+
+if (true) {
+  x = 5;
+};
+print(x);   // 5
+```
+
+Temporary scope example:
+
+```tw
+{
+  let temp = 123;
+  fn tempFn(x: int) int { return x + 1; }
+  print(tempFn(temp));
+}
+// temp and tempFn are not visible here
+```
+
 ### Operators
 
 Prefix:

@@ -33,6 +33,7 @@ type CodeGen struct {
 	maxStackOffset   int
 	functions        map[string]*compiledFunction
 	funcByName       map[string]string
+	funcStmtKeys     map[*ast.FunctionStatement]string
 	varFuncs         map[string]string
 	currentFn        string
 	nextAnonFn       int
@@ -43,6 +44,7 @@ type CodeGen struct {
 	loopBreakLabels  []string
 	loopContLabels   []string
 	arraySlots       map[*ast.ArrayLiteral]int
+	scopeDecls       []map[string]struct{}
 	errors           []CodegenError
 }
 
@@ -91,10 +93,12 @@ func New() *CodeGen {
 		stringLits:       make(map[string]string),
 		functions:        make(map[string]*compiledFunction),
 		funcByName:       make(map[string]string),
+		funcStmtKeys:     make(map[*ast.FunctionStatement]string),
 		varFuncs:         make(map[string]string),
 		stackOffset:      0,
 		maxStackOffset:   0,
 		arraySlots:       make(map[*ast.ArrayLiteral]int),
+		scopeDecls:       []map[string]struct{}{},
 		errors:           []CodegenError{},
 	}
 }
@@ -452,6 +456,220 @@ func (cg *CodeGen) ensureArrayLiteralSlot(al *ast.ArrayLiteral) int {
 	return off
 }
 
+type lexicalScopeState struct {
+	variables        map[string]int
+	constVars        map[string]bool
+	varTypes         map[string]valueType
+	varDeclared      map[string]valueType
+	varTypeNames     map[string]string
+	varDeclaredNames map[string]string
+	varIsNull        map[string]bool
+	varArrayLen      map[string]int
+	intVals          map[string]int64
+	charVals         map[string]rune
+	stringVals       map[string]string
+	floatVals        map[string]float64
+	varFuncs         map[string]string
+}
+
+func cloneIntMap(in map[string]int) map[string]int {
+	out := make(map[string]int, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneBoolMap(in map[string]bool) map[string]bool {
+	out := make(map[string]bool, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneValueTypeMap(in map[string]valueType) map[string]valueType {
+	out := make(map[string]valueType, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneInt64Map(in map[string]int64) map[string]int64 {
+	out := make(map[string]int64, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneRuneMap(in map[string]rune) map[string]rune {
+	out := make(map[string]rune, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneFloat64Map(in map[string]float64) map[string]float64 {
+	out := make(map[string]float64, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func (cg *CodeGen) currentScopeDecls() map[string]struct{} {
+	if len(cg.scopeDecls) == 0 {
+		cg.scopeDecls = append(cg.scopeDecls, make(map[string]struct{}))
+	}
+	return cg.scopeDecls[len(cg.scopeDecls)-1]
+}
+
+func (cg *CodeGen) isDeclaredInCurrentScope(name string) bool {
+	_, ok := cg.currentScopeDecls()[name]
+	return ok
+}
+
+func (cg *CodeGen) markDeclaredInCurrentScope(name string) {
+	cg.currentScopeDecls()[name] = struct{}{}
+}
+
+func (cg *CodeGen) enterScope() lexicalScopeState {
+	cg.scopeDecls = append(cg.scopeDecls, make(map[string]struct{}))
+	return lexicalScopeState{
+		variables:        cloneIntMap(cg.variables),
+		constVars:        cloneBoolMap(cg.constVars),
+		varTypes:         cloneValueTypeMap(cg.varTypes),
+		varDeclared:      cloneValueTypeMap(cg.varDeclared),
+		varTypeNames:     cloneStringMap(cg.varTypeNames),
+		varDeclaredNames: cloneStringMap(cg.varDeclaredNames),
+		varIsNull:        cloneBoolMap(cg.varIsNull),
+		varArrayLen:      cloneIntMap(cg.varArrayLen),
+		intVals:          cloneInt64Map(cg.intVals),
+		charVals:         cloneRuneMap(cg.charVals),
+		stringVals:       cloneStringMap(cg.stringVals),
+		floatVals:        cloneFloat64Map(cg.floatVals),
+		varFuncs:         cloneStringMap(cg.varFuncs),
+	}
+}
+
+func (cg *CodeGen) exitScope(st lexicalScopeState) {
+	if len(cg.scopeDecls) == 0 {
+		return
+	}
+	declared := cg.scopeDecls[len(cg.scopeDecls)-1]
+	cg.scopeDecls = cg.scopeDecls[:len(cg.scopeDecls)-1]
+
+	currVariables := cg.variables
+	currConstVars := cg.constVars
+	currVarTypes := cg.varTypes
+	currVarDeclared := cg.varDeclared
+	currVarTypeNames := cg.varTypeNames
+	currVarDeclaredNames := cg.varDeclaredNames
+	currVarIsNull := cg.varIsNull
+	currVarArrayLen := cg.varArrayLen
+	currIntVals := cg.intVals
+	currCharVals := cg.charVals
+	currStringVals := cg.stringVals
+	currFloatVals := cg.floatVals
+	currVarFuncs := cg.varFuncs
+
+	cg.variables = st.variables
+	cg.constVars = st.constVars
+	cg.varTypes = st.varTypes
+	cg.varDeclared = st.varDeclared
+	cg.varTypeNames = st.varTypeNames
+	cg.varDeclaredNames = st.varDeclaredNames
+	cg.varIsNull = st.varIsNull
+	cg.varArrayLen = st.varArrayLen
+	cg.intVals = st.intVals
+	cg.charVals = st.charVals
+	cg.stringVals = st.stringVals
+	cg.floatVals = st.floatVals
+	cg.varFuncs = st.varFuncs
+
+	for name := range st.variables {
+		if _, shadowed := declared[name]; shadowed {
+			continue
+		}
+		if _, ok := currVariables[name]; !ok {
+			continue
+		}
+
+		cg.variables[name] = currVariables[name]
+		if v, ok := currConstVars[name]; ok {
+			cg.constVars[name] = v
+		} else {
+			delete(cg.constVars, name)
+		}
+		if v, ok := currVarTypes[name]; ok {
+			cg.varTypes[name] = v
+		} else {
+			delete(cg.varTypes, name)
+		}
+		if v, ok := currVarDeclared[name]; ok {
+			cg.varDeclared[name] = v
+		} else {
+			delete(cg.varDeclared, name)
+		}
+		if v, ok := currVarTypeNames[name]; ok {
+			cg.varTypeNames[name] = v
+		} else {
+			delete(cg.varTypeNames, name)
+		}
+		if v, ok := currVarDeclaredNames[name]; ok {
+			cg.varDeclaredNames[name] = v
+		} else {
+			delete(cg.varDeclaredNames, name)
+		}
+		if v, ok := currVarIsNull[name]; ok {
+			cg.varIsNull[name] = v
+		} else {
+			delete(cg.varIsNull, name)
+		}
+		if v, ok := currVarArrayLen[name]; ok {
+			cg.varArrayLen[name] = v
+		} else {
+			delete(cg.varArrayLen, name)
+		}
+		if v, ok := currIntVals[name]; ok {
+			cg.intVals[name] = v
+		} else {
+			delete(cg.intVals, name)
+		}
+		if v, ok := currCharVals[name]; ok {
+			cg.charVals[name] = v
+		} else {
+			delete(cg.charVals, name)
+		}
+		if v, ok := currStringVals[name]; ok {
+			cg.stringVals[name] = v
+		} else {
+			delete(cg.stringVals, name)
+		}
+		if v, ok := currFloatVals[name]; ok {
+			cg.floatVals[name] = v
+		} else {
+			delete(cg.floatVals, name)
+		}
+		if v, ok := currVarFuncs[name]; ok {
+			cg.varFuncs[name] = v
+		} else {
+			delete(cg.varFuncs, name)
+		}
+	}
+}
+
 func (cg *CodeGen) generateStatement(stmt ast.Statement) {
 	switch s := stmt.(type) {
 	case *ast.LetStatement:
@@ -477,9 +695,22 @@ func (cg *CodeGen) generateStatement(stmt ast.Statement) {
 	case *ast.ExpressionStatement:
 		cg.generateExpression(s.Expression)
 	case *ast.FunctionStatement:
-		if cg.inFunction {
-			cg.addNodeError("nested function declarations are not supported in codegen", s)
+		if s == nil || s.Name == nil {
+			return
 		}
+		key, ok := cg.funcStmtKeys[s]
+		if !ok {
+			if top, exists := cg.funcByName[s.Name.Value]; exists {
+				key = top
+			} else {
+				cg.addNodeError("unknown function declaration: "+s.Name.Value, s)
+				return
+			}
+		}
+		cg.varFuncs[s.Name.Value] = key
+		cg.markDeclaredInCurrentScope(s.Name.Value)
+	case *ast.BlockStatement:
+		cg.generateBlockStatement(s)
 	}
 }
 
@@ -896,7 +1127,7 @@ func (cg *CodeGen) generateIdentifier(i *ast.Identifier) {
 
 // generateLet handles variable declarations (simplified - no stack frame yet)
 func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
-	if _, exists := cg.variables[ls.Name.Value]; exists {
+	if cg.isDeclaredInCurrentScope(ls.Name.Value) {
 		if cg.constVars[ls.Name.Value] {
 			cg.addNodeError("cannot reassign const: "+ls.Name.Value, ls)
 		} else {
@@ -926,6 +1157,7 @@ func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
 	name := ls.Name.Value
 	offset := cg.allocateSlots(1)
 	cg.variables[name] = offset
+	cg.markDeclaredInCurrentScope(name)
 	inferred := typeNull
 	inferredName := "null"
 	if ls.Value != nil {
@@ -960,7 +1192,7 @@ func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
 
 // generateConst handles immutable variable declarations.
 func (cg *CodeGen) generateConst(cs *ast.ConstStatement) {
-	if _, exists := cg.variables[cs.Name.Value]; exists {
+	if cg.isDeclaredInCurrentScope(cs.Name.Value) {
 		cg.addNodeError("identifier already declared: "+cs.Name.Value, cs)
 		cg.emit("    mov $0, %%rax")
 		return
@@ -982,6 +1214,7 @@ func (cg *CodeGen) generateConst(cs *ast.ConstStatement) {
 	name := cs.Name.Value
 	offset := cg.allocateSlots(1)
 	cg.variables[name] = offset
+	cg.markDeclaredInCurrentScope(name)
 	cg.constVars[name] = true
 	inferred := cg.inferExpressionType(cs.Value)
 	inferredName := cg.inferExpressionTypeName(cs.Value)
@@ -1215,6 +1448,9 @@ func (cg *CodeGen) generateLoopStatement(ls *ast.LoopStatement) {
 }
 
 func (cg *CodeGen) generateForStatement(fs *ast.ForStatement) {
+	scope := cg.enterScope()
+	defer cg.exitScope(scope)
+
 	if fs.Init != nil {
 		cg.generateStatement(fs.Init)
 	}
@@ -1379,6 +1615,12 @@ func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 }
 
 func (cg *CodeGen) generateBlockStatement(block *ast.BlockStatement) {
+	if block == nil {
+		return
+	}
+	scope := cg.enterScope()
+	defer cg.exitScope(scope)
+
 	for _, stmt := range block.Statements {
 		cg.generateStatement(stmt)
 	}
@@ -1694,6 +1936,7 @@ func (cg *CodeGen) reset() {
 	cg.stringLits = make(map[string]string)
 	cg.functions = make(map[string]*compiledFunction)
 	cg.funcByName = make(map[string]string)
+	cg.funcStmtKeys = make(map[*ast.FunctionStatement]string)
 	cg.varFuncs = make(map[string]string)
 	cg.stackOffset = 0
 	cg.maxStackOffset = 0
@@ -1706,6 +1949,7 @@ func (cg *CodeGen) reset() {
 	cg.loopBreakLabels = nil
 	cg.loopContLabels = nil
 	cg.arraySlots = make(map[*ast.ArrayLiteral]int)
+	cg.scopeDecls = []map[string]struct{}{make(map[string]struct{})}
 	cg.errors = []CodegenError{}
 }
 
@@ -1728,11 +1972,11 @@ func (cg *CodeGen) collectFunctions(program *ast.Program) {
 		}
 	}
 	for _, stmt := range program.Statements {
-		cg.collectFunctionsInStatement(stmt, globalScope)
+		cg.collectFunctionsInStatement(stmt, globalScope, true)
 	}
 }
 
-func (cg *CodeGen) collectFunctionsInStatement(stmt ast.Statement, scope map[string]struct{}) {
+func (cg *CodeGen) collectFunctionsInStatement(stmt ast.Statement, scope map[string]struct{}, topLevel bool) {
 	switch s := stmt.(type) {
 	case *ast.FunctionStatement:
 		if s == nil || s.Name == nil || s.Function == nil {
@@ -1751,7 +1995,10 @@ func (cg *CodeGen) collectFunctionsInStatement(stmt ast.Statement, scope map[str
 			Literal:  s.Function,
 			Captures: captures,
 		}
-		cg.funcByName[s.Name.Value] = key
+		cg.funcStmtKeys[s] = key
+		if topLevel {
+			cg.funcByName[s.Name.Value] = key
+		}
 
 		childScope := copyScope(scope)
 		for _, p := range s.Function.Parameters {
@@ -1759,7 +2006,13 @@ func (cg *CodeGen) collectFunctionsInStatement(stmt ast.Statement, scope map[str
 		}
 		collectDeclaredNames(s.Function.Body, childScope)
 		for _, st := range s.Function.Body.Statements {
-			cg.collectFunctionsInStatement(st, childScope)
+			cg.collectFunctionsInStatement(st, childScope, false)
+		}
+	case *ast.BlockStatement:
+		childScope := copyScope(scope)
+		collectDeclaredNames(s, childScope)
+		for _, st := range s.Statements {
+			cg.collectFunctionsInStatement(st, childScope, false)
 		}
 	case *ast.LetStatement:
 		if s != nil && s.Value != nil {
@@ -1786,29 +2039,35 @@ func (cg *CodeGen) collectFunctionsInStatement(stmt ast.Statement, scope map[str
 			cg.collectFunctionsInExpression(s.Condition, scope)
 		}
 		if s != nil && s.Body != nil {
+			childScope := copyScope(scope)
+			collectDeclaredNames(s.Body, childScope)
 			for _, st := range s.Body.Statements {
-				cg.collectFunctionsInStatement(st, scope)
+				cg.collectFunctionsInStatement(st, childScope, false)
 			}
 		}
 	case *ast.LoopStatement:
 		if s != nil && s.Body != nil {
+			childScope := copyScope(scope)
+			collectDeclaredNames(s.Body, childScope)
 			for _, st := range s.Body.Statements {
-				cg.collectFunctionsInStatement(st, scope)
+				cg.collectFunctionsInStatement(st, childScope, false)
 			}
 		}
 	case *ast.ForStatement:
 		if s != nil && s.Init != nil {
-			cg.collectFunctionsInStatement(s.Init, scope)
+			cg.collectFunctionsInStatement(s.Init, scope, false)
 		}
 		if s != nil && s.Condition != nil {
 			cg.collectFunctionsInExpression(s.Condition, scope)
 		}
 		if s != nil && s.Periodic != nil {
-			cg.collectFunctionsInStatement(s.Periodic, scope)
+			cg.collectFunctionsInStatement(s.Periodic, scope, false)
 		}
 		if s != nil && s.Body != nil {
+			childScope := copyScope(scope)
+			collectDeclaredNames(s.Body, childScope)
 			for _, st := range s.Body.Statements {
-				cg.collectFunctionsInStatement(st, scope)
+				cg.collectFunctionsInStatement(st, childScope, false)
 			}
 		}
 	case *ast.ReturnStatement:
@@ -1840,7 +2099,7 @@ func (cg *CodeGen) collectFunctionsInExpression(expr ast.Expression, scope map[s
 		}
 		collectDeclaredNames(e.Body, childScope)
 		for _, st := range e.Body.Statements {
-			cg.collectFunctionsInStatement(st, childScope)
+			cg.collectFunctionsInStatement(st, childScope, false)
 		}
 	case *ast.CallExpression:
 		cg.collectFunctionsInExpression(e.Function, scope)
@@ -1867,13 +2126,17 @@ func (cg *CodeGen) collectFunctionsInExpression(expr ast.Expression, scope map[s
 	case *ast.IfExpression:
 		cg.collectFunctionsInExpression(e.Condition, scope)
 		if e.Consequence != nil {
+			consScope := copyScope(scope)
+			collectDeclaredNames(e.Consequence, consScope)
 			for _, st := range e.Consequence.Statements {
-				cg.collectFunctionsInStatement(st, scope)
+				cg.collectFunctionsInStatement(st, consScope, false)
 			}
 		}
 		if e.Alternative != nil {
+			altScope := copyScope(scope)
+			collectDeclaredNames(e.Alternative, altScope)
 			for _, st := range e.Alternative.Statements {
-				cg.collectFunctionsInStatement(st, scope)
+				cg.collectFunctionsInStatement(st, altScope, false)
 			}
 		}
 	case *ast.NamedArgument:
@@ -1923,6 +2186,7 @@ type cgState struct {
 	loopBreakLabels  []string
 	loopContLabels   []string
 	arraySlots       map[*ast.ArrayLiteral]int
+	scopeDecls       []map[string]struct{}
 }
 
 func (cg *CodeGen) saveState() cgState {
@@ -1950,6 +2214,7 @@ func (cg *CodeGen) saveState() cgState {
 		loopBreakLabels:  cg.loopBreakLabels,
 		loopContLabels:   cg.loopContLabels,
 		arraySlots:       cg.arraySlots,
+		scopeDecls:       cg.scopeDecls,
 	}
 }
 
@@ -1977,6 +2242,7 @@ func (cg *CodeGen) restoreState(st cgState) {
 	cg.loopBreakLabels = st.loopBreakLabels
 	cg.loopContLabels = st.loopContLabels
 	cg.arraySlots = st.arraySlots
+	cg.scopeDecls = st.scopeDecls
 }
 
 func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
@@ -2008,6 +2274,7 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 	}
 	cg.currentFn = fn.Key
 	cg.arraySlots = make(map[*ast.ArrayLiteral]int)
+	cg.scopeDecls = []map[string]struct{}{make(map[string]struct{})}
 
 	label := fn.Label
 	cg.emit("%s:", label)
@@ -2027,6 +2294,7 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 		}
 		offset := cg.allocateSlots(1)
 		cg.variables[p.Name.Value] = offset
+		cg.markDeclaredInCurrentScope(p.Name.Value)
 		cg.emit("    mov %s, -%d(%%rbp)  # param %s", paramRegs[idx], offset, p.Name.Value)
 		pt := parseTypeName(p.TypeName)
 		if p.TypeName != "" && !isKnownTypeName(p.TypeName) {
@@ -2051,6 +2319,7 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 		}
 		offset := cg.allocateSlots(1)
 		cg.variables[name] = offset
+		cg.markDeclaredInCurrentScope(name)
 		cg.emit("    mov %s, -%d(%%rbp)  # capture %s", paramRegs[regIdx], offset, name)
 		cg.varTypes[name] = typeUnknown
 		cg.varDeclared[name] = typeUnknown
@@ -2060,7 +2329,7 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 
 	for _, st := range fn.Literal.Body.Statements {
 		if fs, ok := st.(*ast.FunctionStatement); ok && fs != nil && fs.Name != nil {
-			if key, ok := cg.funcByName[fs.Name.Value]; ok {
+			if key, ok := cg.funcStmtKeys[fs]; ok {
 				cg.varFuncs[fs.Name.Value] = key
 			}
 		}

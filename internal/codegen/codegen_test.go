@@ -157,6 +157,64 @@ func TestCodegenForLoop(t *testing.T) {
 	}
 }
 
+func TestCodegenBlockScopeShadowing(t *testing.T) {
+	asm, cg := generateAssembly(t, "let x = 1; if (true) { let x = 2; print(x); }; print(x);")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if strings.Count(asm, "call print_int") != 2 {
+		t.Fatalf("expected two print calls, got:\n%s", asm)
+	}
+}
+
+func TestCodegenBlockScopeNoLeak(t *testing.T) {
+	_, cg := generateAssembly(t, "if (true) { let y = 1; }; print(y);")
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected scope error for leaked block local")
+	}
+	if !strings.Contains(cg.Errors()[0], "identifier not found: y") {
+		t.Fatalf("expected identifier-not-found for y, got: %v", cg.Errors())
+	}
+}
+
+func TestCodegenBlockScopeOuterAssignmentPersists(t *testing.T) {
+	_, cg := generateAssembly(t, "let x = 1; if (true) { x = 2; }; print(x);")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+}
+
+func TestCodegenForScopeNoLeak(t *testing.T) {
+	_, cg := generateAssembly(t, "for (let i = 0; i < 1; i++) { }; print(i);")
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected scope error for leaked for-init local")
+	}
+	if !strings.Contains(cg.Errors()[0], "identifier not found: i") {
+		t.Fatalf("expected identifier-not-found for i, got: %v", cg.Errors())
+	}
+}
+
+func TestCodegenStandaloneBlockScopeNoLeak(t *testing.T) {
+	_, cg := generateAssembly(t, "{ let t = 1; } print(t);")
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected scope error for leaked block local")
+	}
+	if !strings.Contains(cg.Errors()[0], "identifier not found: t") {
+		t.Fatalf("expected identifier-not-found for t, got: %v", cg.Errors())
+	}
+}
+
+func TestCodegenStandaloneBlockFunctionNoLeak(t *testing.T) {
+	_, cg := generateAssembly(t, "{ fn tmp() int { return 1; } print(tmp()); } print(tmp());")
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected scope error for leaked block function")
+	}
+	last := cg.Errors()[len(cg.Errors())-1]
+	if !strings.Contains(last, "unknown function tmp") {
+		t.Fatalf("expected unknown function tmp after block, got: %v", cg.Errors())
+	}
+}
+
 func TestCodegenLoopLocalVarsUseFrameSlots(t *testing.T) {
 	asm, cg := generateAssembly(t, "let i = 0; while (i < 3) { let tmp = i; i++; }; print(i);")
 	if len(cg.Errors()) != 0 {

@@ -85,6 +85,60 @@ func TestForEval(t *testing.T) {
 	testIntegerObject(t, evaluated, 6)
 }
 
+func TestBlockScopeShadowingEval(t *testing.T) {
+	evaluated := testEval("let x = 1; if (true) { let x = 2; }; x")
+	testIntegerObject(t, evaluated, 1)
+}
+
+func TestBlockScopeAssignmentToOuterEval(t *testing.T) {
+	evaluated := testEval("let x = 1; if (true) { x = 2; }; x")
+	testIntegerObject(t, evaluated, 2)
+}
+
+func TestBlockScopeNoLeakEval(t *testing.T) {
+	evaluated := testEval("if (true) { let y = 1; }; y")
+	errObj, ok := evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "identifier not found: y" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+}
+
+func TestForScopeNoLeakEval(t *testing.T) {
+	evaluated := testEval("for (let i = 0; i < 1; i++) { }; i")
+	errObj, ok := evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "identifier not found: i" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+}
+
+func TestStandaloneBlockScopeNoLeakEval(t *testing.T) {
+	evaluated := testEval("{ let t = 123; } t")
+	errObj, ok := evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "identifier not found: t" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+}
+
+func TestStandaloneBlockFunctionNoLeakEval(t *testing.T) {
+	evaluated := testEval("{ fn tmp() int { return 1; } tmp(); } tmp();")
+	errObj, ok := evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "identifier not found: tmp" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+}
+
 func TestBreakInWhileEval(t *testing.T) {
 	evaluated := testEval("let i = 0; while (true) { i++; if (i == 3) { break; }; }; i")
 	testIntegerObject(t, evaluated, 3)

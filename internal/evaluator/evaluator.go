@@ -322,10 +322,11 @@ func evalProgram(program *ast.Program, env *object.Environment) object.Object {
 // Unlike evalProgram, it does NOT unwrap ReturnValue
 // This lets returns bubble up through nested blocks
 func evalBlockStatement(block *ast.BlockStatement, env *object.Environment) object.Object {
+	blockEnv := object.NewEnclosedEnvironment(env)
 	var result object.Object
 
 	for _, statement := range block.Statements {
-		result = Eval(statement, env)
+		result = Eval(statement, blockEnv)
 
 		if result != nil {
 			rt := result.Type()
@@ -710,8 +711,9 @@ func evalLoopStatement(ls *ast.LoopStatement, env *object.Environment) object.Ob
 }
 
 func evalForStatement(fs *ast.ForStatement, env *object.Environment) object.Object {
+	loopEnv := object.NewEnclosedEnvironment(env)
 	if fs.Init != nil {
-		initRes := Eval(fs.Init, env)
+		initRes := Eval(fs.Init, loopEnv)
 		if isError(initRes) {
 			return initRes
 		}
@@ -719,7 +721,7 @@ func evalForStatement(fs *ast.ForStatement, env *object.Environment) object.Obje
 
 	var result object.Object = NULL
 	for {
-		condition := Eval(fs.Condition, env)
+		condition := Eval(fs.Condition, loopEnv)
 		if isError(condition) {
 			return condition
 		}
@@ -727,7 +729,7 @@ func evalForStatement(fs *ast.ForStatement, env *object.Environment) object.Obje
 			return result
 		}
 
-		result = Eval(fs.Body, env)
+		result = Eval(fs.Body, loopEnv)
 		if result != nil {
 			rt := result.Type()
 			if rt == object.RETURN_VALUE_OBJ || rt == object.ERROR_OBJ {
@@ -738,7 +740,7 @@ func evalForStatement(fs *ast.ForStatement, env *object.Environment) object.Obje
 			}
 			if rt == object.CONTINUE_OBJ {
 				if fs.Periodic != nil {
-					stepRes := Eval(fs.Periodic, env)
+					stepRes := Eval(fs.Periodic, loopEnv)
 					if isError(stepRes) {
 						return stepRes
 					}
@@ -748,7 +750,7 @@ func evalForStatement(fs *ast.ForStatement, env *object.Environment) object.Obje
 		}
 
 		if fs.Periodic != nil {
-			stepRes := Eval(fs.Periodic, env)
+			stepRes := Eval(fs.Periodic, loopEnv)
 			if isError(stepRes) {
 				return stepRes
 			}

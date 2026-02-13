@@ -236,6 +236,8 @@ func (p *Parser) parseStatement() ast.Statement {
 		return p.parseContinueStatement()
 	case token.RETURN:
 		return p.parseReturnStatement()
+	case token.LBRACE:
+		return p.parseBlockStatement()
 	case token.IDENT:
 		if p.peekTokenIs(token.ASSIGN) ||
 			p.peekTokenIs(token.PLUS_EQ) ||
