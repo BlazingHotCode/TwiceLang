@@ -1,0 +1,1065 @@
+package codegen
+
+import (
+	"fmt"
+
+	"twice/internal/ast"
+	"twice/internal/token"
+)
+
+func (cg *CodeGen) generateStatement(stmt ast.Statement) {
+	switch s := stmt.(type) {
+	case *ast.LetStatement:
+		cg.generateLet(s)
+	case *ast.ConstStatement:
+		cg.generateConst(s)
+	case *ast.TypeDeclStatement:
+		cg.generateTypeDecl(s)
+	case *ast.AssignStatement:
+		cg.generateAssign(s)
+	case *ast.IndexAssignStatement:
+		cg.generateIndexAssign(s)
+	case *ast.ReturnStatement:
+		cg.generateReturn(s)
+	case *ast.WhileStatement:
+		cg.generateWhileStatement(s)
+	case *ast.LoopStatement:
+		cg.generateLoopStatement(s)
+	case *ast.ForStatement:
+		cg.generateForStatement(s)
+	case *ast.BreakStatement:
+		cg.generateBreakStatement(s)
+	case *ast.ContinueStatement:
+		cg.generateContinueStatement(s)
+	case *ast.ExpressionStatement:
+		cg.generateExpression(s.Expression)
+	case *ast.FunctionStatement:
+		if s == nil || s.Name == nil {
+			return
+		}
+		key, ok := cg.funcStmtKeys[s]
+		if !ok {
+			if top, exists := cg.funcByName[s.Name.Value]; exists {
+				key = top
+			} else {
+				cg.addNodeError("unknown function declaration: "+s.Name.Value, s)
+				return
+			}
+		}
+		cg.varFuncs[s.Name.Value] = key
+		cg.markDeclaredInCurrentScope(s.Name.Value)
+	case *ast.BlockStatement:
+		cg.generateBlockStatement(s)
+	}
+}
+
+// generateExpression dispatches to specific expression generators
+func (cg *CodeGen) generateExpression(expr ast.Expression) {
+	switch e := expr.(type) {
+	case *ast.IntegerLiteral:
+		cg.generateInteger(e)
+	case *ast.FloatLiteral:
+		cg.generateFloat(e)
+	case *ast.StringLiteral:
+		cg.generateString(e)
+	case *ast.CharLiteral:
+		cg.generateChar(e)
+	case *ast.NullLiteral:
+		cg.generateNull(e)
+	case *ast.ArrayLiteral:
+		cg.generateArrayLiteral(e)
+	case *ast.TupleLiteral:
+		cg.generateTupleLiteral(e)
+	case *ast.Boolean:
+		cg.generateBoolean(e)
+	case *ast.InfixExpression:
+		cg.generateInfix(e)
+	case *ast.PrefixExpression:
+		cg.generatePrefix(e)
+	case *ast.Identifier:
+		cg.generateIdentifier(e)
+	case *ast.IfExpression:
+		cg.generateIfExpression(e)
+	case *ast.CallExpression:
+		cg.generateCallExpression(e)
+	case *ast.IndexExpression:
+		cg.generateIndexExpression(e)
+	case *ast.MethodCallExpression:
+		cg.generateMethodCallExpression(e)
+	case *ast.TupleAccessExpression:
+		cg.generateTupleAccessExpression(e)
+	case *ast.FunctionLiteral:
+		cg.addNodeError("function literals are not supported in codegen yet", e)
+		cg.emit("    mov $0, %%rax")
+	case *ast.NamedArgument:
+		cg.addNodeError("named arguments are only valid inside function calls", e)
+		cg.emit("    mov $0, %%rax")
+	default:
+		cg.addNodeError("unsupported expression in codegen", e)
+		cg.emit("    mov $0, %%rax")
+	}
+}
+
+// generateInteger loads an integer into rax
+func (cg *CodeGen) generateInteger(il *ast.IntegerLiteral) {
+	cg.emit("    mov $%d, %%rax", il.Value)
+}
+
+func (cg *CodeGen) generateFloat(fl *ast.FloatLiteral) {
+	label := cg.stringLabel(fmt.Sprintf("%g\n", fl.Value))
+	cg.emit("    lea %s(%%rip), %%rax", label)
+}
+
+func (cg *CodeGen) generateString(sl *ast.StringLiteral) {
+	label := cg.stringLabel(sl.Value + "\n")
+	cg.emit("    lea %s(%%rip), %%rax", label)
+}
+
+func (cg *CodeGen) generateChar(cl *ast.CharLiteral) {
+	cg.emit("    mov $%d, %%rax", cl.Value)
+}
+
+func (cg *CodeGen) generateNull(_ *ast.NullLiteral) {
+	cg.emit("    lea null_lit(%%rip), %%rax")
+}
+
+func (cg *CodeGen) generateArrayLiteral(al *ast.ArrayLiteral) {
+	if al == nil || len(al.Elements) == 0 {
+		cg.addNodeError("empty array literals are not supported in codegen", al)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	elemTypeName, ok := cg.inferArrayLiteralTypeName(al)
+	if !ok {
+		cg.addNodeError("array literal elements must have the same type", al)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if elemTypeName == "null" {
+		cg.addNodeError("array literal elements cannot be null", al)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+
+	baseOffset := cg.ensureArrayLiteralSlot(al)
+	for i, el := range al.Elements {
+		cg.generateExpression(el)
+		cg.emit("    mov %%rax, -%d(%%rbp)", baseOffset-i*8)
+	}
+	cg.emit("    lea -%d(%%rbp), %%rax", baseOffset)
+}
+
+func (cg *CodeGen) generateTupleLiteral(tl *ast.TupleLiteral) {
+	if tl == nil || len(tl.Elements) == 0 {
+		cg.addNodeError("empty tuple literals are not supported in codegen", tl)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	baseOffset := cg.ensureTupleLiteralSlot(tl)
+	for i, el := range tl.Elements {
+		cg.generateExpression(el)
+		cg.emit("    mov %%rax, -%d(%%rbp)", baseOffset-i*8)
+	}
+	cg.emit("    lea -%d(%%rbp), %%rax", baseOffset)
+}
+
+func (cg *CodeGen) generateIndexExpression(ie *ast.IndexExpression) {
+	if ie == nil {
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	leftTypeName := cg.inferExpressionTypeName(ie.Left)
+	if id, ok := ie.Left.(*ast.Identifier); ok && cg.varIsNull[id.Value] && leftTypeName != "string" {
+		cg.addNodeError("cannot index null array", ie)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if cg.inferExpressionType(ie.Index) != typeInt {
+		cg.addNodeError("index must be int", ie.Index)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+
+	if leftTypeName == "string" {
+		if idx, ok := cg.constIntValue(ie.Index); ok {
+			if s, ok := cg.constStringValue(ie.Left); ok {
+				if idx < 0 || int(idx) >= len(s) {
+					cg.addNodeError(fmt.Sprintf("string index out of bounds: %d", idx), ie)
+					cg.emit("    mov $0, %%rax")
+					return
+				}
+			}
+		}
+		cg.generateExpression(ie.Left) // string pointer
+		cg.emit("    push %%rax")
+		cg.generateExpression(ie.Index)
+		cg.emit("    pop %%rcx")
+		cg.emit("    movzbq (%%rcx,%%rax), %%rax")
+		return
+	}
+
+	elemTypeName, arrLen, ok := peelArrayType(leftTypeName)
+	if !ok {
+		cg.addNodeError("index operator not supported for non-array/string type", ie)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if idx, ok := cg.constIntValue(ie.Index); ok && arrLen >= 0 {
+		if idx < 0 || int(idx) >= arrLen {
+			cg.addNodeError(fmt.Sprintf("array index out of bounds: %d", idx), ie)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+	}
+
+	cg.generateExpression(ie.Left) // array pointer
+	cg.emit("    push %%rax")
+	cg.generateExpression(ie.Index)
+	cg.emit("    imul $8, %%rax, %%rax")
+	cg.emit("    pop %%rcx")
+	cg.emit("    mov (%%rcx,%%rax), %%rax")
+
+	_ = elemTypeName
+}
+
+func (cg *CodeGen) generateMethodCallExpression(mce *ast.MethodCallExpression) {
+	if mce == nil || mce.Method == nil {
+		cg.addNodeError("invalid method call", mce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	switch mce.Method.Value {
+	case "length":
+		if len(mce.Arguments) != 0 {
+			cg.addNodeError(fmt.Sprintf("length expects 0 arguments, got=%d", len(mce.Arguments)), mce)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		typeName := cg.inferExpressionTypeName(mce.Object)
+		_, n, ok := peelArrayType(typeName)
+		if !ok {
+			cg.addNodeError("length is only supported on arrays", mce)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		if n < 0 {
+			cg.addNodeError("array length is unknown at compile time", mce)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		cg.emit("    mov $%d, %%rax", n)
+	default:
+		cg.addNodeError("unknown method: "+mce.Method.Value, mce)
+		cg.emit("    mov $0, %%rax")
+	}
+}
+
+func (cg *CodeGen) generateTupleAccessExpression(tae *ast.TupleAccessExpression) {
+	if tae == nil {
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	leftType := cg.inferCurrentValueTypeName(tae.Left)
+	if resolved, ok := cg.normalizeTypeName(leftType); ok {
+		leftType = resolved
+	}
+	members, ok := splitTopLevelTuple(leftType)
+	if !ok {
+		cg.addNodeError("tuple access is only supported on tuples", tae)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if tae.Index < 0 || tae.Index >= len(members) {
+		cg.addNodeError(fmt.Sprintf("tuple index out of bounds: %d", tae.Index), tae)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	cg.generateExpression(tae.Left)
+	cg.emit("    mov %d(%%rax), %%rax", tae.Index*8)
+}
+
+func (cg *CodeGen) generateBoolean(b *ast.Boolean) {
+	if b.Value {
+		cg.emit("    mov $1, %%rax") // true = 1
+	} else {
+		cg.emit("    mov $0, %%rax") // false = 0
+	}
+}
+
+// generateInfix handles binary operations: left op right
+// We use the stack to hold intermediate results
+func (cg *CodeGen) generateInfix(ie *ast.InfixExpression) {
+	leftType := cg.inferExpressionType(ie.Left)
+	rightType := cg.inferExpressionType(ie.Right)
+
+	if leftType == typeBool && rightType == typeBool {
+		cg.generateExpression(ie.Right)
+		cg.emit("    push %%rax")
+		cg.generateExpression(ie.Left)
+		cg.emit("    pop %%rcx")
+		switch ie.Operator {
+		case "&&":
+			cg.emit("    and %%rcx, %%rax")
+			return
+		case "||":
+			cg.emit("    or %%rcx, %%rax")
+			cg.emit("    test %%rax, %%rax")
+			cg.emit("    setne %%al")
+			cg.emit("    movzbq %%al, %%rax")
+			return
+		case "^^":
+			cg.emit("    xor %%rcx, %%rax")
+			return
+		default:
+			cg.addNodeError("unsupported boolean operator in codegen", ie)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+	}
+
+	if leftType == typeString && ie.Operator == "+" {
+		combined, ok := cg.constStringValue(ie)
+		if !ok {
+			if rightType == typeString {
+				// runtime cstr + cstr
+				cg.generateExpression(ie.Right) // right c-string ptr
+				cg.emit("    push %%rax")
+				cg.generateExpression(ie.Left) // left c-string ptr
+				cg.emit("    pop %%rdx")
+				cg.emit("    call concat_cstr_cstr")
+				return
+			}
+			if rightType == typeInt {
+				// runtime cstr + int
+				cg.generateExpression(ie.Right) // int
+				cg.emit("    push %%rax")
+				cg.generateExpression(ie.Left) // c-string ptr
+				cg.emit("    pop %%rdx")
+				cg.emit("    call concat_cstr_int")
+				return
+			}
+			cg.addNodeError("string concatenation in codegen requires compile-time known values", ie)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		label := cg.stringLabel(combined + "\n")
+		cg.emit("    lea %s(%%rip), %%rax", label)
+		return
+	}
+
+	if rightType == typeString && leftType == typeInt && ie.Operator == "+" {
+		// runtime int + cstr
+		cg.generateExpression(ie.Right) // c-string ptr
+		cg.emit("    push %%rax")
+		cg.generateExpression(ie.Left) // int
+		cg.emit("    pop %%rdx")
+		cg.emit("    call concat_int_cstr")
+		return
+	}
+
+	if isNumericType(leftType) && isNumericType(rightType) && (leftType == typeFloat || rightType == typeFloat) {
+		v, ok := cg.constFloatValue(ie)
+		if !ok {
+			cg.addNodeError("numeric infix with float result requires compile-time known values in codegen", ie)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		label := cg.stringLabel(fmt.Sprintf("%g\n", v))
+		cg.emit("    lea %s(%%rip), %%rax", label)
+		return
+	}
+
+	if leftType == typeChar && rightType == typeChar {
+		if ie.Operator != "+" {
+			cg.addNodeError("char infix supports only + in codegen", ie)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		// char + char -> char
+		cg.generateExpression(ie.Right)
+		cg.emit("    push %%rax")
+		cg.generateExpression(ie.Left)
+		cg.emit("    pop %%rcx")
+		cg.emit("    add %%rcx, %%rax")
+		return
+	}
+
+	if leftType == typeChar && rightType == typeInt && ie.Operator == "+" {
+		// char + int -> char
+		cg.generateExpression(ie.Right)
+		cg.emit("    push %%rax")
+		cg.generateExpression(ie.Left)
+		cg.emit("    pop %%rcx")
+		cg.emit("    add %%rcx, %%rax")
+		return
+	}
+
+	if leftType == typeType && rightType == typeType {
+		if ie.Operator != "==" && ie.Operator != "!=" {
+			cg.addNodeError("type comparisons support only == and !=", ie)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		cg.generateExpression(ie.Right)
+		cg.emit("    push %%rax")
+		cg.generateExpression(ie.Left)
+		cg.emit("    pop %%rcx")
+		cg.emit("    cmp %%rcx, %%rax")
+		if ie.Operator == "==" {
+			cg.emit("    sete %%al")
+		} else {
+			cg.emit("    setne %%al")
+		}
+		cg.emit("    movzbq %%al, %%rax")
+		return
+	}
+
+	if leftType != typeInt || rightType != typeInt {
+		cg.addNodeError("unsupported infix operand types in codegen", ie)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+
+	// Generate right side first (will be in rax)
+	cg.generateExpression(ie.Right)
+	// Push right side to stack
+	cg.emit("    push %%rax")
+
+	// Generate left side (will be in rax)
+	cg.generateExpression(ie.Left)
+	// Pop right side into rcx
+	cg.emit("    pop %%rcx")
+
+	// Now rax = left, rcx = right
+	switch ie.Operator {
+	case "+":
+		cg.emit("    add %%rcx, %%rax")
+	case "-":
+		cg.emit("    sub %%rcx, %%rax")
+	case "*":
+		cg.emit("    imul %%rcx, %%rax")
+	case "/":
+		cg.emit("    cqo                 # sign extend rax to rdx:rax")
+		cg.emit("    idiv %%rcx          # rax = rdx:rax / rcx")
+	case "%":
+		cg.emit("    cqo                 # sign extend rax to rdx:rax")
+		cg.emit("    idiv %%rcx          # rdx = rdx:rax %% rcx")
+		cg.emit("    mov %%rdx, %%rax")
+	case "&":
+		cg.emit("    and %%rcx, %%rax")
+	case "|":
+		cg.emit("    or %%rcx, %%rax")
+	case "^":
+		cg.emit("    xor %%rcx, %%rax")
+	case "<<":
+		cg.emit("    mov %%ecx, %%ecx")
+		cg.emit("    shl %%cl, %%rax")
+	case ">>":
+		cg.emit("    mov %%ecx, %%ecx")
+		cg.emit("    sar %%cl, %%rax")
+	case "<":
+		cg.emit("    cmp %%rcx, %%rax")
+		cg.emit("    setl %%al           # set al to 1 if less, 0 otherwise")
+		cg.emit("    movzbq %%al, %%rax  # zero extend to 64 bits")
+	case ">":
+		cg.emit("    cmp %%rcx, %%rax")
+		cg.emit("    setg %%al")
+		cg.emit("    movzbq %%al, %%rax")
+	case "==":
+		cg.emit("    cmp %%rcx, %%rax")
+		cg.emit("    sete %%al")
+		cg.emit("    movzbq %%al, %%rax")
+	case "!=":
+		cg.emit("    cmp %%rcx, %%rax")
+		cg.emit("    setne %%al")
+		cg.emit("    movzbq %%al, %%rax")
+	}
+}
+
+// generatePrefix handles unary operators
+func (cg *CodeGen) generatePrefix(pe *ast.PrefixExpression) {
+	cg.generateExpression(pe.Right)
+
+	switch pe.Operator {
+	case "-":
+		cg.emit("    neg %%rax")
+	case "!":
+		// !x is equivalent to x == 0
+		cg.emit("    test %%rax, %%rax")
+		cg.emit("    sete %%al")
+		cg.emit("    movzbq %%al, %%rax")
+	}
+}
+
+func (cg *CodeGen) generateIdentifier(i *ast.Identifier) {
+	offset, ok := cg.variables[i.Value]
+	if !ok {
+		if isTypeLiteralIdentifier(i.Value) {
+			label := cg.stringLabel(i.Value + "\n")
+			cg.emit("    lea %s(%%rip), %%rax", label)
+			return
+		}
+		cg.addNodeError("identifier not found: "+i.Value, i)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if cg.varIsNull[i.Value] {
+		if cg.varTypes[i.Value] == typeArray {
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		cg.emit("    lea null_lit(%%rip), %%rax")
+		return
+	}
+	// Load from stack: rbp - offset
+	cg.emit("    mov -%d(%%rbp), %%rax  # load %s", offset, i.Value)
+}
+
+// generateLet handles variable declarations (simplified - no stack frame yet)
+func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
+	if cg.isDeclaredInCurrentScope(ls.Name.Value) {
+		if cg.constVars[ls.Name.Value] {
+			cg.addNodeError("cannot reassign const: "+ls.Name.Value, ls)
+		} else {
+			cg.addNodeError("identifier already declared: "+ls.Name.Value, ls)
+		}
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+
+	declared := cg.parseTypeName(ls.TypeName)
+	if ls.TypeName != "" && !cg.isKnownTypeName(ls.TypeName) {
+		cg.addNodeError("unknown type: "+ls.TypeName, ls)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if declared != typeUnknown {
+		cg.varDeclared[ls.Name.Value] = declared
+		cg.varDeclaredNames[ls.Name.Value] = ls.TypeName
+	}
+
+	if ls.Value == nil {
+		cg.generateNull(&ast.NullLiteral{})
+	} else {
+		cg.generateExpression(ls.Value)
+	}
+
+	name := ls.Name.Value
+	offset := cg.allocateSlots(1)
+	cg.variables[name] = offset
+	cg.markDeclaredInCurrentScope(name)
+	inferred := typeNull
+	inferredName := "null"
+	if ls.Value != nil {
+		inferred = cg.inferExpressionType(ls.Value)
+		inferredName = cg.inferExpressionTypeName(ls.Value)
+	}
+	targetName := ls.TypeName
+	if targetName == "" {
+		targetName = inferredName
+	}
+	if targetName != "unknown" && inferredName != "unknown" && !cg.isAssignableTypeName(targetName, inferredName) {
+		cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", inferredName, targetName), ls)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if declared != typeUnknown {
+		cg.varTypes[name] = declared
+	} else {
+		cg.varTypes[name] = inferred
+	}
+	cg.varTypeNames[name] = targetName
+	cg.varValueTypeName[name] = inferredName
+	if _, n, ok := peelArrayType(targetName); ok {
+		cg.varArrayLen[name] = n
+	} else {
+		delete(cg.varArrayLen, name)
+	}
+	cg.varIsNull[name] = inferred == typeNull
+	cg.trackKnownValue(name, cg.varTypes[name], ls.Value)
+
+	cg.emit("    mov %%rax, -%d(%%rbp)  # let %s", offset, name)
+}
+
+// generateConst handles immutable variable declarations.
+func (cg *CodeGen) generateConst(cs *ast.ConstStatement) {
+	if cg.isDeclaredInCurrentScope(cs.Name.Value) {
+		cg.addNodeError("identifier already declared: "+cs.Name.Value, cs)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+
+	declared := cg.parseTypeName(cs.TypeName)
+	if cs.TypeName != "" && !cg.isKnownTypeName(cs.TypeName) {
+		cg.addNodeError("unknown type: "+cs.TypeName, cs)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if declared != typeUnknown {
+		cg.varDeclared[cs.Name.Value] = declared
+		cg.varDeclaredNames[cs.Name.Value] = cs.TypeName
+	}
+
+	cg.generateExpression(cs.Value)
+
+	name := cs.Name.Value
+	offset := cg.allocateSlots(1)
+	cg.variables[name] = offset
+	cg.markDeclaredInCurrentScope(name)
+	cg.constVars[name] = true
+	inferred := cg.inferExpressionType(cs.Value)
+	inferredName := cg.inferExpressionTypeName(cs.Value)
+	targetName := cs.TypeName
+	if targetName == "" {
+		targetName = inferredName
+	}
+	if targetName != "unknown" && inferredName != "unknown" && !cg.isAssignableTypeName(targetName, inferredName) {
+		cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", inferredName, targetName), cs)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if declared != typeUnknown {
+		cg.varTypes[name] = declared
+	} else {
+		cg.varTypes[name] = inferred
+	}
+	cg.varTypeNames[name] = targetName
+	cg.varValueTypeName[name] = inferredName
+	if _, n, ok := peelArrayType(targetName); ok {
+		cg.varArrayLen[name] = n
+	} else {
+		delete(cg.varArrayLen, name)
+	}
+	cg.varIsNull[name] = inferred == typeNull
+	cg.trackKnownValue(name, cg.varTypes[name], cs.Value)
+
+	cg.emit("    mov %%rax, -%d(%%rbp)  # const %s", offset, name)
+}
+
+func (cg *CodeGen) generateTypeDecl(ts *ast.TypeDeclStatement) {
+	if ts == nil || ts.Name == nil {
+		cg.addNodeError("invalid type declaration", ts)
+		return
+	}
+	name := ts.Name.Value
+	if name == "type" || isBuiltinTypeName(name) {
+		cg.addNodeError("cannot redefine builtin type: "+name, ts)
+		return
+	}
+	if cg.isTypeAliasDeclaredInCurrentScope(name) {
+		cg.addNodeError("type already declared: "+name, ts)
+		return
+	}
+	resolved, ok := cg.normalizeTypeName(ts.TypeName)
+	if !ok || !cg.isKnownTypeName(resolved) {
+		cg.addNodeError("unknown type: "+ts.TypeName, ts)
+		return
+	}
+	cg.typeAliases[name] = resolved
+	cg.markTypeAliasDeclaredInCurrentScope(name)
+}
+
+// generateAssign handles variable reassignment.
+func (cg *CodeGen) generateAssign(as *ast.AssignStatement) {
+	offset, exists := cg.variables[as.Name.Value]
+	if !exists {
+		cg.addNodeError("identifier not found: "+as.Name.Value, as)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if cg.constVars[as.Name.Value] {
+		cg.addNodeError("cannot reassign const: "+as.Name.Value, as)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+
+	cg.generateExpression(as.Value)
+	cg.emit("    mov %%rax, -%d(%%rbp)  # assign %s", offset, as.Name.Value)
+	inferred := cg.inferExpressionType(as.Value)
+	inferredName := cg.inferExpressionTypeName(as.Value)
+	target := cg.varTypes[as.Name.Value]
+	targetName := cg.varTypeNames[as.Name.Value]
+	if target == typeNull && inferred != typeNull {
+		target = inferred
+	}
+	if declared, ok := cg.varDeclared[as.Name.Value]; ok {
+		target = declared
+	}
+	if declaredName, ok := cg.varDeclaredNames[as.Name.Value]; ok {
+		targetName = declaredName
+	}
+	if targetName == "" {
+		targetName = typeName(target)
+	}
+	if inf, ok := as.Value.(*ast.InfixExpression); ok {
+		if inf.Token.Type == token.PLUSPLUS || inf.Token.Type == token.MINUSMIN {
+			if target != typeInt {
+				cg.addNodeError("++/-- only supported for int variables", as)
+				cg.emit("    mov $0, %%rax")
+				return
+			}
+		}
+	}
+	if inferredName != "unknown" && targetName != "unknown" && !cg.isAssignableTypeName(targetName, inferredName) {
+		cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", inferredName, targetName), as)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if _, isUnion := splitTopLevelUnion(targetName); isUnion && inferred != typeUnknown && inferred != typeNull {
+		cg.varTypes[as.Name.Value] = inferred
+	} else if target == typeUnknown {
+		cg.varTypes[as.Name.Value] = inferred
+	} else {
+		cg.varTypes[as.Name.Value] = target
+	}
+	cg.varTypeNames[as.Name.Value] = targetName
+	cg.varValueTypeName[as.Name.Value] = inferredName
+	if _, n, ok := peelArrayType(targetName); ok {
+		cg.varArrayLen[as.Name.Value] = n
+	} else {
+		delete(cg.varArrayLen, as.Name.Value)
+	}
+	cg.varIsNull[as.Name.Value] = inferred == typeNull
+	cg.trackKnownValue(as.Name.Value, cg.varTypes[as.Name.Value], as.Value)
+}
+
+func (cg *CodeGen) generateIndexAssign(ias *ast.IndexAssignStatement) {
+	if ias == nil || ias.Left == nil {
+		cg.addNodeError("invalid indexed assignment", ias)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	id, ok := ias.Left.Left.(*ast.Identifier)
+	if !ok {
+		cg.addNodeError("indexed assignment target must be an identifier", ias.Left.Left)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	name := id.Value
+	offset, exists := cg.variables[name]
+	if !exists {
+		cg.addNodeError("identifier not found: "+name, ias)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if cg.constVars[name] {
+		cg.addNodeError("cannot reassign const: "+name, ias)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if cg.varIsNull[name] {
+		cg.addNodeError("cannot index null array", ias)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+
+	arrTypeName := cg.varTypeNames[name]
+	elemTypeName, arrLen, ok := peelArrayType(arrTypeName)
+	if !ok {
+		cg.addNodeError("indexed assignment target is not an array", ias)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if cg.inferExpressionType(ias.Left.Index) != typeInt {
+		cg.addNodeError("array index must be int", ias.Left.Index)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if idx, ok := cg.constIntValue(ias.Left.Index); ok && arrLen >= 0 {
+		if idx < 0 || int(idx) >= arrLen {
+			cg.addNodeError(fmt.Sprintf("array index out of bounds: %d", idx), ias)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+	}
+
+	valueTypeName := cg.inferExpressionTypeName(ias.Value)
+	if valueTypeName != "unknown" && !cg.isAssignableTypeName(elemTypeName, valueTypeName) {
+		cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", valueTypeName, elemTypeName), ias)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+
+	cg.generateExpression(ias.Value)
+	cg.emit("    push %%rax")
+	cg.generateExpression(ias.Left.Index)
+	cg.emit("    imul $8, %%rax, %%rax")
+	cg.emit("    mov -%d(%%rbp), %%rcx  # load %s", offset, name)
+	cg.emit("    pop %%rdx")
+	cg.emit("    mov %%rdx, (%%rcx,%%rax)")
+	cg.emit("    mov %%rdx, %%rax")
+}
+
+// generateReturn handles return statements
+func (cg *CodeGen) generateReturn(rs *ast.ReturnStatement) {
+	if rs.ReturnValue == nil {
+		cg.generateNull(&ast.NullLiteral{})
+	} else {
+		cg.generateExpression(rs.ReturnValue)
+	}
+	if cg.inFunction {
+		addedTypeError := false
+		if cg.funcRetType != typeUnknown {
+			got := typeNull
+			if rs.ReturnValue != nil {
+				got = cg.inferExpressionType(rs.ReturnValue)
+			}
+			if got != typeUnknown && got != cg.funcRetType && cg.funcRetType != typeArray {
+				cg.addNodeError(fmt.Sprintf("cannot return %s from function returning %s", typeName(got), typeName(cg.funcRetType)), rs)
+				addedTypeError = true
+			}
+		}
+		if cg.funcRetTypeName != "" && cg.isKnownTypeName(cg.funcRetTypeName) {
+			gotName := "null"
+			if rs.ReturnValue != nil {
+				gotName = cg.inferExpressionTypeName(rs.ReturnValue)
+				// Some complex expressions can transiently infer as null due to
+				// conservative value tracking. Treat those as unknown instead of
+				// hard-failing null-return validation.
+				if gotName == "null" {
+					switch rs.ReturnValue.(type) {
+					case *ast.NullLiteral, *ast.Identifier, *ast.CallExpression:
+						// keep null: identifiers/calls may legitimately resolve to null
+					default:
+						gotName = "unknown"
+					}
+				}
+			}
+			if gotName == "null" {
+				if !cg.typeAllowsNullTypeName(cg.funcRetTypeName) {
+					if !addedTypeError {
+						cg.addNodeError(fmt.Sprintf("cannot return %s from function returning %s", gotName, cg.funcRetTypeName), rs)
+					}
+				}
+			} else if gotName != "unknown" && !cg.isAssignableTypeName(cg.funcRetTypeName, gotName) {
+				if !addedTypeError {
+					cg.addNodeError(fmt.Sprintf("cannot return %s from function returning %s", gotName, cg.funcRetTypeName), rs)
+				}
+			}
+		}
+		cg.emit("    jmp %s", cg.funcRetLbl)
+		return
+	}
+	cg.emit("    mov %%rax, %%rdi       # return value as process exit code")
+	cg.emit("    jmp %s", cg.exitLabel)
+}
+
+func (cg *CodeGen) generateIfExpression(ie *ast.IfExpression) {
+	elseLabel := cg.newLabel()
+	endLabel := cg.newLabel()
+
+	// Generate condition
+	cg.generateExpression(ie.Condition)
+
+	// Test if false (0)
+	cg.emit("    test %%rax, %%rax")
+	cg.emit("    jz %s              # jump if condition is false", elseLabel)
+
+	// Generate consequence (if block)
+	cg.generateBlockStatement(ie.Consequence)
+	cg.emit("    jmp %s             # jump to end", endLabel)
+
+	// Else block
+	cg.emit("%s:", elseLabel)
+	if ie.Alternative != nil {
+		cg.generateBlockStatement(ie.Alternative)
+	}
+
+	// End
+	cg.emit("%s:", endLabel)
+}
+
+func (cg *CodeGen) generateWhileStatement(ws *ast.WhileStatement) {
+	startLabel := cg.newLabel()
+	endLabel := cg.newLabel()
+	cg.pushLoopLabels(endLabel, startLabel)
+	defer cg.popLoopLabels()
+	cg.emit("%s:", startLabel)
+	cg.generateExpression(ws.Condition)
+	cg.emit("    test %%rax, %%rax")
+	cg.emit("    jz %s", endLabel)
+	cg.generateBlockStatement(ws.Body)
+	cg.emit("    jmp %s", startLabel)
+	cg.emit("%s:", endLabel)
+}
+
+func (cg *CodeGen) generateLoopStatement(ls *ast.LoopStatement) {
+	startLabel := cg.newLabel()
+	cg.pushLoopLabels(cg.newLabel(), startLabel)
+	breakLabel := cg.currentBreakLabel()
+	defer cg.popLoopLabels()
+	cg.emit("%s:", startLabel)
+	cg.generateBlockStatement(ls.Body)
+	cg.emit("    jmp %s", startLabel)
+	cg.emit("%s:", breakLabel)
+}
+
+func (cg *CodeGen) generateForStatement(fs *ast.ForStatement) {
+	scope := cg.enterScope()
+	defer cg.exitScope(scope)
+
+	if fs.Init != nil {
+		cg.generateStatement(fs.Init)
+	}
+	startLabel := cg.newLabel()
+	periodicLabel := cg.newLabel()
+	endLabel := cg.newLabel()
+	cg.pushLoopLabels(endLabel, periodicLabel)
+	defer cg.popLoopLabels()
+	cg.emit("%s:", startLabel)
+	if fs.Condition != nil {
+		cg.generateExpression(fs.Condition)
+		cg.emit("    test %%rax, %%rax")
+		cg.emit("    jz %s", endLabel)
+	}
+	cg.generateBlockStatement(fs.Body)
+	cg.emit("%s:", periodicLabel)
+	if fs.Periodic != nil {
+		cg.generateStatement(fs.Periodic)
+	}
+	cg.emit("    jmp %s", startLabel)
+	cg.emit("%s:", endLabel)
+}
+
+func (cg *CodeGen) generateBreakStatement(bs *ast.BreakStatement) {
+	label := cg.currentBreakLabel()
+	if label == "" {
+		cg.addNodeError("break not inside loop", bs)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	cg.emit("    jmp %s", label)
+}
+
+func (cg *CodeGen) generateContinueStatement(cs *ast.ContinueStatement) {
+	label := cg.currentContinueLabel()
+	if label == "" {
+		cg.addNodeError("continue not inside loop", cs)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	cg.emit("    jmp %s", label)
+}
+
+func (cg *CodeGen) pushLoopLabels(breakLabel, contLabel string) {
+	cg.loopBreakLabels = append(cg.loopBreakLabels, breakLabel)
+	cg.loopContLabels = append(cg.loopContLabels, contLabel)
+}
+
+func (cg *CodeGen) popLoopLabels() {
+	if len(cg.loopBreakLabels) > 0 {
+		cg.loopBreakLabels = cg.loopBreakLabels[:len(cg.loopBreakLabels)-1]
+	}
+	if len(cg.loopContLabels) > 0 {
+		cg.loopContLabels = cg.loopContLabels[:len(cg.loopContLabels)-1]
+	}
+}
+
+func (cg *CodeGen) currentBreakLabel() string {
+	if len(cg.loopBreakLabels) == 0 {
+		return ""
+	}
+	return cg.loopBreakLabels[len(cg.loopBreakLabels)-1]
+}
+
+func (cg *CodeGen) currentContinueLabel() string {
+	if len(cg.loopContLabels) == 0 {
+		return ""
+	}
+	return cg.loopContLabels[len(cg.loopContLabels)-1]
+}
+
+func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
+	fn, ok := ce.Function.(*ast.Identifier)
+	if !ok {
+		cg.failNode("unsupported call target", ce)
+		return
+	}
+
+	switch fn.Value {
+	case "print":
+		if len(ce.Arguments) != 1 {
+			cg.failNode("print expects exactly 1 argument", ce)
+			return
+		}
+		if _, ok := ce.Arguments[0].(*ast.NamedArgument); ok {
+			cg.failNode("named arguments are not supported for print", ce.Arguments[0])
+			return
+		}
+		argType := cg.inferExpressionType(ce.Arguments[0])
+		prevErrCount := len(cg.errors)
+		cg.generateExpression(ce.Arguments[0])
+		if len(cg.errors) > prevErrCount {
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		switch argType {
+		case typeBool:
+			cg.emit("    call print_bool")
+		case typeInt:
+			cg.emit("    call print_int")
+		case typeChar:
+			cg.emit("    call print_char")
+		case typeString, typeFloat, typeType, typeNull:
+			cg.emit("    call print_cstr")
+		default:
+			cg.failNode("print supports only int, bool, float, string, char, null, and type arguments", ce.Arguments[0])
+		}
+	case "typeof":
+		if len(ce.Arguments) != 1 {
+			cg.failNode("typeof expects exactly 1 argument", ce)
+			return
+		}
+		if _, ok := ce.Arguments[0].(*ast.NamedArgument); ok {
+			cg.failNode("named arguments are not supported for typeof", ce.Arguments[0])
+			return
+		}
+		typeNameStr := cg.inferExpressionTypeName(ce.Arguments[0])
+		if id, ok := ce.Arguments[0].(*ast.Identifier); ok {
+			if declared, ok := cg.varDeclaredNames[id.Value]; ok && declared != "" {
+				typeNameStr = declared
+			}
+		}
+		label := cg.stringLabel(typeNameStr + "\n")
+		cg.emit("    lea %s(%%rip), %%rax", label)
+	case "typeofValue", "typeofvalue":
+		if len(ce.Arguments) != 1 {
+			cg.failNodef(ce, "%s expects exactly 1 argument", fn.Value)
+			return
+		}
+		if _, ok := ce.Arguments[0].(*ast.NamedArgument); ok {
+			cg.failNodef(ce.Arguments[0], "named arguments are not supported for %s", fn.Value)
+			return
+		}
+		typeNameStr := typeName(cg.inferExpressionType(ce.Arguments[0]))
+		if typeNameStr == "array" {
+			typeNameStr = cg.inferExpressionTypeName(ce.Arguments[0])
+		}
+		label := cg.stringLabel(typeNameStr + "\n")
+		cg.emit("    lea %s(%%rip), %%rax", label)
+	case "int", "float", "string", "char", "bool":
+		cg.generateCastCall(fn.Value, ce)
+	default:
+		if key, ok := cg.varFuncs[fn.Value]; ok {
+			cg.generateUserFunctionCall(cg.functions[key], ce)
+			return
+		}
+		if key, ok := cg.funcByName[fn.Value]; ok {
+			cg.generateUserFunctionCall(cg.functions[key], ce)
+			return
+		}
+		cg.failNode("unknown function "+fn.Value, ce)
+	}
+}
+
+func (cg *CodeGen) generateBlockStatement(block *ast.BlockStatement) {
+	if block == nil {
+		return
+	}
+	scope := cg.enterScope()
+	defer cg.exitScope(scope)
+
+	for _, stmt := range block.Statements {
+		cg.generateStatement(stmt)
+	}
+}
