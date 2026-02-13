@@ -137,6 +137,26 @@ func TestCodegenTypeofValueComparison(t *testing.T) {
 	}
 }
 
+func TestCodegenWhileLoop(t *testing.T) {
+	asm, cg := generateAssembly(t, "let i = 0; while (i < 2) { i++; } print(i);")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if strings.Count(asm, "jmp .L") < 2 {
+		t.Fatalf("expected while loop jumps in assembly, got:\n%s", asm)
+	}
+}
+
+func TestCodegenForLoop(t *testing.T) {
+	asm, cg := generateAssembly(t, "let sum = 0; for (let i = 0; i < 4; i++) { sum = sum + i; } print(sum);")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "# let i") {
+		t.Fatalf("expected for init declaration in assembly, got:\n%s", asm)
+	}
+}
+
 func TestCodegenStringConcatAndFloatAdd(t *testing.T) {
 	asm, cg := generateAssembly(t, `let greeting = "Hello, " + "Twice!"; let pi = 1.25 + 2.75; print(greeting); print(pi);`)
 	if len(cg.Errors()) != 0 {

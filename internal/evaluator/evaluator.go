@@ -80,6 +80,12 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			return val
 		}
 		return &object.ReturnValue{Value: val}
+	case *ast.WhileStatement:
+		return evalWhileStatement(node, env)
+	case *ast.LoopStatement:
+		return evalLoopStatement(node, env)
+	case *ast.ForStatement:
+		return evalForStatement(node, env)
 	case *ast.LetStatement:
 		if env.HasInCurrentScope(node.Name.Value) {
 			if env.IsConstInCurrentScope(node.Name.Value) {
@@ -627,6 +633,74 @@ func evalIfExpression(ie *ast.IfExpression, env *object.Environment) object.Obje
 		return Eval(ie.Alternative, env)
 	} else {
 		return NULL
+	}
+}
+
+func evalWhileStatement(ws *ast.WhileStatement, env *object.Environment) object.Object {
+	var result object.Object = NULL
+	for {
+		condition := Eval(ws.Condition, env)
+		if isError(condition) {
+			return condition
+		}
+		if !isTruthy(condition) {
+			return result
+		}
+		result = Eval(ws.Body, env)
+		if result != nil {
+			rt := result.Type()
+			if rt == object.RETURN_VALUE_OBJ || rt == object.ERROR_OBJ {
+				return result
+			}
+		}
+	}
+}
+
+func evalLoopStatement(ls *ast.LoopStatement, env *object.Environment) object.Object {
+	var result object.Object = NULL
+	for {
+		result = Eval(ls.Body, env)
+		if result != nil {
+			rt := result.Type()
+			if rt == object.RETURN_VALUE_OBJ || rt == object.ERROR_OBJ {
+				return result
+			}
+		}
+	}
+}
+
+func evalForStatement(fs *ast.ForStatement, env *object.Environment) object.Object {
+	if fs.Init != nil {
+		initRes := Eval(fs.Init, env)
+		if isError(initRes) {
+			return initRes
+		}
+	}
+
+	var result object.Object = NULL
+	for {
+		condition := Eval(fs.Condition, env)
+		if isError(condition) {
+			return condition
+		}
+		if !isTruthy(condition) {
+			return result
+		}
+
+		result = Eval(fs.Body, env)
+		if result != nil {
+			rt := result.Type()
+			if rt == object.RETURN_VALUE_OBJ || rt == object.ERROR_OBJ {
+				return result
+			}
+		}
+
+		if fs.Periodic != nil {
+			stepRes := Eval(fs.Periodic, env)
+			if isError(stepRes) {
+				return stepRes
+			}
+		}
 	}
 }
 

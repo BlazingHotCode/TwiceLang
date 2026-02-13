@@ -73,6 +73,9 @@ const (
 	IF       TokenType = "IF"
 	ELIF     TokenType = "ELIF"
 	ELSE     TokenType = "ELSE"
+	FOR      TokenType = "FOR"
+	WHILE    TokenType = "WHILE"
+	LOOP     TokenType = "LOOP"
 	RETURN   TokenType = "RETURN"
 	NULL     TokenType = "NULL"
 )
@@ -88,6 +91,9 @@ var keywords = map[string]TokenType{
 	"if":     IF,
 	"elif":   ELIF,
 	"else":   ELSE,
+	"for":    FOR,
+	"while":  WHILE,
+	"loop":   LOOP,
 	"return": RETURN,
 	"null":   NULL,
 }

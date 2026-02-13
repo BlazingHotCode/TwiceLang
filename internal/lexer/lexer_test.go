@@ -228,6 +228,25 @@ func TestIdentifierWithDigits(t *testing.T) {
 	}
 }
 
+func TestLoopKeywords(t *testing.T) {
+	l := New("for while loop")
+	tests := []struct {
+		typ token.TokenType
+		lit string
+	}{
+		{token.FOR, "for"},
+		{token.WHILE, "while"},
+		{token.LOOP, "loop"},
+		{token.EOF, ""},
+	}
+	for i, tt := range tests {
+		tok := l.NextToken()
+		if tok.Type != tt.typ || tok.Literal != tt.lit {
+			t.Fatalf("tests[%d] - got=(%q,%q) want=(%q,%q)", i, tok.Type, tok.Literal, tt.typ, tt.lit)
+		}
+	}
+}
+
 func TestModuloAndCompoundOperatorTokens(t *testing.T) {
 	input := `x %= 2; y = 5 % 3;`
 	tests := []struct {

@@ -261,6 +261,83 @@ func (es *ExpressionStatement) String() string {
 	return ""
 }
 
+// WhileStatement represents while (<condition>) { <body> }
+type WhileStatement struct {
+	Token     token.Token
+	Condition Expression
+	Body      *BlockStatement
+}
+
+func (ws *WhileStatement) statementNode()       {}
+func (ws *WhileStatement) TokenLiteral() string { return ws.Token.Literal }
+func (ws *WhileStatement) String() string {
+	var out bytes.Buffer
+	out.WriteString("while (")
+	if ws.Condition != nil {
+		out.WriteString(ws.Condition.String())
+	}
+	out.WriteString(") ")
+	if ws.Body != nil {
+		out.WriteString("{")
+		out.WriteString(ws.Body.String())
+		out.WriteString("}")
+	}
+	return out.String()
+}
+
+// LoopStatement represents loop { <body> }, equivalent to while (true) { <body> }.
+type LoopStatement struct {
+	Token token.Token
+	Body  *BlockStatement
+}
+
+func (ls *LoopStatement) statementNode()       {}
+func (ls *LoopStatement) TokenLiteral() string { return ls.Token.Literal }
+func (ls *LoopStatement) String() string {
+	var out bytes.Buffer
+	out.WriteString("loop ")
+	if ls.Body != nil {
+		out.WriteString("{")
+		out.WriteString(ls.Body.String())
+		out.WriteString("}")
+	}
+	return out.String()
+}
+
+// ForStatement represents for (<init>; <check>; <periodic>) { <body> }.
+type ForStatement struct {
+	Token     token.Token
+	Init      Statement
+	Condition Expression
+	Periodic  Statement
+	Body      *BlockStatement
+}
+
+func (fs *ForStatement) statementNode()       {}
+func (fs *ForStatement) TokenLiteral() string { return fs.Token.Literal }
+func (fs *ForStatement) String() string {
+	var out bytes.Buffer
+	out.WriteString("for (")
+	if fs.Init != nil {
+		out.WriteString(strings.TrimSuffix(fs.Init.String(), ";"))
+	}
+	out.WriteString("; ")
+	if fs.Condition != nil {
+		out.WriteString(fs.Condition.String())
+	}
+	out.WriteString("; ")
+	if fs.Periodic != nil {
+		out.WriteString(strings.TrimSuffix(fs.Periodic.String(), ";"))
+	}
+	out.WriteString(") ")
+	if fs.Body != nil {
+		out.WriteString("{")
+		out.WriteString(fs.Body.String())
+		out.WriteString("}")
+	}
+	return out.String()
+}
+
 // Boolean represents true or false
 type Boolean struct {
 	Token token.Token

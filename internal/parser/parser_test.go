@@ -344,6 +344,63 @@ func TestNamedFunctionSyntaxParses(t *testing.T) {
 	}
 }
 
+func TestWhileStatementParses(t *testing.T) {
+	p := New(lexer.New("while (x < 3) { x = x + 1; }"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	ws, ok := program.Statements[0].(*ast.WhileStatement)
+	if !ok {
+		t.Fatalf("expected while statement, got=%T", program.Statements[0])
+	}
+	if ws.Condition == nil || ws.Body == nil {
+		t.Fatalf("expected non-nil condition and body")
+	}
+	if len(ws.Body.Statements) != 1 {
+		t.Fatalf("expected 1 while body statement, got=%d", len(ws.Body.Statements))
+	}
+}
+
+func TestLoopStatementParses(t *testing.T) {
+	p := New(lexer.New("loop { x = x + 1; }"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	ls, ok := program.Statements[0].(*ast.LoopStatement)
+	if !ok {
+		t.Fatalf("expected loop statement, got=%T", program.Statements[0])
+	}
+	if ls.Body == nil || len(ls.Body.Statements) != 1 {
+		t.Fatalf("expected loop body with 1 statement")
+	}
+}
+
+func TestForStatementParses(t *testing.T) {
+	p := New(lexer.New("for (let i = 0; i < 3; i++) { x = x + i; }"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	fs, ok := program.Statements[0].(*ast.ForStatement)
+	if !ok {
+		t.Fatalf("expected for statement, got=%T", program.Statements[0])
+	}
+	if _, ok := fs.Init.(*ast.LetStatement); !ok {
+		t.Fatalf("expected for init let statement, got=%T", fs.Init)
+	}
+	if fs.Condition == nil {
+		t.Fatalf("expected non-nil for condition")
+	}
+	if _, ok := fs.Periodic.(*ast.AssignStatement); !ok {
+		t.Fatalf("expected for periodic assign statement, got=%T", fs.Periodic)
+	}
+}
+
 func TestModuloHasProductPrecedence(t *testing.T) {
 	p := New(lexer.New("5 + 6 % 4;"))
 	program := p.ParseProgram()

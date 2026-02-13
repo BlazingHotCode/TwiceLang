@@ -88,6 +88,24 @@ if (score > 10) {
   print("small");
 };
 
+// loops
+let while_i = 0;
+while (while_i < 3) {
+  while_i++;
+};
+print(while_i);
+
+let for_sum = 0;
+for (let j = 0; j < 4; j++) {
+  for_sum = for_sum + j;
+};
+print(for_sum);
+
+// loop syntax (infinite loop, equivalent to while (true) {}):
+// loop {
+//   print("runs forever");
+// };
+
 // function calls: before declaration, default args, named args, mixed args
 print(add(5));
 

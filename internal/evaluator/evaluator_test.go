@@ -75,6 +75,27 @@ func TestIfElseEval(t *testing.T) {
 	testIntegerObject(t, evaluated, 10)
 }
 
+func TestWhileEval(t *testing.T) {
+	evaluated := testEval("let i = 0; while (i < 3) { i = i + 1; } i")
+	testIntegerObject(t, evaluated, 3)
+}
+
+func TestForEval(t *testing.T) {
+	evaluated := testEval("let sum = 0; for (let i = 0; i < 4; i++) { sum = sum + i; } sum")
+	testIntegerObject(t, evaluated, 6)
+}
+
+func TestLoopEvalPropagatesError(t *testing.T) {
+	evaluated := testEval("loop { missing; }")
+	errObj, ok := evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "identifier not found: missing" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+}
+
 func TestFunctionCallEval(t *testing.T) {
 	evaluated := testEval("let add = fn(x, y) { x + y; }; add(2, 3)")
 	testIntegerObject(t, evaluated, 5)

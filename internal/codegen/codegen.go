@@ -286,6 +286,12 @@ func (cg *CodeGen) generateStatement(stmt ast.Statement) {
 		cg.generateIndexAssign(s)
 	case *ast.ReturnStatement:
 		cg.generateReturn(s)
+	case *ast.WhileStatement:
+		cg.generateWhileStatement(s)
+	case *ast.LoopStatement:
+		cg.generateLoopStatement(s)
+	case *ast.ForStatement:
+		cg.generateForStatement(s)
 	case *ast.ExpressionStatement:
 		cg.generateExpression(s.Expression)
 	case *ast.FunctionStatement:
@@ -985,6 +991,45 @@ func (cg *CodeGen) generateIfExpression(ie *ast.IfExpression) {
 	cg.emit("%s:", endLabel)
 }
 
+func (cg *CodeGen) generateWhileStatement(ws *ast.WhileStatement) {
+	startLabel := cg.newLabel()
+	endLabel := cg.newLabel()
+	cg.emit("%s:", startLabel)
+	cg.generateExpression(ws.Condition)
+	cg.emit("    test %%rax, %%rax")
+	cg.emit("    jz %s", endLabel)
+	cg.generateBlockStatement(ws.Body)
+	cg.emit("    jmp %s", startLabel)
+	cg.emit("%s:", endLabel)
+}
+
+func (cg *CodeGen) generateLoopStatement(ls *ast.LoopStatement) {
+	startLabel := cg.newLabel()
+	cg.emit("%s:", startLabel)
+	cg.generateBlockStatement(ls.Body)
+	cg.emit("    jmp %s", startLabel)
+}
+
+func (cg *CodeGen) generateForStatement(fs *ast.ForStatement) {
+	if fs.Init != nil {
+		cg.generateStatement(fs.Init)
+	}
+	startLabel := cg.newLabel()
+	endLabel := cg.newLabel()
+	cg.emit("%s:", startLabel)
+	if fs.Condition != nil {
+		cg.generateExpression(fs.Condition)
+		cg.emit("    test %%rax, %%rax")
+		cg.emit("    jz %s", endLabel)
+	}
+	cg.generateBlockStatement(fs.Body)
+	if fs.Periodic != nil {
+		cg.generateStatement(fs.Periodic)
+	}
+	cg.emit("    jmp %s", startLabel)
+	cg.emit("%s:", endLabel)
+}
+
 func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 	fn, ok := ce.Function.(*ast.Identifier)
 	if !ok {
@@ -1473,6 +1518,36 @@ func (cg *CodeGen) collectFunctionsInStatement(stmt ast.Statement, scope map[str
 		if s != nil && s.Value != nil {
 			cg.collectFunctionsInExpression(s.Value, scope)
 		}
+	case *ast.WhileStatement:
+		if s != nil && s.Condition != nil {
+			cg.collectFunctionsInExpression(s.Condition, scope)
+		}
+		if s != nil && s.Body != nil {
+			for _, st := range s.Body.Statements {
+				cg.collectFunctionsInStatement(st, scope)
+			}
+		}
+	case *ast.LoopStatement:
+		if s != nil && s.Body != nil {
+			for _, st := range s.Body.Statements {
+				cg.collectFunctionsInStatement(st, scope)
+			}
+		}
+	case *ast.ForStatement:
+		if s != nil && s.Init != nil {
+			cg.collectFunctionsInStatement(s.Init, scope)
+		}
+		if s != nil && s.Condition != nil {
+			cg.collectFunctionsInExpression(s.Condition, scope)
+		}
+		if s != nil && s.Periodic != nil {
+			cg.collectFunctionsInStatement(s.Periodic, scope)
+		}
+		if s != nil && s.Body != nil {
+			for _, st := range s.Body.Statements {
+				cg.collectFunctionsInStatement(st, scope)
+			}
+		}
 	case *ast.ReturnStatement:
 		if s != nil && s.ReturnValue != nil {
 			cg.collectFunctionsInExpression(s.ReturnValue, scope)
@@ -1847,6 +1922,17 @@ func collectDeclaredNames(block *ast.BlockStatement, scope map[string]struct{}) 
 			if s != nil && s.Name != nil {
 				scope[s.Name.Value] = struct{}{}
 			}
+		case *ast.ForStatement:
+			switch init := s.Init.(type) {
+			case *ast.LetStatement:
+				if init != nil && init.Name != nil {
+					scope[init.Name.Value] = struct{}{}
+				}
+			case *ast.ConstStatement:
+				if init != nil && init.Name != nil {
+					scope[init.Name.Value] = struct{}{}
+				}
+			}
 		}
 	}
 }
@@ -1936,6 +2022,30 @@ func collectUsedNamesInStatement(stmt ast.Statement, used map[string]struct{}) {
 		}
 		if s != nil && s.Value != nil {
 			collectUsedNamesInExpression(s.Value, used)
+		}
+	case *ast.WhileStatement:
+		if s != nil && s.Condition != nil {
+			collectUsedNamesInExpression(s.Condition, used)
+		}
+		if s != nil && s.Body != nil {
+			collectUsedNamesInBlock(s.Body, used)
+		}
+	case *ast.LoopStatement:
+		if s != nil && s.Body != nil {
+			collectUsedNamesInBlock(s.Body, used)
+		}
+	case *ast.ForStatement:
+		if s != nil && s.Init != nil {
+			collectUsedNamesInStatement(s.Init, used)
+		}
+		if s != nil && s.Condition != nil {
+			collectUsedNamesInExpression(s.Condition, used)
+		}
+		if s != nil && s.Periodic != nil {
+			collectUsedNamesInStatement(s.Periodic, used)
+		}
+		if s != nil && s.Body != nil {
+			collectUsedNamesInBlock(s.Body, used)
 		}
 	case *ast.ReturnStatement:
 		if s != nil && s.ReturnValue != nil {

@@ -45,6 +45,7 @@ Notes:
 - CLI compiler/runner (`cmd/twice`)
 - Typed declarations with inference and null-default initialization
 - Numeric, string, char, boolean, modulo, and bitwise operators
+- Control flow with `if`/`elif`/`else`, `while`, `for`, and `loop`
 - String indexing (`str[i]`) returning `char`
 - Named functions with typed/default parameters and typed returns
 - Function calls with positional, named, and mixed arguments
@@ -175,6 +176,31 @@ if (x > 10) {
 };
 ```
 
+Loops:
+
+```tw
+let i = 0;
+while (i < 3) {
+  i++;
+};
+
+let sum = 0;
+for (let j = 0; j < 4; j++) {
+  sum = sum + j;
+};
+
+// infinite loop (equivalent to while (true) {})
+loop {
+  print(sum);
+};
+```
+
+Notes:
+
+- `for` form is `for (<init>; <check>; <periodic>) {}`.
+- `while` form is `while (<bool>) {}`.
+- `loop {}` is infinite; `break` is not implemented yet.
+
 ### Functions
 
 Supported declaration syntax:
@@ -296,6 +322,18 @@ print("Twice"[2]);
 print(true ^^ false);
 print(5 << 1);
 print('A' + 1);
+
+let i = 0;
+while (i < 3) {
+  i++;
+};
+print(i);
+
+let sum = 0;
+for (let j = 0; j < 4; j++) {
+  sum = sum + j;
+};
+print(sum);
 
 print(add(5)); // call before declaration
 
