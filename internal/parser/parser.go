@@ -60,7 +60,7 @@ type Parser struct {
 	curToken  token.Token // Current token under examination
 	peekToken token.Token // Next Token (for look-ahead)
 
-	errors []string // Accumulated parse errors
+	errors []ParseError // Accumulated parse errors
 
 	// Pratt parser tables
 	prefixParseFns map[token.TokenType]prefixParseFn // Functions for tokens that start expressions
@@ -77,11 +77,18 @@ type prefixParseFn func() ast.Expression
 // The ast.Expression is the left side already parsed
 type infixParseFn func(ast.Expression) ast.Expression
 
+type ParseError struct {
+	Message string
+	Context string
+	Line    int
+	Column  int
+}
+
 // New creates a new parser for the given lexer
 func New(l *lexer.Lexer) *Parser {
 	p := &Parser{
 		l:      l,
-		errors: []string{},
+		errors: []ParseError{},
 	}
 
 	// Initialize function tables
@@ -151,13 +158,40 @@ func (p *Parser) nextToken() {
 
 // Errors returns accumulated parse errors
 func (p *Parser) Errors() []string {
-	return p.errors
+	formatted := make([]string, 0, len(p.errors))
+	for _, err := range p.errors {
+		formatted = append(formatted, err.Message)
+	}
+	return formatted
+}
+
+func (p *Parser) DetailedErrors() []ParseError {
+	out := make([]ParseError, len(p.errors))
+	copy(out, p.errors)
+	return out
+}
+
+func (p *Parser) addErrorAtToken(tok token.Token, msg string, ctx string) {
+	p.errors = append(p.errors, ParseError{
+		Message: msg,
+		Context: ctx,
+		Line:    tok.Line,
+		Column:  tok.Column,
+	})
+}
+
+func (p *Parser) addErrorCurrent(msg string, ctx string) {
+	p.addErrorAtToken(p.curToken, msg, ctx)
+}
+
+func (p *Parser) addErrorPeek(msg string, ctx string) {
+	p.addErrorAtToken(p.peekToken, msg, ctx)
 }
 
 // peekError adds an error when we expected a different token
 func (p *Parser) peekError(t token.TokenType) {
 	msg := fmt.Sprintf("expected next token to be %s, got %s instead", t, p.peekToken.Type)
-	p.errors = append(p.errors, msg)
+	p.addErrorPeek(msg, p.peekToken.Literal)
 }
 
 // curTokenIs checks if current token matches

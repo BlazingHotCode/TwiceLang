@@ -122,9 +122,11 @@ func (cg *CodeGen) Generate(program *ast.Program) string {
 	cg.normalExit = cg.newLabel()
 	cg.collectFunctions(program)
 	cg.semanticCheck(program)
+	cg.symbolCheck(program)
 	if len(cg.errors) > 0 {
 		return ""
 	}
+	cg.annotateTypesPass(program)
 	cg.emitHeader()
 
 	// Generate code for each statement

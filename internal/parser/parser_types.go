@@ -72,7 +72,7 @@ func (p *Parser) parseTypeTermFromCurrent() (string, bool) {
 		}
 		base = "(" + first + ")"
 	default:
-		p.errors = append(p.errors, fmt.Sprintf("expected type, got %s", p.curToken.Type))
+		p.addErrorCurrent(fmt.Sprintf("expected type, got %s", p.curToken.Type), p.curToken.Literal)
 		return "", false
 	}
 	return p.parseArrayTypeSuffixes(base)
@@ -83,7 +83,7 @@ func (p *Parser) parseArrayTypeSuffixes(base string) (string, bool) {
 	for p.peekTokenIs(token.LBRACKET) {
 		p.nextToken() // '['
 		if !p.expectPeek(token.INT) {
-			p.errors = append(p.errors, "array type dimensions require explicit size, use [N]")
+			p.addErrorPeek("array type dimensions require explicit size, use [N]", p.peekToken.Literal)
 			return "", false
 		}
 		size := p.curToken.Literal

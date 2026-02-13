@@ -530,11 +530,6 @@ func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
 	}
 
 	declared := cg.parseTypeName(ls.TypeName)
-	if ls.TypeName != "" && !cg.isKnownTypeName(ls.TypeName) {
-		cg.addNodeError("unknown type: "+ls.TypeName, ls)
-		cg.emit("    mov $0, %%rax")
-		return
-	}
 	if declared != typeUnknown {
 		cg.varDeclared[ls.Name.Value] = declared
 		cg.varDeclaredNames[ls.Name.Value] = ls.TypeName
@@ -592,11 +587,6 @@ func (cg *CodeGen) generateConst(cs *ast.ConstStatement) {
 	}
 
 	declared := cg.parseTypeName(cs.TypeName)
-	if cs.TypeName != "" && !cg.isKnownTypeName(cs.TypeName) {
-		cg.addNodeError("unknown type: "+cs.TypeName, cs)
-		cg.emit("    mov $0, %%rax")
-		return
-	}
 	if declared != typeUnknown {
 		cg.varDeclared[cs.Name.Value] = declared
 		cg.varDeclaredNames[cs.Name.Value] = cs.TypeName
@@ -654,7 +644,6 @@ func (cg *CodeGen) generateTypeDecl(ts *ast.TypeDeclStatement) {
 	}
 	resolved, ok := cg.normalizeTypeName(ts.TypeName)
 	if !ok || !cg.isKnownTypeName(resolved) {
-		cg.addNodeError("unknown type: "+ts.TypeName, ts)
 		return
 	}
 	cg.typeAliases[name] = resolved

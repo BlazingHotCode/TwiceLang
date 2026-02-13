@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"twice/internal/codegen"
+	"twice/internal/diag"
 	"twice/internal/lexer"
 	"twice/internal/parser"
 )
@@ -49,8 +50,8 @@ func main() {
 	program := p.ParseProgram()
 
 	if len(p.Errors()) > 0 {
-		for _, err := range p.Errors() {
-			fmt.Printf("Parse error: %s\n", err)
+		for _, err := range p.DetailedErrors() {
+			printParseError(sourceFile, string(source), err)
 		}
 		os.Exit(1)
 	}
@@ -103,7 +104,7 @@ func printCodegenError(filename string, source string, err codegen.CodegenError)
 	if err.Line > 0 && err.Column > 0 {
 		line, col, ok = err.Line, err.Column, true
 	} else {
-		line, col, ok = findContextLocation(source, err.Context)
+		line, col, ok = diag.LocateContext(source, err.Context)
 	}
 	if !ok {
 		fmt.Printf("  --> %s\n", filename)
@@ -126,66 +127,30 @@ func printCodegenError(filename string, source string, err codegen.CodegenError)
 	}
 }
 
-func findContextLocation(source string, context string) (line int, col int, ok bool) {
-	ctx := strings.TrimSpace(context)
-	if ctx == "" {
-		return 0, 0, false
+func printParseError(filename string, source string, err parser.ParseError) {
+	fmt.Printf("Parse error: %s\n", err.Message)
+	line, col, ok := 0, 0, false
+	if err.Line > 0 && err.Column > 0 {
+		line, col, ok = err.Line, err.Column, true
+	} else {
+		line, col, ok = diag.LocateContext(source, err.Context)
+	}
+	if !ok {
+		fmt.Printf("  --> %s\n", filename)
+		if err.Context != "" {
+			fmt.Printf("   | context: %s\n", err.Context)
+		}
+		return
 	}
 	lines := strings.Split(source, "\n")
-	normalize := func(s string) string {
-		s = strings.TrimSpace(s)
-		s = strings.ReplaceAll(s, " ", "")
-		s = strings.ReplaceAll(s, "\t", "")
-		return s
+	fmt.Printf("  --> %s:%d:%d\n", filename, line, col)
+	fmt.Println("   |")
+	if line-2 >= 0 {
+		fmt.Printf("%3d| %s\n", line-1, lines[line-2])
 	}
-	normalizedCtx := normalize(strings.Trim(ctx, "`"))
-
-	// Prefer exact normalized line matches so `return ;` maps to `return;`.
-	// If there are multiple identical matches, avoid a misleading location.
-	matchLine := -1
-	for i, ln := range lines {
-		if normalize(ln) == normalizedCtx {
-			if matchLine != -1 {
-				matchLine = -2 // ambiguous
-				break
-			}
-			matchLine = i
-		}
+	fmt.Printf("%3d| %s\n", line, lines[line-1])
+	fmt.Printf("   | %s^\n", strings.Repeat(" ", col-1))
+	if line < len(lines) {
+		fmt.Printf("%3d| %s\n", line+1, lines[line])
 	}
-	if matchLine >= 0 {
-		ln := lines[matchLine]
-		col := strings.Index(ln, strings.TrimSpace(strings.Trim(ctx, "`")))
-		if col < 0 {
-			col = strings.Index(ln, "return")
-		}
-		if col < 0 {
-			col = 0
-		}
-		return matchLine + 1, col + 1, true
-	}
-
-	candidates := []string{
-		ctx,
-		strings.Trim(ctx, "`"),
-	}
-	bestLine := -1
-	bestCol := -1
-	for i, ln := range lines {
-		for _, c := range candidates {
-			if c == "" {
-				continue
-			}
-			if idx := strings.Index(ln, c); idx >= 0 {
-				if bestLine != -1 {
-					return 0, 0, false // ambiguous
-				}
-				bestLine = i + 1
-				bestCol = idx + 1
-			}
-		}
-	}
-	if bestLine != -1 {
-		return bestLine, bestCol, true
-	}
-	return 0, 0, false
 }

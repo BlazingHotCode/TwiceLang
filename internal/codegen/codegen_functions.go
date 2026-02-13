@@ -343,9 +343,6 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 	cg.funcRetLbl = cg.newLabel()
 	cg.funcRetType = cg.parseTypeName(fn.Literal.ReturnType)
 	cg.funcRetTypeName = fn.Literal.ReturnType
-	if fn.Literal.ReturnType != "" && !cg.isKnownTypeName(fn.Literal.ReturnType) {
-		cg.addNodeError("unknown type: "+fn.Literal.ReturnType, fn.Literal)
-	}
 	cg.currentFn = fn.Key
 	cg.arraySlots = make(map[*ast.ArrayLiteral]int)
 	cg.tupleSlots = make(map[*ast.TupleLiteral]int)
@@ -373,9 +370,6 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 		cg.markDeclaredInCurrentScope(p.Name.Value)
 		cg.emit("    mov %s, -%d(%%rbp)  # param %s", paramRegs[idx], offset, p.Name.Value)
 		pt := cg.parseTypeName(p.TypeName)
-		if p.TypeName != "" && !cg.isKnownTypeName(p.TypeName) {
-			cg.addNodeError("unknown type: "+p.TypeName, p.Name)
-		}
 		cg.varTypes[p.Name.Value] = pt
 		cg.varDeclared[p.Name.Value] = pt
 		if p.TypeName != "" {

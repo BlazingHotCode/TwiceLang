@@ -64,12 +64,12 @@ func (p *Parser) parseVariableDeclCore(requireSemicolon bool, allowEmptyInit boo
 
 	if p.peekTokenIs(token.SEMICOLON) {
 		if !allowEmptyInit {
-			p.errors = append(p.errors, emptyInitErr)
+			p.addErrorPeek(emptyInitErr, p.peekToken.Literal)
 			return nil, false
 		}
 		p.nextToken()
 		if decl.typeName == "" {
-			p.errors = append(p.errors, "let declaration without value requires explicit type annotation")
+			p.addErrorCurrent("let declaration without value requires explicit type annotation", p.curToken.Literal)
 			return nil, false
 		}
 		return decl, true

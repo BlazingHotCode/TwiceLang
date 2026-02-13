@@ -35,7 +35,7 @@ func (p *Parser) parseExpression(precedence int) ast.Expression {
 
 func (p *Parser) noPrefixParseFnError(t token.TokenType) {
 	msg := fmt.Sprintf("no prefix parse function for %s found", t)
-	p.errors = append(p.errors, msg)
+	p.addErrorCurrent(msg, p.curToken.Literal)
 }
 
 // parseIdentifier parses a variable name
@@ -51,7 +51,7 @@ func (p *Parser) parseIntegerLiteral() ast.Expression {
 	value, err := strconv.ParseInt(p.curToken.Literal, 0, 64)
 	if err != nil {
 		msg := fmt.Sprintf("could not parse %q as integer", p.curToken.Literal)
-		p.errors = append(p.errors, msg)
+		p.addErrorCurrent(msg, p.curToken.Literal)
 		return nil
 	}
 
@@ -64,7 +64,7 @@ func (p *Parser) parseFloatLiteral() ast.Expression {
 	value, err := strconv.ParseFloat(p.curToken.Literal, 64)
 	if err != nil {
 		msg := fmt.Sprintf("could not parse %q as float", p.curToken.Literal)
-		p.errors = append(p.errors, msg)
+		p.addErrorCurrent(msg, p.curToken.Literal)
 		return nil
 	}
 	lit.Value = value
@@ -77,7 +77,7 @@ func (p *Parser) parseStringLiteral() ast.Expression {
 
 func (p *Parser) parseCharLiteral() ast.Expression {
 	if len(p.curToken.Literal) != 1 {
-		p.errors = append(p.errors, "invalid char literal")
+		p.addErrorCurrent("invalid char literal", p.curToken.Literal)
 		return nil
 	}
 	return &ast.CharLiteral{Token: p.curToken, Value: rune(p.curToken.Literal[0])}
@@ -332,7 +332,7 @@ func (p *Parser) parseFunctionParameters() []*ast.FunctionParameter {
 
 func (p *Parser) parseFunctionParameter() *ast.FunctionParameter {
 	if !p.curTokenIs(token.IDENT) {
-		p.errors = append(p.errors, "function parameter name must be an identifier")
+		p.addErrorCurrent("function parameter name must be an identifier", p.curToken.Literal)
 		return nil
 	}
 	param := &ast.FunctionParameter{
@@ -380,7 +380,7 @@ func (p *Parser) parseMethodCallExpression(left ast.Expression) ast.Expression {
 		p.nextToken()
 		idx, err := strconv.Atoi(p.curToken.Literal)
 		if err != nil || idx < 0 {
-			p.errors = append(p.errors, "tuple access index must be a non-negative int literal")
+			p.addErrorCurrent("tuple access index must be a non-negative int literal", p.curToken.Literal)
 			return nil
 		}
 		return &ast.TupleAccessExpression{

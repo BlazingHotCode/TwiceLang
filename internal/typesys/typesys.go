@@ -76,64 +76,93 @@ func WithArrayDimension(elem string, n int) string {
 }
 
 func NormalizeTypeName(t string, resolve AliasResolver) (string, bool) {
-	return ResolveTypeName(t, resolve, map[string]struct{}{})
+	return resolveWithMemo(t, resolve, map[string]struct{}{}, map[string]resolveMemoEntry{})
 }
 
 func ResolveTypeName(t string, resolve AliasResolver, visiting map[string]struct{}) (string, bool) {
+	return resolveWithMemo(t, resolve, visiting, map[string]resolveMemoEntry{})
+}
+
+type resolveMemoEntry struct {
+	value string
+	ok    bool
+}
+
+func resolveWithMemo(t string, resolve AliasResolver, visiting map[string]struct{}, memo map[string]resolveMemoEntry) (string, bool) {
+	if v, ok := memo[t]; ok {
+		return v.value, v.ok
+	}
 	base, dims, ok := ParseTypeDescriptor(t)
 	if !ok {
+		memo[t] = resolveMemoEntry{"", false}
 		return "", false
 	}
-	resolvedBase, ok := resolveTypeBase(base, resolve, visiting)
+	resolvedBase, ok := resolveTypeBase(base, resolve, visiting, memo)
 	if !ok {
+		memo[t] = resolveMemoEntry{"", false}
 		return "", false
 	}
 	resolvedType := resolvedBase
 	if len(dims) > 0 {
 		rb, rd, ok := ParseTypeDescriptor(resolvedBase)
 		if !ok {
+			memo[t] = resolveMemoEntry{"", false}
 			return "", false
 		}
 		allDims := append(append([]int{}, rd...), dims...)
 		resolvedType = FormatTypeDescriptor(rb, allDims)
 	}
+	memo[t] = resolveMemoEntry{resolvedType, true}
 	return resolvedType, true
 }
 
-func resolveTypeBase(base string, resolve AliasResolver, visiting map[string]struct{}) (string, bool) {
+func resolveTypeBase(base string, resolve AliasResolver, visiting map[string]struct{}, memo map[string]resolveMemoEntry) (string, bool) {
 	base = stripOuterGroupingParens(base)
+	if v, ok := memo["base:"+base]; ok {
+		return v.value, v.ok
+	}
 	if parts, isUnion := SplitTopLevelUnion(base); isUnion {
 		resolved := make([]string, 0, len(parts))
 		for _, p := range parts {
-			r, ok := resolveTypeBase(p, resolve, visiting)
+			r, ok := resolveTypeBase(p, resolve, visiting, memo)
 			if !ok {
+				memo["base:"+base] = resolveMemoEntry{"", false}
 				return "", false
 			}
 			resolved = append(resolved, r)
 		}
-		return strings.Join(resolved, "||"), true
+		out := strings.Join(resolved, "||")
+		memo["base:"+base] = resolveMemoEntry{out, true}
+		return out, true
 	}
 	if parts, isTuple := SplitTopLevelTuple(base); isTuple {
 		resolved := make([]string, 0, len(parts))
 		for _, p := range parts {
-			r, ok := resolveTypeBase(p, resolve, visiting)
+			r, ok := resolveTypeBase(p, resolve, visiting, memo)
 			if !ok {
+				memo["base:"+base] = resolveMemoEntry{"", false}
 				return "", false
 			}
 			resolved = append(resolved, r)
 		}
-		return "(" + strings.Join(resolved, ",") + ")", true
+		out := "(" + strings.Join(resolved, ",") + ")"
+		memo["base:"+base] = resolveMemoEntry{out, true}
+		return out, true
 	}
 	if resolve != nil {
 		if alias, ok := resolve(base); ok {
 			if _, seen := visiting[base]; seen {
+				memo["base:"+base] = resolveMemoEntry{"", false}
 				return "", false
 			}
 			visiting[base] = struct{}{}
 			defer delete(visiting, base)
-			return ResolveTypeName(alias, resolve, visiting)
+			out, ok := resolveWithMemo(alias, resolve, visiting, memo)
+			memo["base:"+base] = resolveMemoEntry{out, ok}
+			return out, ok
 		}
 	}
+	memo["base:"+base] = resolveMemoEntry{base, true}
 	return base, true
 }
 
