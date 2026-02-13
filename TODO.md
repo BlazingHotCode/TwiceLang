@@ -29,6 +29,14 @@
 - `let a = new Name(...)`
 - Add nullable/optional struct fields with `?:` in struct declarations.
 - Add default values in field declarations (`field: type = value`), which imply optional/nullable-style constructor behavior so caller can omit them.
+- Explicit struct function declaration syntax:
+- `fn (self: StructName) methodName(args...) ReturnType { ... }`
+- Explicit mutating struct function declaration syntax (with pointers):
+- `fn (self: *StructName) methodName(args...) { ... }`
+- Struct function usage syntax:
+- `value.methodName(args...)`
+- Pointer struct function usage syntax (auto-deref):
+- `ptr.methodName(args...)` (no `(*ptr).methodName(...)` required)
 
 ## 3. Pointers
 
