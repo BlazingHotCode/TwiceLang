@@ -8,7 +8,16 @@ import (
 	"twice/internal/ast"
 )
 
-func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
+func (cg *CodeGen) inferExpressionType(expr ast.Expression) (out valueType) {
+	if expr == nil {
+		return typeUnknown
+	}
+	if cached, ok := cg.inferTypeCache[expr]; ok {
+		return cached
+	}
+	defer func() {
+		cg.inferTypeCache[expr] = out
+	}()
 	switch e := expr.(type) {
 	case *ast.IntegerLiteral:
 		return typeInt
@@ -188,7 +197,16 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
 	}
 }
 
-func (cg *CodeGen) inferExpressionTypeName(expr ast.Expression) string {
+func (cg *CodeGen) inferExpressionTypeName(expr ast.Expression) (out string) {
+	if expr == nil {
+		return "unknown"
+	}
+	if cached, ok := cg.inferNameCache[expr]; ok {
+		return cached
+	}
+	defer func() {
+		cg.inferNameCache[expr] = out
+	}()
 	switch e := expr.(type) {
 	case *ast.Identifier:
 		if t, ok := cg.varTypeNames[e.Value]; ok && t != "" {

@@ -8,6 +8,8 @@ import (
 )
 
 func (cg *CodeGen) generateStatement(stmt ast.Statement) {
+	cg.inferTypeCache = make(map[ast.Expression]valueType)
+	cg.inferNameCache = make(map[ast.Expression]string)
 	switch s := stmt.(type) {
 	case *ast.LetStatement:
 		cg.generateLet(s)

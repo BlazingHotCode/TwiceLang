@@ -60,7 +60,7 @@
 
 ## 5. OOP and Type System Expansion
 
-- Add class declarations and object instantiation.
+- Add class declarations and object instantiation.o
 - Structs stay public-focused; classes support explicit `public`/`private`.
 - Class members default to `private` when no modifier is provided.
 - Classes support `static` functions and fields.

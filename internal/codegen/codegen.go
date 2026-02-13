@@ -47,6 +47,8 @@ type CodeGen struct {
 	tupleSlots       map[*ast.TupleLiteral]int
 	scopeDecls       []map[string]struct{}
 	typeScopeDecls   []map[string]struct{}
+	inferTypeCache   map[ast.Expression]valueType
+	inferNameCache   map[ast.Expression]string
 	errors           []CodegenError
 }
 
@@ -107,6 +109,8 @@ func New() *CodeGen {
 		tupleSlots:       make(map[*ast.TupleLiteral]int),
 		scopeDecls:       []map[string]struct{}{},
 		typeScopeDecls:   []map[string]struct{}{},
+		inferTypeCache:   make(map[ast.Expression]valueType),
+		inferNameCache:   make(map[ast.Expression]string),
 		errors:           []CodegenError{},
 	}
 }
@@ -117,6 +121,10 @@ func (cg *CodeGen) Generate(program *ast.Program) string {
 	cg.exitLabel = cg.newLabel()
 	cg.normalExit = cg.newLabel()
 	cg.collectFunctions(program)
+	cg.semanticCheck(program)
+	if len(cg.errors) > 0 {
+		return ""
+	}
 	cg.emitHeader()
 
 	// Generate code for each statement

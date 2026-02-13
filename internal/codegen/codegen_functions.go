@@ -47,6 +47,8 @@ func (cg *CodeGen) reset() {
 	cg.tupleSlots = make(map[*ast.TupleLiteral]int)
 	cg.scopeDecls = []map[string]struct{}{make(map[string]struct{})}
 	cg.typeScopeDecls = []map[string]struct{}{make(map[string]struct{})}
+	cg.inferTypeCache = make(map[ast.Expression]valueType)
+	cg.inferNameCache = make(map[ast.Expression]string)
 	cg.errors = []CodegenError{}
 }
 

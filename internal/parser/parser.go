@@ -206,11 +206,19 @@ func (p *Parser) ParseProgram() *ast.Program {
 		stmt := p.parseStatement()
 		if stmt != nil {
 			program.Statements = append(program.Statements, stmt)
+		} else {
+			p.synchronize()
 		}
 		p.nextToken()
 	}
 
 	return program
+}
+
+func (p *Parser) synchronize() {
+	for !p.curTokenIs(token.EOF) && !p.curTokenIs(token.SEMICOLON) && !p.curTokenIs(token.RBRACE) {
+		p.nextToken()
+	}
 }
 
 // parseStatement dispatches to specific statement parsers based on token type

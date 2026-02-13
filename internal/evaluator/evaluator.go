@@ -9,6 +9,7 @@ import (
 	"twice/internal/ast"
 	"twice/internal/object"
 	"twice/internal/token"
+	"twice/internal/typesys"
 )
 
 // TRUE and FALSE are singletons - we reuse these instead of creating new booleans
@@ -1145,454 +1146,61 @@ func runtimeTypeName(obj object.Object) string {
 	}
 }
 
+func typeAliasResolver(env *object.Environment) typesys.AliasResolver {
+	if env == nil {
+		return nil
+	}
+	return func(name string) (string, bool) {
+		return env.TypeAlias(name)
+	}
+}
+
 func isAssignableToType(targetType string, valueType string, env *object.Environment) bool {
-	targetType = normalizeTypeName(targetType, env)
-	valueType = normalizeTypeName(valueType, env)
-	if targetType == "" {
-		return true
-	}
-	if valueType == "null" {
-		return true
-	}
-
-	if targetType == valueType {
-		return true
-	}
-
-	targetMembers, targetIsUnion := splitTopLevelUnion(targetType)
-	if targetIsUnion {
-		for _, m := range targetMembers {
-			if isAssignableToType(m, valueType, env) {
-				return true
-			}
-		}
-		return false
-	}
-	if valueMembers, valueIsUnion := splitTopLevelUnion(valueType); valueIsUnion {
-		for _, m := range valueMembers {
-			if !isAssignableToType(targetType, m, env) {
-				return false
-			}
-		}
-		return true
-	}
-
-	targetBase, targetDims, okTarget := parseTypeName(targetType)
-	valueBase, valueDims, okValue := parseTypeName(valueType)
-	if !okTarget || !okValue {
-		return false
-	}
-	if len(targetDims) != len(valueDims) {
-		return false
-	}
-	for i := range targetDims {
-		if targetDims[i] == -1 {
-			continue
-		}
-		if targetDims[i] != valueDims[i] {
-			return false
-		}
-	}
-	if len(targetDims) == 0 {
-		targetTuple, targetIsTuple := splitTopLevelTuple(targetBase)
-		valueTuple, valueIsTuple := splitTopLevelTuple(valueBase)
-		if targetIsTuple || valueIsTuple {
-			if !targetIsTuple || !valueIsTuple || len(targetTuple) != len(valueTuple) {
-				return false
-			}
-			for i := range targetTuple {
-				if !isAssignableToType(targetTuple[i], valueTuple[i], env) {
-					return false
-				}
-			}
-			return true
-		}
-		return targetBase == valueBase
-	}
-	return isAssignableToType(targetBase, valueBase, env)
+	return typesys.IsAssignableTypeName(targetType, valueType, typeAliasResolver(env))
 }
 
 func isKnownTypeName(t string, env *object.Environment) bool {
-	t = normalizeTypeName(t, env)
-	base, _, ok := parseTypeName(t)
-	if !ok {
-		return false
-	}
-	if members, isUnion := splitTopLevelUnion(base); isUnion {
-		for _, m := range members {
-			if !isKnownTypeName(m, env) {
-				return false
-			}
-		}
-		return true
-	}
-	if members, isTuple := splitTopLevelTuple(base); isTuple {
-		for _, m := range members {
-			if !isKnownTypeName(m, env) {
-				return false
-			}
-		}
-		return true
-	}
-	switch base {
-	case "int", "float", "string", "char", "bool", "null", "type":
-		return true
-	default:
-		return false
-	}
+	return typesys.IsKnownTypeName(t, typeAliasResolver(env))
 }
 
 func mergeTypeNames(a, b string, env *object.Environment) (string, bool) {
-	a = normalizeTypeName(a, env)
-	b = normalizeTypeName(b, env)
-	if a == b {
-		return a, true
-	}
-	baseA, dimsA, okA := parseTypeName(a)
-	baseB, dimsB, okB := parseTypeName(b)
-	if !okA || !okB {
-		return "", false
-	}
-	if len(dimsA) != len(dimsB) {
-		return "", false
-	}
-	merged := make([]int, len(dimsA))
-	for i := range dimsA {
-		if dimsA[i] == dimsB[i] {
-			merged[i] = dimsA[i]
-			continue
-		}
-		merged[i] = -1
-	}
-	mergedBase, ok := mergeUnionBases(baseA, baseB)
-	if !ok {
-		tupleA, okA := splitTopLevelTuple(baseA)
-		tupleB, okB := splitTopLevelTuple(baseB)
-		if !okA || !okB || len(tupleA) != len(tupleB) {
-			return "", false
-		}
-		parts := make([]string, len(tupleA))
-		for i := range tupleA {
-			mt, ok := mergeTypeNames(tupleA[i], tupleB[i], env)
-			if !ok {
-				return "", false
-			}
-			parts[i] = mt
-		}
-		mergedBase = "(" + strings.Join(parts, ",") + ")"
-		return formatTypeName(mergedBase, merged), true
-	}
-	return formatTypeName(mergedBase, merged), true
+	return typesys.MergeTypeNames(a, b, typeAliasResolver(env))
 }
 
-// parseTypeName parses scalar and array types such as:
-// int, int[], int[3], int[][], int[][2]
-// Returns base type name and per-dimension sizes where -1 means unsized ([]).
 func parseTypeName(t string) (string, []int, bool) {
-	if t == "" {
-		return "", nil, false
-	}
-	base := t
-	dimsRev := make([]int, 0, 2)
-	for strings.HasSuffix(base, "]") {
-		open := strings.LastIndexByte(base, '[')
-		if open <= 0 {
-			return "", nil, false
-		}
-		sizeLit := base[open+1 : len(base)-1]
-		if sizeLit == "" {
-			dimsRev = append(dimsRev, -1)
-		} else {
-			size, err := strconv.Atoi(sizeLit)
-			if err != nil || size < 0 {
-				return "", nil, false
-			}
-			dimsRev = append(dimsRev, size)
-		}
-		base = base[:open]
-	}
-	base = stripOuterGroupingParens(base)
-	if base == "" {
-		return "", nil, false
-	}
-	dims := make([]int, len(dimsRev))
-	for i := range dimsRev {
-		dims[len(dimsRev)-1-i] = dimsRev[i]
-	}
-	return base, dims, true
+	return typesys.ParseTypeDescriptor(t)
 }
 
 func formatTypeName(base string, dims []int) string {
-	if len(dims) > 0 {
-		if _, isUnion := splitTopLevelUnion(base); isUnion && !isWrappedInParens(base) {
-			base = "(" + base + ")"
-		}
-	}
-	out := base
-	for _, d := range dims {
-		if d == -1 {
-			out += "[]"
-			continue
-		}
-		out += fmt.Sprintf("[%d]", d)
-	}
-	return out
+	return typesys.FormatTypeDescriptor(base, dims)
 }
 
 func normalizeTypeName(t string, env *object.Environment) string {
-	resolved, ok := resolveTypeName(t, env, map[string]struct{}{})
+	resolved, ok := typesys.NormalizeTypeName(t, typeAliasResolver(env))
 	if !ok {
 		return t
 	}
 	return resolved
 }
 
-func resolveTypeName(t string, env *object.Environment, visiting map[string]struct{}) (string, bool) {
-	base, dims, ok := parseTypeName(t)
-	if !ok {
-		return "", false
-	}
-	resolvedBase, ok := resolveTypeBase(base, env, visiting)
-	if !ok {
-		return "", false
-	}
-	resolvedType := resolvedBase
-	if len(dims) > 0 {
-		rb, rd, ok := parseTypeName(resolvedBase)
-		if !ok {
-			return "", false
-		}
-		allDims := append(append([]int{}, rd...), dims...)
-		resolvedType = formatTypeName(rb, allDims)
-	}
-	return resolvedType, true
-}
-
-func resolveTypeBase(base string, env *object.Environment, visiting map[string]struct{}) (string, bool) {
-	base = stripOuterGroupingParens(base)
-	if parts, isUnion := splitTopLevelUnion(base); isUnion {
-		resolved := make([]string, 0, len(parts))
-		for _, p := range parts {
-			r, ok := resolveTypeBase(p, env, visiting)
-			if !ok {
-				return "", false
-			}
-			resolved = append(resolved, r)
-		}
-		return strings.Join(resolved, "||"), true
-	}
-	if parts, isTuple := splitTopLevelTuple(base); isTuple {
-		resolved := make([]string, 0, len(parts))
-		for _, p := range parts {
-			r, ok := resolveTypeBase(p, env, visiting)
-			if !ok {
-				return "", false
-			}
-			resolved = append(resolved, r)
-		}
-		return "(" + strings.Join(resolved, ",") + ")", true
-	}
-	if alias, ok := env.TypeAlias(base); ok {
-		if _, seen := visiting[base]; seen {
-			return "", false
-		}
-		visiting[base] = struct{}{}
-		defer delete(visiting, base)
-		return resolveTypeName(alias, env, visiting)
-	}
-	return base, true
+func resolveTypeName(t string, env *object.Environment, _ map[string]struct{}) (string, bool) {
+	return typesys.NormalizeTypeName(t, typeAliasResolver(env))
 }
 
 func isBuiltinTypeName(name string) bool {
-	switch name {
-	case "int", "float", "string", "char", "bool", "null", "type":
-		return true
-	default:
-		return false
-	}
+	return typesys.IsBuiltinTypeName(name)
 }
 
 func typeAllowsNull(t string, env *object.Environment) bool {
-	t = normalizeTypeName(t, env)
-	if t == "null" {
-		return true
-	}
-	if members, isUnion := splitTopLevelUnion(t); isUnion {
-		for _, m := range members {
-			if typeAllowsNull(m, env) {
-				return true
-			}
-		}
-	}
-	return false
+	return typesys.TypeAllowsNull(t, typeAliasResolver(env))
 }
 
 func splitTopLevelUnion(t string) ([]string, bool) {
-	s := stripOuterGroupingParens(t)
-	parts := []string{}
-	depth := 0
-	start := 0
-	found := false
-	for i := 0; i < len(s)-1; i++ {
-		switch s[i] {
-		case '(':
-			depth++
-		case ')':
-			if depth > 0 {
-				depth--
-			}
-		case '|':
-			if depth == 0 && s[i+1] == '|' {
-				part := strings.TrimSpace(s[start:i])
-				if part == "" {
-					return nil, false
-				}
-				parts = append(parts, stripOuterGroupingParens(part))
-				start = i + 2
-				found = true
-				i++
-			}
-		}
-	}
-	if !found {
-		return nil, false
-	}
-	last := strings.TrimSpace(s[start:])
-	if last == "" {
-		return nil, false
-	}
-	parts = append(parts, stripOuterGroupingParens(last))
-	return parts, true
-}
-
-func stripOuterParens(s string) string {
-	out := strings.TrimSpace(s)
-	for isWrappedInParens(out) {
-		out = strings.TrimSpace(out[1 : len(out)-1])
-	}
-	return out
-}
-
-func stripOuterGroupingParens(s string) string {
-	out := strings.TrimSpace(s)
-	for isWrappedInParens(out) {
-		inner := strings.TrimSpace(out[1 : len(out)-1])
-		if hasTopLevelComma(inner) {
-			break
-		}
-		out = inner
-	}
-	return out
-}
-
-func hasTopLevelComma(s string) bool {
-	depth := 0
-	for i := 0; i < len(s); i++ {
-		switch s[i] {
-		case '(':
-			depth++
-		case ')':
-			if depth > 0 {
-				depth--
-			}
-		case ',':
-			if depth == 0 {
-				return true
-			}
-		}
-	}
-	return false
+	return typesys.SplitTopLevelUnion(t)
 }
 
 func splitTopLevelTuple(t string) ([]string, bool) {
-	s := strings.TrimSpace(t)
-	if !isWrappedInParens(s) {
-		return nil, false
-	}
-	inner := strings.TrimSpace(s[1 : len(s)-1])
-	if inner == "" || !hasTopLevelComma(inner) {
-		return nil, false
-	}
-	parts := []string{}
-	depth := 0
-	start := 0
-	for i := 0; i < len(inner); i++ {
-		switch inner[i] {
-		case '(':
-			depth++
-		case ')':
-			if depth > 0 {
-				depth--
-			}
-		case ',':
-			if depth == 0 {
-				part := strings.TrimSpace(inner[start:i])
-				if part == "" {
-					return nil, false
-				}
-				parts = append(parts, part)
-				start = i + 1
-			}
-		}
-	}
-	last := strings.TrimSpace(inner[start:])
-	if last == "" {
-		return nil, false
-	}
-	parts = append(parts, last)
-	return parts, true
-}
-
-func isWrappedInParens(s string) bool {
-	if len(s) < 2 || s[0] != '(' || s[len(s)-1] != ')' {
-		return false
-	}
-	depth := 0
-	for i := 0; i < len(s); i++ {
-		switch s[i] {
-		case '(':
-			depth++
-		case ')':
-			depth--
-			if depth == 0 && i != len(s)-1 {
-				return false
-			}
-		}
-		if depth < 0 {
-			return false
-		}
-	}
-	return depth == 0
-}
-
-func mergeUnionBases(a, b string) (string, bool) {
-	listA := []string{stripOuterGroupingParens(a)}
-	if parts, ok := splitTopLevelUnion(a); ok {
-		listA = parts
-	}
-	listB := []string{stripOuterGroupingParens(b)}
-	if parts, ok := splitTopLevelUnion(b); ok {
-		listB = parts
-	}
-	merged := make([]string, 0, len(listA)+len(listB))
-	seen := map[string]struct{}{}
-	for _, x := range append(listA, listB...) {
-		if x == "" {
-			return "", false
-		}
-		if _, ok := seen[x]; ok {
-			continue
-		}
-		seen[x] = struct{}{}
-		merged = append(merged, x)
-	}
-	if len(merged) == 0 {
-		return "", false
-	}
-	if len(merged) == 1 {
-		return merged[0], true
-	}
-	return strings.Join(merged, "||"), true
+	return typesys.SplitTopLevelTuple(t)
 }
 
 func castToInt(args []object.Object) object.Object {

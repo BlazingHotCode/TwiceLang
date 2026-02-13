@@ -251,6 +251,8 @@ func (p *Parser) parseBlockStatement() *ast.BlockStatement {
 		stmt := p.parseStatement()
 		if stmt != nil {
 			block.Statements = append(block.Statements, stmt)
+		} else {
+			p.synchronize()
 		}
 		p.nextToken()
 	}

@@ -2,7 +2,6 @@ package codegen
 
 import (
 	"fmt"
-	"reflect"
 	"strings"
 
 	"twice/internal/ast"
@@ -45,28 +44,74 @@ func (cg *CodeGen) failNodef(node ast.Node, format string, args ...interface{}) 
 }
 
 func tokenFromNode(node ast.Node) (token.Token, bool) {
-	v := reflect.ValueOf(node)
-	if !v.IsValid() {
+	switch n := node.(type) {
+	case *ast.Identifier:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.IntegerLiteral:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.FloatLiteral:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.StringLiteral:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.CharLiteral:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.NullLiteral:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.ArrayLiteral:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.TupleLiteral:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.LetStatement:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.ConstStatement:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.TypeDeclStatement:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.AssignStatement:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.IndexAssignStatement:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.ReturnStatement:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.ExpressionStatement:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.WhileStatement:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.LoopStatement:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.ForStatement:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.BreakStatement:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.ContinueStatement:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.Boolean:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.PrefixExpression:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.InfixExpression:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.IfExpression:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.BlockStatement:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.FunctionLiteral:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.FunctionStatement:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.CallExpression:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.IndexExpression:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.MethodCallExpression:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.TupleAccessExpression:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.NamedArgument:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	default:
 		return token.Token{}, false
 	}
-	if v.Kind() == reflect.Ptr {
-		if v.IsNil() {
-			return token.Token{}, false
-		}
-		v = v.Elem()
-	}
-	if v.Kind() != reflect.Struct {
-		return token.Token{}, false
-	}
-	f := v.FieldByName("Token")
-	if !f.IsValid() {
-		return token.Token{}, false
-	}
-	tok, ok := f.Interface().(token.Token)
-	if !ok {
-		return token.Token{}, false
-	}
-	return tok, tok.Line > 0 && tok.Column > 0
 }
 
 func (cg *CodeGen) Errors() []string {
