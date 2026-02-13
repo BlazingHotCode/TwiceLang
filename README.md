@@ -120,6 +120,11 @@ if (typeofValue(value) == int) {
 };
 
 let mixed: (int||string)[] = {1, "two", 3};
+
+let tri: int||string||bool = 1;
+tri = "ok";
+tri = true;
+print(typeof(tri)); // int||string||bool
 ```
 
 Type declarations (aliases) are also supported:
@@ -311,6 +316,13 @@ Example no-return function:
 ```tw
 fn logValue(x: int) {
   print(x);
+  return;
+}
+
+fn maybeName(flag: bool) string||null {
+  if (flag) {
+    return "twice";
+  };
   return;
 }
 ```

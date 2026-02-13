@@ -246,6 +246,20 @@ fn demo_arrays_unions_tuples() {
   arr_or_text = "array or text";
   print(typeof(arr_or_text));
 
+  let tri: int||string||bool = 1;
+  tri = "ok";
+  tri = true;
+  print(typeof(tri));
+
+  fn maybe_name(flag: bool) string||null {
+    if (flag) {
+      return "twice";
+    };
+    return;
+  }
+  maybe_name(false);
+  maybe_name(true);
+
   let tup: (int, string, bool) = (7, "seven", true);
   print(typeof(tup));
   print(tup.0);

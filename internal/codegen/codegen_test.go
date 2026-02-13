@@ -409,6 +409,11 @@ func TestCodegenFunctionEmptyReturnTypeValidation(t *testing.T) {
 	if len(cg.Errors()) != 0 {
 		t.Fatalf("unexpected codegen errors for int||null empty return: %v", cg.Errors())
 	}
+
+	_, cg = generateAssembly(t, `fn ok2() string||null { return; }`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors for string||null empty return: %v", cg.Errors())
+	}
 }
 
 func TestCodegenUnknownReturnTypeDoesNotCascadeReturnErrors(t *testing.T) {
@@ -668,6 +673,16 @@ func TestCodegenUnionTypedIfAfterReassignment(t *testing.T) {
 	_, cg := generateAssembly(t, `let a: string||int = "x"; a = 5; if (a == 5) { print("ok"); };`)
 	if len(cg.Errors()) != 0 {
 		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+}
+
+func TestCodegenUnionWithThreeOrMoreTypes(t *testing.T) {
+	asm, cg := generateAssembly(t, `let v: int||string||bool = 1; v = "ok"; v = true; print(typeof(v));`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors for 3-member union: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "int||string||bool\\n") {
+		t.Fatalf("expected typeof(v) to preserve 3-member union, got:\n%s", asm)
 	}
 }
 

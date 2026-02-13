@@ -232,6 +232,11 @@ func TestFunctionEmptyReturnTypeValidationEval(t *testing.T) {
 	if evaluated.Type() != object.NULL_OBJ {
 		t.Fatalf("expected null object for int||null return, got=%s (%s)", evaluated.Type(), evaluated.Inspect())
 	}
+
+	evaluated = testEval(`fn ok2() string||null { return; } ok2()`)
+	if evaluated.Type() != object.NULL_OBJ {
+		t.Fatalf("expected null object for string||null return, got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
 }
 
 func TestUnknownIdentifierError(t *testing.T) {
@@ -579,6 +584,14 @@ func TestUnionTypesEval(t *testing.T) {
 	evaluated = testEval(`let xs: (int||string)[] = {1, "two", 3}; typeof(xs)`)
 	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "(int||string)[]" {
 		t.Fatalf("expected type((int||string)[]), got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+
+	evaluated = testEval(`let v: int||string||bool = 1; v = "ok"; v = true; v`)
+	testBooleanObject(t, evaluated, true)
+
+	evaluated = testEval(`let v: int||string||bool = 1; typeof(v)`)
+	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "int||string||bool" {
+		t.Fatalf("expected type(int||string||bool), got=%s (%s)", evaluated.Type(), evaluated.Inspect())
 	}
 }
 
