@@ -11,6 +11,39 @@ type parsedVarDecl struct {
 	value    ast.Expression
 }
 
+func isAssignLikeToken(t token.TokenType) bool {
+	switch t {
+	case token.ASSIGN,
+		token.PLUS_EQ,
+		token.MINUS_EQ,
+		token.MUL_EQ,
+		token.DIV_EQ,
+		token.MOD_EQ,
+		token.PLUSPLUS,
+		token.MINUSMIN:
+		return true
+	default:
+		return false
+	}
+}
+
+func compoundAssignOperator(t token.TokenType) string {
+	switch t {
+	case token.PLUS_EQ:
+		return "+"
+	case token.MINUS_EQ:
+		return "-"
+	case token.MUL_EQ:
+		return "*"
+	case token.DIV_EQ:
+		return "/"
+	case token.MOD_EQ:
+		return "%"
+	default:
+		return ""
+	}
+}
+
 func (p *Parser) parseVariableDeclCore(requireSemicolon bool, allowEmptyInit bool, emptyInitErr string) (*parsedVarDecl, bool) {
 	if !p.expectPeek(token.IDENT) {
 		return nil, false
@@ -101,14 +134,7 @@ func (p *Parser) parseStatement() ast.Statement {
 		if p.curToken.Literal == "type" && p.peekTokenIs(token.IDENT) {
 			return p.parseTypeDeclStatement()
 		}
-		if p.peekTokenIs(token.ASSIGN) ||
-			p.peekTokenIs(token.PLUS_EQ) ||
-			p.peekTokenIs(token.MINUS_EQ) ||
-			p.peekTokenIs(token.MUL_EQ) ||
-			p.peekTokenIs(token.DIV_EQ) ||
-			p.peekTokenIs(token.MOD_EQ) ||
-			p.peekTokenIs(token.PLUSPLUS) ||
-			p.peekTokenIs(token.MINUSMIN) {
+		if isAssignLikeToken(p.peekToken.Type) {
 			stmt := p.parseAssignStatement()
 			if stmt == nil {
 				return nil
@@ -222,14 +248,7 @@ func (p *Parser) parseAssignStatementCore(requireSemicolon bool) *ast.AssignStat
 		Name:  &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal},
 	}
 
-	if !p.peekTokenIs(token.ASSIGN) &&
-		!p.peekTokenIs(token.PLUS_EQ) &&
-		!p.peekTokenIs(token.MINUS_EQ) &&
-		!p.peekTokenIs(token.MUL_EQ) &&
-		!p.peekTokenIs(token.DIV_EQ) &&
-		!p.peekTokenIs(token.MOD_EQ) &&
-		!p.peekTokenIs(token.PLUSPLUS) &&
-		!p.peekTokenIs(token.MINUSMIN) {
+	if !isAssignLikeToken(p.peekToken.Type) {
 		return nil
 	}
 	p.nextToken()
@@ -266,19 +285,7 @@ func (p *Parser) parseAssignStatementCore(requireSemicolon bool) *ast.AssignStat
 	if requireSemicolon && !p.expectPeek(token.SEMICOLON) {
 		return nil
 	}
-	op := ""
-	switch opTok.Type {
-	case token.PLUS_EQ:
-		op = "+"
-	case token.MINUS_EQ:
-		op = "-"
-	case token.MUL_EQ:
-		op = "*"
-	case token.DIV_EQ:
-		op = "/"
-	case token.MOD_EQ:
-		op = "%"
-	}
+	op := compoundAssignOperator(opTok.Type)
 	stmt.Value = &ast.InfixExpression{
 		Token:    opTok,
 		Left:     &ast.Identifier{Token: stmt.Name.Token, Value: stmt.Name.Value},
@@ -425,14 +432,7 @@ func (p *Parser) parseForClauseStatement() ast.Statement {
 	case token.CONST:
 		return p.parseForConstStatement()
 	case token.IDENT:
-		if p.peekTokenIs(token.ASSIGN) ||
-			p.peekTokenIs(token.PLUS_EQ) ||
-			p.peekTokenIs(token.MINUS_EQ) ||
-			p.peekTokenIs(token.MUL_EQ) ||
-			p.peekTokenIs(token.DIV_EQ) ||
-			p.peekTokenIs(token.MOD_EQ) ||
-			p.peekTokenIs(token.PLUSPLUS) ||
-			p.peekTokenIs(token.MINUSMIN) {
+		if isAssignLikeToken(p.peekToken.Type) {
 			return p.parseAssignStatementCore(false)
 		}
 	}
