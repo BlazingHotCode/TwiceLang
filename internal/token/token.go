@@ -76,6 +76,8 @@ const (
 	FOR      TokenType = "FOR"
 	WHILE    TokenType = "WHILE"
 	LOOP     TokenType = "LOOP"
+	BREAK    TokenType = "BREAK"
+	CONTINUE TokenType = "CONTINUE"
 	RETURN   TokenType = "RETURN"
 	NULL     TokenType = "NULL"
 )
@@ -94,6 +96,8 @@ var keywords = map[string]TokenType{
 	"for":    FOR,
 	"while":  WHILE,
 	"loop":   LOOP,
+	"break":  BREAK,
+	"continue": CONTINUE,
 	"return": RETURN,
 	"null":   NULL,
 }

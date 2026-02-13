@@ -230,6 +230,10 @@ func (p *Parser) parseStatement() ast.Statement {
 		return p.parseLoopStatement()
 	case token.FUNCTION:
 		return p.parseFunctionStatement()
+	case token.BREAK:
+		return p.parseBreakStatement()
+	case token.CONTINUE:
+		return p.parseContinueStatement()
 	case token.RETURN:
 		return p.parseReturnStatement()
 	case token.IDENT:
@@ -467,6 +471,22 @@ func (p *Parser) parseReturnStatement() *ast.ReturnStatement {
 		return nil
 	}
 
+	return stmt
+}
+
+func (p *Parser) parseBreakStatement() ast.Statement {
+	stmt := &ast.BreakStatement{Token: p.curToken}
+	if !p.expectPeek(token.SEMICOLON) {
+		return nil
+	}
+	return stmt
+}
+
+func (p *Parser) parseContinueStatement() ast.Statement {
+	stmt := &ast.ContinueStatement{Token: p.curToken}
+	if !p.expectPeek(token.SEMICOLON) {
+		return nil
+	}
 	return stmt
 }
 

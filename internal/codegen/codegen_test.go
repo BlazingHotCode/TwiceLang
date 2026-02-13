@@ -157,6 +157,28 @@ func TestCodegenForLoop(t *testing.T) {
 	}
 }
 
+func TestCodegenBreakAndContinue(t *testing.T) {
+	asm, cg := generateAssembly(t, "let i = 0; while (true) { i++; if (i == 2) { continue; }; if (i == 4) { break; }; } print(i);")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if strings.Count(asm, "jmp .L") < 4 {
+		t.Fatalf("expected break/continue jumps in assembly, got:\n%s", asm)
+	}
+}
+
+func TestCodegenBreakContinueOutsideLoop(t *testing.T) {
+	_, cg := generateAssembly(t, "break;")
+	if len(cg.Errors()) == 0 || !strings.Contains(cg.Errors()[0], "break not inside loop") {
+		t.Fatalf("expected break outside loop error, got: %v", cg.Errors())
+	}
+
+	_, cg = generateAssembly(t, "continue;")
+	if len(cg.Errors()) == 0 || !strings.Contains(cg.Errors()[0], "continue not inside loop") {
+		t.Fatalf("expected continue outside loop error, got: %v", cg.Errors())
+	}
+}
+
 func TestCodegenStringConcatAndFloatAdd(t *testing.T) {
 	asm, cg := generateAssembly(t, `let greeting = "Hello, " + "Twice!"; let pi = 1.25 + 2.75; print(greeting); print(pi);`)
 	if len(cg.Errors()) != 0 {
@@ -167,6 +189,16 @@ func TestCodegenStringConcatAndFloatAdd(t *testing.T) {
 	}
 	if !strings.Contains(asm, "4\\n") {
 		t.Fatalf("expected folded float addition literal in assembly, got:\n%s", asm)
+	}
+}
+
+func TestCodegenRuntimeIntStringConcat(t *testing.T) {
+	asm, cg := generateAssembly(t, `let n = 2; print(n + " loop count");`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "call concat_int_cstr") {
+		t.Fatalf("expected int+string runtime concat helper call, got:\n%s", asm)
 	}
 }
 

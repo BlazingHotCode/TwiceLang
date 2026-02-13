@@ -101,10 +101,26 @@ for (let j = 0; j < 4; j++) {
 };
 print(for_sum);
 
-// loop syntax (infinite loop, equivalent to while (true) {}):
-// loop {
-//   print("runs forever");
-// };
+let control_sum = 0;
+for (let k = 0; k < 6; k++) {
+  if (k == 2) {
+    continue;
+  };
+  if (k == 5) {
+    break;
+  };
+  control_sum = control_sum + k;
+};
+print(control_sum); // 8
+
+let loop_count = 0;
+loop {
+  loop_count++;
+  if (loop_count == 2) {
+    break;
+  };
+};
+print(loop_count + " loop count"); // 2
 
 // function calls: before declaration, default args, named args, mixed args
 print(add(5));

@@ -401,6 +401,29 @@ func TestForStatementParses(t *testing.T) {
 	}
 }
 
+func TestBreakAndContinueStatementsParse(t *testing.T) {
+	p := New(lexer.New("while (true) { continue; break; }"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	ws, ok := program.Statements[0].(*ast.WhileStatement)
+	if !ok {
+		t.Fatalf("expected while statement, got=%T", program.Statements[0])
+	}
+	if len(ws.Body.Statements) != 2 {
+		t.Fatalf("expected 2 body statements, got=%d", len(ws.Body.Statements))
+	}
+	if _, ok := ws.Body.Statements[0].(*ast.ContinueStatement); !ok {
+		t.Fatalf("expected continue statement, got=%T", ws.Body.Statements[0])
+	}
+	if _, ok := ws.Body.Statements[1].(*ast.BreakStatement); !ok {
+		t.Fatalf("expected break statement, got=%T", ws.Body.Statements[1])
+	}
+}
+
 func TestModuloHasProductPrecedence(t *testing.T) {
 	p := New(lexer.New("5 + 6 % 4;"))
 	program := p.ParseProgram()

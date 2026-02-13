@@ -45,7 +45,7 @@ Notes:
 - CLI compiler/runner (`cmd/twice`)
 - Typed declarations with inference and null-default initialization
 - Numeric, string, char, boolean, modulo, and bitwise operators
-- Control flow with `if`/`elif`/`else`, `while`, `for`, and `loop`
+- Control flow with `if`/`elif`/`else`, `while`, `for`, `loop`, `break`, and `continue`
 - String indexing (`str[i]`) returning `char`
 - Named functions with typed/default parameters and typed returns
 - Function calls with positional, named, and mixed arguments
@@ -155,6 +155,7 @@ Current mixed-type behavior includes:
 - `char + int` -> `char`
 - `char + char` -> `char`
 - `string + int/float/char` -> string concatenation
+- `int + string` -> string concatenation
 - `string[index]` -> `char`
 - `%` with numeric types uses modulo semantics
 
@@ -189,9 +190,16 @@ for (let j = 0; j < 4; j++) {
   sum = sum + j;
 };
 
-// infinite loop (equivalent to while (true) {})
+let control = 0;
+for (let k = 0; k < 6; k++) {
+  if (k == 2) { continue; };
+  if (k == 5) { break; };
+  control = control + k;
+};
+
+// loop is while(true), use break to exit
 loop {
-  print(sum);
+  if (control > 0) { break; };
 };
 ```
 
@@ -199,7 +207,9 @@ Notes:
 
 - `for` form is `for (<init>; <check>; <periodic>) {}`.
 - `while` form is `while (<bool>) {}`.
-- `loop {}` is infinite; `break` is not implemented yet.
+- `loop {}` is equivalent to `while (true) {}`.
+- `break;` exits the nearest loop.
+- `continue;` skips to the next iteration of the nearest loop.
 
 ### Functions
 
@@ -334,6 +344,14 @@ for (let j = 0; j < 4; j++) {
   sum = sum + j;
 };
 print(sum);
+
+let control = 0;
+for (let k = 0; k < 6; k++) {
+  if (k == 2) { continue; };
+  if (k == 5) { break; };
+  control = control + k;
+};
+print(control);
 
 print(add(5)); // call before declaration
 

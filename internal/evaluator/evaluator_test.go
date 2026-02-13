@@ -85,6 +85,36 @@ func TestForEval(t *testing.T) {
 	testIntegerObject(t, evaluated, 6)
 }
 
+func TestBreakInWhileEval(t *testing.T) {
+	evaluated := testEval("let i = 0; while (true) { i++; if (i == 3) { break; }; }; i")
+	testIntegerObject(t, evaluated, 3)
+}
+
+func TestContinueInForEval(t *testing.T) {
+	evaluated := testEval("let sum = 0; for (let i = 0; i < 5; i++) { if (i == 2) { continue; }; sum = sum + i; }; sum")
+	testIntegerObject(t, evaluated, 8)
+}
+
+func TestBreakContinueOutsideLoopEval(t *testing.T) {
+	evaluated := testEval("break;")
+	errObj, ok := evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "break not inside loop" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+
+	evaluated = testEval("continue;")
+	errObj, ok = evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "continue not inside loop" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+}
+
 func TestLoopEvalPropagatesError(t *testing.T) {
 	evaluated := testEval("loop { missing; }")
 	errObj, ok := evaluated.(*object.Error)
@@ -326,6 +356,11 @@ func TestStringConcatWithNumericAndCharEval(t *testing.T) {
 	evaluated = testEval(`"x:" + 'A'`)
 	if got := unwrapReturn(evaluated).Inspect(); got != "x:A" {
 		t.Fatalf("wrong string+char value: got=%q", got)
+	}
+
+	evaluated = testEval(`7 + " apples"`)
+	if got := unwrapReturn(evaluated).Inspect(); got != "7 apples" {
+		t.Fatalf("wrong int+string value: got=%q", got)
 	}
 }
 

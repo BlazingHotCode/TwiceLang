@@ -16,6 +16,8 @@ var (
 	TRUE  = &object.Boolean{Value: true}
 	FALSE = &object.Boolean{Value: false}
 	NULL  = &object.Null{}
+	BREAK = &object.Break{}
+	CONT  = &object.Continue{}
 )
 
 var builtins = map[string]*object.Builtin{
@@ -80,6 +82,10 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			return val
 		}
 		return &object.ReturnValue{Value: val}
+	case *ast.BreakStatement:
+		return BREAK
+	case *ast.ContinueStatement:
+		return CONT
 	case *ast.WhileStatement:
 		return evalWhileStatement(node, env)
 	case *ast.LoopStatement:
@@ -302,6 +308,10 @@ func evalProgram(program *ast.Program, env *object.Environment) object.Object {
 			return result.Value // Unwrap the return value
 		case *object.Error:
 			return result // Propagate errors
+		case *object.Break:
+			return newError("break not inside loop")
+		case *object.Continue:
+			return newError("continue not inside loop")
 		}
 	}
 
@@ -319,7 +329,7 @@ func evalBlockStatement(block *ast.BlockStatement, env *object.Environment) obje
 
 		if result != nil {
 			rt := result.Type()
-			if rt == object.RETURN_VALUE_OBJ || rt == object.ERROR_OBJ {
+			if rt == object.RETURN_VALUE_OBJ || rt == object.ERROR_OBJ || rt == object.BREAK_OBJ || rt == object.CONTINUE_OBJ {
 				return result // Return as-is, don't unwrap
 			}
 		}
@@ -421,6 +431,8 @@ func evalInfixExpression(operator string, left, right object.Object) object.Obje
 		return evalStringInfixExpression(operator, left, right)
 	case left.Type() == object.STRING_OBJ && operator == "+":
 		return evalStringConcatWithCoercion(left, right)
+	case right.Type() == object.STRING_OBJ && operator == "+":
+		return evalStringConcatWithCoercionRight(left, right)
 	case left.Type() == object.CHAR_OBJ && right.Type() == object.CHAR_OBJ:
 		return evalCharInfixExpression(operator, left, right)
 	case left.Type() == object.TYPE_OBJ && right.Type() == object.TYPE_OBJ:
@@ -512,6 +524,22 @@ func evalStringConcatWithCoercion(left, right object.Object) object.Object {
 		return &object.String{Value: leftVal + strconv.FormatFloat(v.Value, 'g', -1, 64)}
 	case *object.Char:
 		return &object.String{Value: leftVal + string(v.Value)}
+	default:
+		return newError("type mismatch: %s + %s", left.Type(), right.Type())
+	}
+}
+
+func evalStringConcatWithCoercionRight(left, right object.Object) object.Object {
+	rightVal := right.(*object.String).Value
+	switch v := left.(type) {
+	case *object.String:
+		return &object.String{Value: v.Value + rightVal}
+	case *object.Integer:
+		return &object.String{Value: strconv.FormatInt(v.Value, 10) + rightVal}
+	case *object.Float:
+		return &object.String{Value: strconv.FormatFloat(v.Value, 'g', -1, 64) + rightVal}
+	case *object.Char:
+		return &object.String{Value: string(v.Value) + rightVal}
 	default:
 		return newError("type mismatch: %s + %s", left.Type(), right.Type())
 	}
@@ -652,6 +680,12 @@ func evalWhileStatement(ws *ast.WhileStatement, env *object.Environment) object.
 			if rt == object.RETURN_VALUE_OBJ || rt == object.ERROR_OBJ {
 				return result
 			}
+			if rt == object.BREAK_OBJ {
+				return NULL
+			}
+			if rt == object.CONTINUE_OBJ {
+				continue
+			}
 		}
 	}
 }
@@ -664,6 +698,12 @@ func evalLoopStatement(ls *ast.LoopStatement, env *object.Environment) object.Ob
 			rt := result.Type()
 			if rt == object.RETURN_VALUE_OBJ || rt == object.ERROR_OBJ {
 				return result
+			}
+			if rt == object.BREAK_OBJ {
+				return NULL
+			}
+			if rt == object.CONTINUE_OBJ {
+				continue
 			}
 		}
 	}
@@ -692,6 +732,18 @@ func evalForStatement(fs *ast.ForStatement, env *object.Environment) object.Obje
 			rt := result.Type()
 			if rt == object.RETURN_VALUE_OBJ || rt == object.ERROR_OBJ {
 				return result
+			}
+			if rt == object.BREAK_OBJ {
+				return NULL
+			}
+			if rt == object.CONTINUE_OBJ {
+				if fs.Periodic != nil {
+					stepRes := Eval(fs.Periodic, env)
+					if isError(stepRes) {
+						return stepRes
+					}
+				}
+				continue
 			}
 		}
 
@@ -825,6 +877,14 @@ func applyUserFunction(function *object.Function, args []object.Object, namedArg
 
 	evaluated := Eval(function.Body, extendedEnv)
 	result := unwrapReturnValue(evaluated)
+	if result != nil {
+		switch result.Type() {
+		case object.BREAK_OBJ:
+			return newError("break not inside loop")
+		case object.CONTINUE_OBJ:
+			return newError("continue not inside loop")
+		}
+	}
 	if isError(result) {
 		return result
 	}

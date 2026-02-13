@@ -39,6 +39,8 @@ type CodeGen struct {
 	funcRetLbl       string
 	funcRetType      valueType
 	funcRetTypeName  string
+	loopBreakLabels  []string
+	loopContLabels   []string
 	errors           []CodegenError
 }
 
@@ -240,6 +242,144 @@ func (cg *CodeGen) emitHeader() {
 	cg.emit("    ret")
 	cg.emit("")
 
+	// Concatenate int + c-string into reusable buffer.
+	// Input: rax = int value, rdx = c-string pointer
+	// Output: rax = pointer to concatenated null-terminated string
+	cg.emit("concat_int_cstr:")
+	cg.emit("    push %%rbp")
+	cg.emit("    mov %%rsp, %%rbp")
+	cg.emit("    push %%rbx")
+	cg.emit("    push %%r12")
+	cg.emit("    push %%r13")
+	cg.emit("    sub $80, %%rsp")
+	cg.emit("    lea concat_buf(%%rip), %%r12")
+	cg.emit("    mov %%r12, %%r13")
+	cg.emit("    mov %%rdx, %%r11")
+	cg.emit("    mov %%rax, %%rcx")
+	cg.emit("    xor %%r8d, %%r8d")
+	cg.emit("    test %%rcx, %%rcx")
+	cg.emit("    jge concat_int_abs_ready")
+	cg.emit("    neg %%rcx")
+	cg.emit("    mov $1, %%r8b")
+	cg.emit("concat_int_abs_ready:")
+	cg.emit("    lea -1(%%rbp), %%rsi")
+	cg.emit("    mov $0, %%rbx")
+	cg.emit("concat_int_loop:")
+	cg.emit("    xor %%rdx, %%rdx")
+	cg.emit("    mov %%rcx, %%rax")
+	cg.emit("    mov $10, %%rdi")
+	cg.emit("    div %%rdi")
+	cg.emit("    mov %%rax, %%rcx")
+	cg.emit("    add $48, %%dl")
+	cg.emit("    movb %%dl, (%%rsi)")
+	cg.emit("    dec %%rsi")
+	cg.emit("    inc %%rbx")
+	cg.emit("    test %%rcx, %%rcx")
+	cg.emit("    jnz concat_int_loop")
+	cg.emit("    test %%r8b, %%r8b")
+	cg.emit("    jz concat_int_copy_digits")
+	cg.emit("    movb $45, (%%rsi)")
+	cg.emit("    dec %%rsi")
+	cg.emit("    inc %%rbx")
+	cg.emit("concat_int_copy_digits:")
+	cg.emit("    inc %%rsi")
+	cg.emit("concat_int_digit_copy_loop:")
+	cg.emit("    test %%rbx, %%rbx")
+	cg.emit("    jz concat_int_copy_suffix")
+	cg.emit("    movb (%%rsi), %%al")
+	cg.emit("    movb %%al, (%%r13)")
+	cg.emit("    inc %%rsi")
+	cg.emit("    inc %%r13")
+	cg.emit("    dec %%rbx")
+	cg.emit("    jmp concat_int_digit_copy_loop")
+	cg.emit("concat_int_copy_suffix:")
+	cg.emit("    mov %%r11, %%rsi")
+	cg.emit("concat_int_suffix_loop:")
+	cg.emit("    movb (%%rsi), %%al")
+	cg.emit("    movb %%al, (%%r13)")
+	cg.emit("    inc %%rsi")
+	cg.emit("    inc %%r13")
+	cg.emit("    test %%al, %%al")
+	cg.emit("    jne concat_int_suffix_loop")
+	cg.emit("    mov %%r12, %%rax")
+	cg.emit("    add $80, %%rsp")
+	cg.emit("    pop %%r13")
+	cg.emit("    pop %%r12")
+	cg.emit("    pop %%rbx")
+	cg.emit("    pop %%rbp")
+	cg.emit("    ret")
+	cg.emit("")
+
+	// Concatenate c-string + int into reusable buffer.
+	// Input: rax = c-string pointer, rdx = int value
+	// Output: rax = pointer to concatenated null-terminated string
+	cg.emit("concat_cstr_int:")
+	cg.emit("    push %%rbp")
+	cg.emit("    mov %%rsp, %%rbp")
+	cg.emit("    push %%rbx")
+	cg.emit("    push %%r12")
+	cg.emit("    push %%r13")
+	cg.emit("    sub $80, %%rsp")
+	cg.emit("    lea concat_buf(%%rip), %%r12")
+	cg.emit("    mov %%r12, %%r13")
+	cg.emit("    mov %%rax, %%r10")
+	cg.emit("concat_cstr_copy_prefix:")
+	cg.emit("    movb (%%r10), %%al")
+	cg.emit("    test %%al, %%al")
+	cg.emit("    je concat_cstr_prefix_done")
+	cg.emit("    movb %%al, (%%r13)")
+	cg.emit("    inc %%r10")
+	cg.emit("    inc %%r13")
+	cg.emit("    jmp concat_cstr_copy_prefix")
+	cg.emit("concat_cstr_prefix_done:")
+	cg.emit("    mov %%rdx, %%rcx")
+	cg.emit("    xor %%r8d, %%r8d")
+	cg.emit("    test %%rcx, %%rcx")
+	cg.emit("    jge concat_cstr_abs_ready")
+	cg.emit("    neg %%rcx")
+	cg.emit("    mov $1, %%r8b")
+	cg.emit("concat_cstr_abs_ready:")
+	cg.emit("    lea -1(%%rbp), %%rsi")
+	cg.emit("    mov $0, %%rbx")
+	cg.emit("concat_cstr_int_loop:")
+	cg.emit("    xor %%rdx, %%rdx")
+	cg.emit("    mov %%rcx, %%rax")
+	cg.emit("    mov $10, %%rdi")
+	cg.emit("    div %%rdi")
+	cg.emit("    mov %%rax, %%rcx")
+	cg.emit("    add $48, %%dl")
+	cg.emit("    movb %%dl, (%%rsi)")
+	cg.emit("    dec %%rsi")
+	cg.emit("    inc %%rbx")
+	cg.emit("    test %%rcx, %%rcx")
+	cg.emit("    jnz concat_cstr_int_loop")
+	cg.emit("    test %%r8b, %%r8b")
+	cg.emit("    jz concat_cstr_copy_digits")
+	cg.emit("    movb $45, (%%rsi)")
+	cg.emit("    dec %%rsi")
+	cg.emit("    inc %%rbx")
+	cg.emit("concat_cstr_copy_digits:")
+	cg.emit("    inc %%rsi")
+	cg.emit("concat_cstr_digit_copy_loop:")
+	cg.emit("    test %%rbx, %%rbx")
+	cg.emit("    jz concat_cstr_done")
+	cg.emit("    movb (%%rsi), %%al")
+	cg.emit("    movb %%al, (%%r13)")
+	cg.emit("    inc %%rsi")
+	cg.emit("    inc %%r13")
+	cg.emit("    dec %%rbx")
+	cg.emit("    jmp concat_cstr_digit_copy_loop")
+	cg.emit("concat_cstr_done:")
+	cg.emit("    movb $0, (%%r13)")
+	cg.emit("    mov %%r12, %%rax")
+	cg.emit("    add $80, %%rsp")
+	cg.emit("    pop %%r13")
+	cg.emit("    pop %%r12")
+	cg.emit("    pop %%rbx")
+	cg.emit("    pop %%rbp")
+	cg.emit("    ret")
+	cg.emit("")
+
 	// Entry point
 	cg.emit("_start:")
 	cg.emit("    push %%rbp")
@@ -272,6 +412,9 @@ func (cg *CodeGen) emitFooter() {
 	for lit, label := range cg.stringLits {
 		cg.emit("%s: .asciz \"%s\"", label, escapeAsmString(lit))
 	}
+	cg.emit("")
+	cg.emit("    .section .bss")
+	cg.emit("    .lcomm concat_buf, 4096")
 }
 
 func (cg *CodeGen) generateStatement(stmt ast.Statement) {
@@ -292,6 +435,10 @@ func (cg *CodeGen) generateStatement(stmt ast.Statement) {
 		cg.generateLoopStatement(s)
 	case *ast.ForStatement:
 		cg.generateForStatement(s)
+	case *ast.BreakStatement:
+		cg.generateBreakStatement(s)
+	case *ast.ContinueStatement:
+		cg.generateContinueStatement(s)
 	case *ast.ExpressionStatement:
 		cg.generateExpression(s.Expression)
 	case *ast.FunctionStatement:
@@ -528,12 +675,31 @@ func (cg *CodeGen) generateInfix(ie *ast.InfixExpression) {
 	if leftType == typeString && ie.Operator == "+" {
 		combined, ok := cg.constStringValue(ie)
 		if !ok {
+			if rightType == typeInt {
+				// runtime cstr + int
+				cg.generateExpression(ie.Right) // int
+				cg.emit("    push %%rax")
+				cg.generateExpression(ie.Left) // c-string ptr
+				cg.emit("    pop %%rdx")
+				cg.emit("    call concat_cstr_int")
+				return
+			}
 			cg.addNodeError("string concatenation in codegen requires compile-time known values", ie)
 			cg.emit("    mov $0, %%rax")
 			return
 		}
 		label := cg.stringLabel(combined + "\n")
 		cg.emit("    lea %s(%%rip), %%rax", label)
+		return
+	}
+
+	if rightType == typeString && leftType == typeInt && ie.Operator == "+" {
+		// runtime int + cstr
+		cg.generateExpression(ie.Right) // c-string ptr
+		cg.emit("    push %%rax")
+		cg.generateExpression(ie.Left) // int
+		cg.emit("    pop %%rdx")
+		cg.emit("    call concat_int_cstr")
 		return
 	}
 
@@ -994,6 +1160,8 @@ func (cg *CodeGen) generateIfExpression(ie *ast.IfExpression) {
 func (cg *CodeGen) generateWhileStatement(ws *ast.WhileStatement) {
 	startLabel := cg.newLabel()
 	endLabel := cg.newLabel()
+	cg.pushLoopLabels(endLabel, startLabel)
+	defer cg.popLoopLabels()
 	cg.emit("%s:", startLabel)
 	cg.generateExpression(ws.Condition)
 	cg.emit("    test %%rax, %%rax")
@@ -1005,9 +1173,13 @@ func (cg *CodeGen) generateWhileStatement(ws *ast.WhileStatement) {
 
 func (cg *CodeGen) generateLoopStatement(ls *ast.LoopStatement) {
 	startLabel := cg.newLabel()
+	cg.pushLoopLabels(cg.newLabel(), startLabel)
+	breakLabel := cg.currentBreakLabel()
+	defer cg.popLoopLabels()
 	cg.emit("%s:", startLabel)
 	cg.generateBlockStatement(ls.Body)
 	cg.emit("    jmp %s", startLabel)
+	cg.emit("%s:", breakLabel)
 }
 
 func (cg *CodeGen) generateForStatement(fs *ast.ForStatement) {
@@ -1015,7 +1187,10 @@ func (cg *CodeGen) generateForStatement(fs *ast.ForStatement) {
 		cg.generateStatement(fs.Init)
 	}
 	startLabel := cg.newLabel()
+	periodicLabel := cg.newLabel()
 	endLabel := cg.newLabel()
+	cg.pushLoopLabels(endLabel, periodicLabel)
+	defer cg.popLoopLabels()
 	cg.emit("%s:", startLabel)
 	if fs.Condition != nil {
 		cg.generateExpression(fs.Condition)
@@ -1023,11 +1198,60 @@ func (cg *CodeGen) generateForStatement(fs *ast.ForStatement) {
 		cg.emit("    jz %s", endLabel)
 	}
 	cg.generateBlockStatement(fs.Body)
+	cg.emit("%s:", periodicLabel)
 	if fs.Periodic != nil {
 		cg.generateStatement(fs.Periodic)
 	}
 	cg.emit("    jmp %s", startLabel)
 	cg.emit("%s:", endLabel)
+}
+
+func (cg *CodeGen) generateBreakStatement(bs *ast.BreakStatement) {
+	label := cg.currentBreakLabel()
+	if label == "" {
+		cg.addNodeError("break not inside loop", bs)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	cg.emit("    jmp %s", label)
+}
+
+func (cg *CodeGen) generateContinueStatement(cs *ast.ContinueStatement) {
+	label := cg.currentContinueLabel()
+	if label == "" {
+		cg.addNodeError("continue not inside loop", cs)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	cg.emit("    jmp %s", label)
+}
+
+func (cg *CodeGen) pushLoopLabels(breakLabel, contLabel string) {
+	cg.loopBreakLabels = append(cg.loopBreakLabels, breakLabel)
+	cg.loopContLabels = append(cg.loopContLabels, contLabel)
+}
+
+func (cg *CodeGen) popLoopLabels() {
+	if len(cg.loopBreakLabels) > 0 {
+		cg.loopBreakLabels = cg.loopBreakLabels[:len(cg.loopBreakLabels)-1]
+	}
+	if len(cg.loopContLabels) > 0 {
+		cg.loopContLabels = cg.loopContLabels[:len(cg.loopContLabels)-1]
+	}
+}
+
+func (cg *CodeGen) currentBreakLabel() string {
+	if len(cg.loopBreakLabels) == 0 {
+		return ""
+	}
+	return cg.loopBreakLabels[len(cg.loopBreakLabels)-1]
+}
+
+func (cg *CodeGen) currentContinueLabel() string {
+	if len(cg.loopContLabels) == 0 {
+		return ""
+	}
+	return cg.loopContLabels[len(cg.loopContLabels)-1]
 }
 
 func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
@@ -1242,6 +1466,9 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
 			if left == typeString && (right == typeString || right == typeInt || right == typeFloat || right == typeChar) {
 				return typeString
 			}
+			if right == typeString && (left == typeString || left == typeInt || left == typeFloat || left == typeChar) {
+				return typeString
+			}
 			if left == typeChar && right == typeChar {
 				return typeChar
 			}
@@ -1443,6 +1670,8 @@ func (cg *CodeGen) reset() {
 	cg.funcRetLbl = ""
 	cg.funcRetType = typeUnknown
 	cg.funcRetTypeName = ""
+	cg.loopBreakLabels = nil
+	cg.loopContLabels = nil
 	cg.errors = []CodegenError{}
 }
 
@@ -1656,6 +1885,8 @@ type cgState struct {
 	funcRetType      valueType
 	funcRetTypeName  string
 	currentFn        string
+	loopBreakLabels  []string
+	loopContLabels   []string
 }
 
 func (cg *CodeGen) saveState() cgState {
@@ -1679,6 +1910,8 @@ func (cg *CodeGen) saveState() cgState {
 		funcRetType:      cg.funcRetType,
 		funcRetTypeName:  cg.funcRetTypeName,
 		currentFn:        cg.currentFn,
+		loopBreakLabels:  cg.loopBreakLabels,
+		loopContLabels:   cg.loopContLabels,
 	}
 }
 
@@ -1702,6 +1935,8 @@ func (cg *CodeGen) restoreState(st cgState) {
 	cg.funcRetType = st.funcRetType
 	cg.funcRetTypeName = st.funcRetTypeName
 	cg.currentFn = st.currentFn
+	cg.loopBreakLabels = st.loopBreakLabels
+	cg.loopContLabels = st.loopContLabels
 }
 
 func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
