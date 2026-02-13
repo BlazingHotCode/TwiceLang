@@ -9,11 +9,13 @@ type Lexer struct {
 	position     int    // Current position in input (points to current char)
 	readPosition int    // Current reading position (after current char)
 	ch           byte   // Current character under examination
+	line         int
+	column       int
 }
 
 // New creates a new Lexer for the given input
 func New(input string) *Lexer {
-	l := &Lexer{input: input}
+	l := &Lexer{input: input, line: 1}
 	l.readChar() // Initialize with first character
 	return l
 }
@@ -21,9 +23,17 @@ func New(input string) *Lexer {
 // readChar advances to the next character
 // Think of it like moving the tape forward one position
 func (l *Lexer) readChar() {
+	if l.ch == '\n' {
+		l.line++
+		l.column = 0
+	}
+
 	// If we've reached the end, set ch to 0 (NUL byte, signifies EOF)
 	if l.readPosition >= len(l.input) {
 		l.ch = 0
+		l.position = l.readPosition
+		l.readPosition += 1
+		return
 	} else {
 		// Otherwise read the next character
 		l.ch = l.input[l.readPosition]
@@ -31,6 +41,7 @@ func (l *Lexer) readChar() {
 	// Move position forward
 	l.position = l.readPosition
 	l.readPosition += 1
+	l.column++
 }
 
 // peekChar looks at the next character without consuming it
@@ -48,6 +59,7 @@ func (l *Lexer) NextToken() token.Token {
 	var tok token.Token
 
 	l.skipIgnored() // Ignore spaces/newlines/comments
+	startLine, startCol := l.line, l.column
 
 	// Check current character and decide what token to make
 	switch l.ch {
@@ -187,15 +199,21 @@ func (l *Lexer) NextToken() token.Token {
 	case '"':
 		tok.Type = token.STRING
 		tok.Literal = l.readString()
+		tok.Line = startLine
+		tok.Column = startCol
 		return tok
 	case '\'':
 		tok.Type = token.CHAR
 		tok.Literal = l.readCharLiteral()
+		tok.Line = startLine
+		tok.Column = startCol
 		return tok
 	case 0:
 		// NUL byte means end of input
 		tok.Literal = ""
 		tok.Type = token.EOF
+		tok.Line = startLine
+		tok.Column = startCol
 	default:
 		// Not a single-char token, check if letter or digit
 		if isLetter(l.ch) {
@@ -203,9 +221,13 @@ func (l *Lexer) NextToken() token.Token {
 			tok.Literal = l.readIdentifier()
 			// Check if it's a keyword (let, fn, if) or user-defined (x, foo)
 			tok.Type = token.LookupIdent(tok.Literal)
+			tok.Line = startLine
+			tok.Column = startCol
 			return tok // Already advanced past identifier
 		} else if isDigit(l.ch) {
 			tok.Type, tok.Literal = l.readNumber()
+			tok.Line = startLine
+			tok.Column = startCol
 			return tok // Already advanced past number
 		} else {
 			// Unknown character
@@ -213,6 +235,10 @@ func (l *Lexer) NextToken() token.Token {
 		}
 	}
 
+	if tok.Line == 0 {
+		tok.Line = startLine
+		tok.Column = startCol
+	}
 	l.readChar() // Advance to next character for next call
 	return tok
 }

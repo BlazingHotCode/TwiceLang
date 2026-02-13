@@ -82,6 +82,8 @@ echo 'print(123);' | ./twice -run -
 
 Note: `-run` executes `./<output>`, so prefer a relative `-o` value when using `-run`.
 
+Codegen diagnostics include exact source line and column when available.
+
 ## Language Guide
 
 ### Primitive Types
@@ -295,8 +297,14 @@ Notes:
 - Parameters may be typed and may have default values.
 - Function return type can be declared and is validated.
 - Return type can be omitted for no-return functions.
-- `return;` is supported and returns `null` (useful for side-effect functions).
+- `return;` returns `null`.
+- `return;` is valid only when return type is omitted or explicitly allows `null` (for example `int||null`).
+- If return type is `int`, `float`, `bool`, `string`, `char`, etc., use `return <value>;` of a compatible type.
 - Codegen resolves named functions independently of source order (you can call before declaration).
+- If there is a top-level `fn main()` with zero parameters, it is used as the entrypoint automatically.
+- If `main` returns `int`, that value is used as the process exit code.
+- If `main` has no return type, process exits with code `0`.
+- If `main` has return type `int||null`, returning `null` also exits with code `0`.
 
 Example no-return function:
 
@@ -304,6 +312,15 @@ Example no-return function:
 fn logValue(x: int) {
   print(x);
   return;
+}
+```
+
+Example auto-entrypoint `main`:
+
+```tw
+fn main() int {
+  print("hello from main");
+  return 7; // process exit code
 }
 ```
 

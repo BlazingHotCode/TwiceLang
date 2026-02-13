@@ -919,6 +919,12 @@ func applyUserFunction(function *object.Function, args []object.Object, namedArg
 
 	if function.ReturnType != "" {
 		got := runtimeTypeName(result)
+		if got == "null" {
+			if !typeAllowsNull(function.ReturnType, function.Env) {
+				return newError("cannot return %s from function returning %s", got, function.ReturnType)
+			}
+			return result
+		}
 		if !isAssignableToType(function.ReturnType, got, function.Env) {
 			return newError("cannot return %s from function returning %s", got, function.ReturnType)
 		}
@@ -1404,6 +1410,21 @@ func isBuiltinTypeName(name string) bool {
 	default:
 		return false
 	}
+}
+
+func typeAllowsNull(t string, env *object.Environment) bool {
+	t = normalizeTypeName(t, env)
+	if t == "null" {
+		return true
+	}
+	if members, isUnion := splitTopLevelUnion(t); isUnion {
+		for _, m := range members {
+			if typeAllowsNull(m, env) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func splitTopLevelUnion(t string) ([]string, bool) {

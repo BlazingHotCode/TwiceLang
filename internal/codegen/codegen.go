@@ -3,6 +3,7 @@ package codegen
 import (
 	"fmt"
 	"math"
+	"reflect"
 	"strings"
 
 	"twice/internal/ast"
@@ -77,6 +78,8 @@ const (
 type CodegenError struct {
 	Message string
 	Context string
+	Line    int
+	Column  int
 }
 
 // New creates a new code generator
@@ -123,12 +126,71 @@ func (cg *CodeGen) Generate(program *ast.Program) string {
 	for _, stmt := range program.Statements {
 		cg.generateStatement(stmt)
 	}
+	cg.maybeAutoRunMain(program)
 	cg.generateFunctionDefinitions()
 
 	cg.emitFooter()
 	asm := cg.output.String()
 	asm = strings.ReplaceAll(asm, "__STACK_ALLOC_MAIN__", cg.stackAllocLine())
 	return asm
+}
+
+func (cg *CodeGen) maybeAutoRunMain(program *ast.Program) {
+	if program == nil || hasTopLevelMainCall(program) {
+		return
+	}
+	key, ok := cg.funcByName["main"]
+	if !ok {
+		return
+	}
+	fn, ok := cg.functions[key]
+	if !ok || fn == nil || fn.Literal == nil {
+		return
+	}
+	if len(fn.Literal.Parameters) != 0 {
+		return
+	}
+
+	cg.emit("    call %s", fn.Label)
+	if fn.Literal.ReturnType == "" || fn.Literal.ReturnType == "null" {
+		cg.emit("    xor %%rdi, %%rdi")
+		cg.emit("    jmp %s", cg.exitLabel)
+		return
+	}
+	if cg.parseTypeName(fn.Literal.ReturnType) == typeInt {
+		cg.emit("    mov %%rax, %%rdi")
+		cg.emit("    jmp %s", cg.exitLabel)
+		return
+	}
+	// Non-int/non-empty return types are not auto-run entrypoints.
+}
+
+func hasTopLevelMainCall(program *ast.Program) bool {
+	if program == nil {
+		return false
+	}
+	for _, st := range program.Statements {
+		switch s := st.(type) {
+		case *ast.ExpressionStatement:
+			if isMainCallExpr(s.Expression) {
+				return true
+			}
+		case *ast.ReturnStatement:
+			if isMainCallExpr(s.ReturnValue) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isMainCallExpr(expr ast.Expression) bool {
+	ce, ok := expr.(*ast.CallExpression)
+	if !ok || ce == nil {
+		return false
+	}
+	id, ok := ce.Function.(*ast.Identifier)
+	return ok && id != nil && id.Value == "main"
 }
 
 // emit adds a line of assembly
@@ -394,6 +456,41 @@ func (cg *CodeGen) emitHeader() {
 	cg.emit("    pop %%r13")
 	cg.emit("    pop %%r12")
 	cg.emit("    pop %%rbx")
+	cg.emit("    pop %%rbp")
+	cg.emit("    ret")
+	cg.emit("")
+
+	// Concatenate c-string + c-string into reusable buffer.
+	// Input: rax = left c-string pointer, rdx = right c-string pointer
+	// Output: rax = pointer to concatenated null-terminated string
+	cg.emit("concat_cstr_cstr:")
+	cg.emit("    push %%rbp")
+	cg.emit("    mov %%rsp, %%rbp")
+	cg.emit("    push %%r12")
+	cg.emit("    push %%r13")
+	cg.emit("    lea concat_buf(%%rip), %%r12")
+	cg.emit("    mov %%r12, %%r13")
+	cg.emit("    mov %%rax, %%r10")
+	cg.emit("concat_cstr_cstr_copy_left:")
+	cg.emit("    movb (%%r10), %%al")
+	cg.emit("    test %%al, %%al")
+	cg.emit("    je concat_cstr_cstr_left_done")
+	cg.emit("    movb %%al, (%%r13)")
+	cg.emit("    inc %%r10")
+	cg.emit("    inc %%r13")
+	cg.emit("    jmp concat_cstr_cstr_copy_left")
+	cg.emit("concat_cstr_cstr_left_done:")
+	cg.emit("    mov %%rdx, %%r11")
+	cg.emit("concat_cstr_cstr_copy_right:")
+	cg.emit("    movb (%%r11), %%al")
+	cg.emit("    movb %%al, (%%r13)")
+	cg.emit("    inc %%r11")
+	cg.emit("    inc %%r13")
+	cg.emit("    test %%al, %%al")
+	cg.emit("    jne concat_cstr_cstr_copy_right")
+	cg.emit("    mov %%r12, %%rax")
+	cg.emit("    pop %%r13")
+	cg.emit("    pop %%r12")
 	cg.emit("    pop %%rbp")
 	cg.emit("    ret")
 	cg.emit("")
@@ -1038,6 +1135,15 @@ func (cg *CodeGen) generateInfix(ie *ast.InfixExpression) {
 	if leftType == typeString && ie.Operator == "+" {
 		combined, ok := cg.constStringValue(ie)
 		if !ok {
+			if rightType == typeString {
+				// runtime cstr + cstr
+				cg.generateExpression(ie.Right) // right c-string ptr
+				cg.emit("    push %%rax")
+				cg.generateExpression(ie.Left) // left c-string ptr
+				cg.emit("    pop %%rdx")
+				cg.emit("    call concat_cstr_cstr")
+				return
+			}
 			if rightType == typeInt {
 				// runtime cstr + int
 				cg.generateExpression(ie.Right) // int
@@ -1507,22 +1613,43 @@ func (cg *CodeGen) generateReturn(rs *ast.ReturnStatement) {
 		cg.generateExpression(rs.ReturnValue)
 	}
 	if cg.inFunction {
+		addedTypeError := false
 		if cg.funcRetType != typeUnknown {
 			got := typeNull
 			if rs.ReturnValue != nil {
 				got = cg.inferExpressionType(rs.ReturnValue)
 			}
-			if got != typeNull && got != typeUnknown && got != cg.funcRetType && cg.funcRetType != typeArray {
+			if got != typeUnknown && got != cg.funcRetType && cg.funcRetType != typeArray {
 				cg.addNodeError(fmt.Sprintf("cannot return %s from function returning %s", typeName(got), typeName(cg.funcRetType)), rs)
+				addedTypeError = true
 			}
 		}
-		if cg.funcRetTypeName != "" {
-			gotName := "null"
+			if cg.funcRetTypeName != "" && cg.isKnownTypeName(cg.funcRetTypeName) {
+				gotName := "null"
 			if rs.ReturnValue != nil {
 				gotName = cg.inferExpressionTypeName(rs.ReturnValue)
+				// Some complex expressions can transiently infer as null due to
+				// conservative value tracking. Treat those as unknown instead of
+				// hard-failing null-return validation.
+				if gotName == "null" {
+					switch rs.ReturnValue.(type) {
+					case *ast.NullLiteral, *ast.Identifier, *ast.CallExpression:
+						// keep null: identifiers/calls may legitimately resolve to null
+					default:
+						gotName = "unknown"
+					}
+				}
 			}
-			if gotName != "null" && gotName != "unknown" && !cg.isAssignableTypeName(cg.funcRetTypeName, gotName) {
-				cg.addNodeError(fmt.Sprintf("cannot return %s from function returning %s", gotName, cg.funcRetTypeName), rs)
+			if gotName == "null" {
+				if !cg.typeAllowsNullTypeName(cg.funcRetTypeName) {
+					if !addedTypeError {
+						cg.addNodeError(fmt.Sprintf("cannot return %s from function returning %s", gotName, cg.funcRetTypeName), rs)
+					}
+				}
+			} else if gotName != "unknown" && !cg.isAssignableTypeName(cg.funcRetTypeName, gotName) {
+				if !addedTypeError {
+					cg.addNodeError(fmt.Sprintf("cannot return %s from function returning %s", gotName, cg.funcRetTypeName), rs)
+				}
 			}
 		}
 		cg.emit("    jmp %s", cg.funcRetLbl)
@@ -1773,16 +1900,49 @@ func (cg *CodeGen) addError(msg string) {
 
 func (cg *CodeGen) addNodeError(msg string, node ast.Node) {
 	ctx := ""
+	line := 0
+	col := 0
 	if node != nil {
 		ctx = strings.TrimSpace(node.String())
 		if ctx == "" {
 			ctx = strings.TrimSpace(node.TokenLiteral())
 		}
+		if tok, ok := tokenFromNode(node); ok {
+			line = tok.Line
+			col = tok.Column
+		}
 	}
 	cg.errors = append(cg.errors, CodegenError{
 		Message: msg,
 		Context: ctx,
+		Line:    line,
+		Column:  col,
 	})
+}
+
+func tokenFromNode(node ast.Node) (token.Token, bool) {
+	v := reflect.ValueOf(node)
+	if !v.IsValid() {
+		return token.Token{}, false
+	}
+	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return token.Token{}, false
+		}
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return token.Token{}, false
+	}
+	f := v.FieldByName("Token")
+	if !f.IsValid() {
+		return token.Token{}, false
+	}
+	tok, ok := f.Interface().(token.Token)
+	if !ok {
+		return token.Token{}, false
+	}
+	return tok, tok.Line > 0 && tok.Column > 0
 }
 
 func (cg *CodeGen) Errors() []string {
@@ -2202,7 +2362,10 @@ func (cg *CodeGen) collectFunctionsInStatement(stmt ast.Statement, scope map[str
 			cg.addNodeError("duplicate function declaration: "+key, s)
 			return
 		}
-		captures := cg.computeCaptures(s.Function, scope)
+		captures := []string{}
+		if !topLevel {
+			captures = cg.computeCaptures(s.Function, scope)
+		}
 		cg.functions[key] = &compiledFunction{
 			Key:      key,
 			Name:     s.Name.Value,
@@ -3161,6 +3324,23 @@ func (cg *CodeGen) isKnownTypeName(t string) bool {
 		t = resolved
 	}
 	return isKnownTypeName(t)
+}
+
+func (cg *CodeGen) typeAllowsNullTypeName(t string) bool {
+	if resolved, ok := cg.normalizeTypeName(t); ok {
+		t = resolved
+	}
+	if t == "null" {
+		return true
+	}
+	if members, isUnion := splitTopLevelUnion(t); isUnion {
+		for _, m := range members {
+			if cg.typeAllowsNullTypeName(m) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (cg *CodeGen) normalizeTypeName(t string) (string, bool) {

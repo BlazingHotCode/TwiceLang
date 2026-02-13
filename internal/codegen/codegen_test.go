@@ -389,6 +389,129 @@ func TestCodegenFunctionEmptyReturn(t *testing.T) {
 	}
 }
 
+func TestCodegenFunctionEmptyReturnTypeValidation(t *testing.T) {
+	_, cg := generateAssembly(t, `fn bad() int { return; }`)
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen error for empty return in int function")
+	}
+	found := false
+	for _, err := range cg.Errors() {
+		if strings.Contains(err, "cannot return null from function returning int") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected null-return type validation error, got: %v", cg.Errors())
+	}
+
+	_, cg = generateAssembly(t, `fn ok() int||null { return; }`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors for int||null empty return: %v", cg.Errors())
+	}
+}
+
+func TestCodegenUnknownReturnTypeDoesNotCascadeReturnErrors(t *testing.T) {
+	const invalidReturnType = "int||__invalid_type__"
+	_, cg := generateAssembly(t, `fn main() int||__invalid_type__ { return; }`)
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen errors for unknown return type")
+	}
+	unknownCount := 0
+	returnMismatchCount := 0
+	for _, err := range cg.Errors() {
+		if strings.Contains(err, "unknown type: "+invalidReturnType) {
+			unknownCount++
+		}
+		if strings.Contains(err, "cannot return null from function returning "+invalidReturnType) {
+			returnMismatchCount++
+		}
+	}
+	if unknownCount == 0 {
+		t.Fatalf("expected unknown type error, got: %v", cg.Errors())
+	}
+	if returnMismatchCount != 0 {
+		t.Fatalf("did not expect return mismatch error for unknown return type, got: %v", cg.Errors())
+	}
+}
+
+func TestCodegenAutoRunsMainWithIntExitCode(t *testing.T) {
+	asm, cg := generateAssembly(t, `fn main() int { return 7; }`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "call fn_main") {
+		t.Fatalf("expected auto entrypoint call to fn_main, got:\n%s", asm)
+	}
+	if !strings.Contains(asm, "mov %rax, %rdi") {
+		t.Fatalf("expected int-return main to map return value to exit code, got:\n%s", asm)
+	}
+}
+
+func TestCodegenAutoRunsMainNoReturnAsZeroExitCode(t *testing.T) {
+	asm, cg := generateAssembly(t, `fn main() { return; }`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "call fn_main") {
+		t.Fatalf("expected auto entrypoint call to fn_main, got:\n%s", asm)
+	}
+	if !strings.Contains(asm, "xor %rdi, %rdi") {
+		t.Fatalf("expected no-return main to exit with 0, got:\n%s", asm)
+	}
+}
+
+func TestCodegenNestedFunctionReturnInIntMain(t *testing.T) {
+	_, cg := generateAssembly(t, `
+fn main() int {
+  {
+    fn tempFn(x: int) int {
+      return x + 1;
+    }
+    print(tempFn(10));
+  }
+  return 0;
+}
+`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors for nested int-return function in int main: %v", cg.Errors())
+	}
+}
+
+func TestCodegenDoesNotAutoRunMainWhenExplicitlyCalled(t *testing.T) {
+	asm, cg := generateAssembly(t, `fn main() { return; } main();`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if strings.Count(asm, "call fn_main") != 1 {
+		t.Fatalf("expected exactly one call to fn_main (explicit call only), got:\n%s", asm)
+	}
+}
+
+func TestCodegenTopLevelFunctionsDoNotCaptureEachOther(t *testing.T) {
+	_, cg := generateAssembly(t, `
+fn header(name: string) { print(name); return; }
+fn helper() { header("ok"); return; }
+fn main() { helper(); return; }
+`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors for top-level function calls: %v", cg.Errors())
+	}
+}
+
+func TestCodegenRuntimeStringStringConcat(t *testing.T) {
+	asm, cg := generateAssembly(t, `
+fn header(name: string) { print("--- " + name + " ---"); return; }
+fn main() { header("ok"); return; }
+`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors for runtime string+string concat: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "call concat_cstr_cstr") {
+		t.Fatalf("expected runtime cstr+cstr helper call, got:\n%s", asm)
+	}
+}
+
 func TestCodegenNamedArgumentsCall(t *testing.T) {
 	_, cg := generateAssembly(t, "fn sub(a: int, b: int) int { return a - b; } print(sub(b = 2, a = 7));")
 	if len(cg.Errors()) != 0 {

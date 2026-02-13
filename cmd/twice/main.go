@@ -99,7 +99,12 @@ func runPath(output string) string {
 
 func printCodegenError(filename string, source string, err codegen.CodegenError) {
 	fmt.Printf("Codegen error: %s\n", err.Message)
-	line, col, ok := findContextLocation(source, err.Context)
+	line, col, ok := 0, 0, false
+	if err.Line > 0 && err.Column > 0 {
+		line, col, ok = err.Line, err.Column, true
+	} else {
+		line, col, ok = findContextLocation(source, err.Context)
+	}
 	if !ok {
 		fmt.Printf("  --> %s\n", filename)
 		if err.Context != "" {
@@ -127,20 +132,60 @@ func findContextLocation(source string, context string) (line int, col int, ok b
 		return 0, 0, false
 	}
 	lines := strings.Split(source, "\n")
+	normalize := func(s string) string {
+		s = strings.TrimSpace(s)
+		s = strings.ReplaceAll(s, " ", "")
+		s = strings.ReplaceAll(s, "\t", "")
+		return s
+	}
+	normalizedCtx := normalize(strings.Trim(ctx, "`"))
+
+	// Prefer exact normalized line matches so `return ;` maps to `return;`.
+	// If there are multiple identical matches, avoid a misleading location.
+	matchLine := -1
+	for i, ln := range lines {
+		if normalize(ln) == normalizedCtx {
+			if matchLine != -1 {
+				matchLine = -2 // ambiguous
+				break
+			}
+			matchLine = i
+		}
+	}
+	if matchLine >= 0 {
+		ln := lines[matchLine]
+		col := strings.Index(ln, strings.TrimSpace(strings.Trim(ctx, "`")))
+		if col < 0 {
+			col = strings.Index(ln, "return")
+		}
+		if col < 0 {
+			col = 0
+		}
+		return matchLine + 1, col + 1, true
+	}
+
 	candidates := []string{
 		ctx,
-		strings.TrimSuffix(ctx, ";"),
 		strings.Trim(ctx, "`"),
 	}
+	bestLine := -1
+	bestCol := -1
 	for i, ln := range lines {
 		for _, c := range candidates {
 			if c == "" {
 				continue
 			}
 			if idx := strings.Index(ln, c); idx >= 0 {
-				return i + 1, idx + 1, true
+				if bestLine != -1 {
+					return 0, 0, false // ambiguous
+				}
+				bestLine = i + 1
+				bestCol = idx + 1
 			}
 		}
+	}
+	if bestLine != -1 {
+		return bestLine, bestCol, true
 	}
 	return 0, 0, false
 }

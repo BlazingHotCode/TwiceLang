@@ -218,6 +218,22 @@ func TestFunctionReturnTypeValidationEval(t *testing.T) {
 	}
 }
 
+func TestFunctionEmptyReturnTypeValidationEval(t *testing.T) {
+	evaluated := testEval("fn bad() int { return; } bad()")
+	errObj, ok := evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "cannot return null from function returning int" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+
+	evaluated = testEval("fn ok() int||null { return; } ok()")
+	if evaluated.Type() != object.NULL_OBJ {
+		t.Fatalf("expected null object for int||null return, got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+}
+
 func TestUnknownIdentifierError(t *testing.T) {
 	evaluated := testEval("foobar")
 	errObj, ok := evaluated.(*object.Error)

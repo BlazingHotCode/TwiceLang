@@ -275,5 +275,3 @@ fn main() {
   demo_arrays_unions_tuples();
   return;
 }
-
-main();

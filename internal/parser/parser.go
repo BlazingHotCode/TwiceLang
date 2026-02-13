@@ -219,9 +219,17 @@ func (p *Parser) ParseProgram() *ast.Program {
 func (p *Parser) parseStatement() ast.Statement {
 	switch p.curToken.Type {
 	case token.LET:
-		return p.parseLetStatement()
+		stmt := p.parseLetStatement()
+		if stmt == nil {
+			return nil
+		}
+		return stmt
 	case token.CONST:
-		return p.parseConstStatement()
+		stmt := p.parseConstStatement()
+		if stmt == nil {
+			return nil
+		}
+		return stmt
 	case token.FOR:
 		return p.parseForStatement()
 	case token.WHILE:
@@ -229,13 +237,29 @@ func (p *Parser) parseStatement() ast.Statement {
 	case token.LOOP:
 		return p.parseLoopStatement()
 	case token.FUNCTION:
-		return p.parseFunctionStatement()
+		stmt := p.parseFunctionStatement()
+		if stmt == nil {
+			return nil
+		}
+		return stmt
 	case token.BREAK:
-		return p.parseBreakStatement()
+		stmt := p.parseBreakStatement()
+		if stmt == nil {
+			return nil
+		}
+		return stmt
 	case token.CONTINUE:
-		return p.parseContinueStatement()
+		stmt := p.parseContinueStatement()
+		if stmt == nil {
+			return nil
+		}
+		return stmt
 	case token.RETURN:
-		return p.parseReturnStatement()
+		stmt := p.parseReturnStatement()
+		if stmt == nil {
+			return nil
+		}
+		return stmt
 	case token.IDENT:
 		if p.curToken.Literal == "type" && p.peekTokenIs(token.IDENT) {
 			return p.parseTypeDeclStatement()
@@ -248,7 +272,11 @@ func (p *Parser) parseStatement() ast.Statement {
 			p.peekTokenIs(token.MOD_EQ) ||
 			p.peekTokenIs(token.PLUSPLUS) ||
 			p.peekTokenIs(token.MINUSMIN) {
-			return p.parseAssignStatement()
+			stmt := p.parseAssignStatement()
+			if stmt == nil {
+				return nil
+			}
+			return stmt
 		}
 		return p.parseExpressionStatement()
 	case token.LBRACE:
@@ -301,7 +329,7 @@ func (p *Parser) parseFunctionStatement() *ast.FunctionStatement {
 		return nil
 	}
 
-	if p.peekTokenIs(token.IDENT) || p.peekTokenIs(token.LPAREN) {
+	if p.peekTokenIs(token.IDENT) || p.peekTokenIs(token.LPAREN) || p.peekTokenIs(token.NULL) {
 		p.nextToken()
 		returnType, ok := p.parseTypeExpressionFromCurrent()
 		if !ok {
@@ -985,7 +1013,7 @@ func (p *Parser) parseFunctionLiteral() ast.Expression {
 		return nil
 	}
 
-	if p.peekTokenIs(token.IDENT) || p.peekTokenIs(token.LPAREN) {
+	if p.peekTokenIs(token.IDENT) || p.peekTokenIs(token.LPAREN) || p.peekTokenIs(token.NULL) {
 		p.nextToken()
 		returnType, ok := p.parseTypeExpressionFromCurrent()
 		if !ok {
@@ -1190,6 +1218,8 @@ func (p *Parser) parseTypeTermFromCurrent() (string, bool) {
 	base := ""
 	switch p.curToken.Type {
 	case token.IDENT:
+		base = p.curToken.Literal
+	case token.NULL:
 		base = p.curToken.Literal
 	case token.LPAREN:
 		p.nextToken()
