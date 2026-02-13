@@ -568,6 +568,26 @@ func (cg *CodeGen) generateInfix(ie *ast.InfixExpression) {
 		return
 	}
 
+	if leftType == typeType && rightType == typeType {
+		if ie.Operator != "==" && ie.Operator != "!=" {
+			cg.addNodeError("type comparisons support only == and !=", ie)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		cg.generateExpression(ie.Right)
+		cg.emit("    push %%rax")
+		cg.generateExpression(ie.Left)
+		cg.emit("    pop %%rcx")
+		cg.emit("    cmp %%rcx, %%rax")
+		if ie.Operator == "==" {
+			cg.emit("    sete %%al")
+		} else {
+			cg.emit("    setne %%al")
+		}
+		cg.emit("    movzbq %%al, %%rax")
+		return
+	}
+
 	if leftType != typeInt || rightType != typeInt {
 		cg.addNodeError("unsupported infix operand types in codegen", ie)
 		cg.emit("    mov $0, %%rax")
@@ -648,6 +668,11 @@ func (cg *CodeGen) generatePrefix(pe *ast.PrefixExpression) {
 func (cg *CodeGen) generateIdentifier(i *ast.Identifier) {
 	offset, ok := cg.variables[i.Value]
 	if !ok {
+		if isTypeLiteralIdentifier(i.Value) {
+			label := cg.stringLabel(i.Value + "\n")
+			cg.emit("    lea %s(%%rip), %%rax", label)
+			return
+		}
 		cg.addNodeError("identifier not found: "+i.Value, i)
 		cg.emit("    mov $0, %%rax")
 		return
@@ -1019,6 +1044,23 @@ func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 		}
 		label := cg.stringLabel(typeNameStr + "\n")
 		cg.emit("    lea %s(%%rip), %%rax", label)
+	case "typeofValue", "typeofvalue":
+		if len(ce.Arguments) != 1 {
+			cg.addNodeError(fmt.Sprintf("%s expects exactly 1 argument", fn.Value), ce)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		if _, ok := ce.Arguments[0].(*ast.NamedArgument); ok {
+			cg.addNodeError(fmt.Sprintf("named arguments are not supported for %s", fn.Value), ce.Arguments[0])
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		typeNameStr := typeName(cg.inferExpressionType(ce.Arguments[0]))
+		if typeNameStr == "array" {
+			typeNameStr = cg.inferExpressionTypeName(ce.Arguments[0])
+		}
+		label := cg.stringLabel(typeNameStr + "\n")
+		cg.emit("    lea %s(%%rip), %%rax", label)
 	case "int", "float", "string", "char", "bool":
 		cg.generateCastCall(fn.Value, ce)
 	default:
@@ -1119,6 +1161,9 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
 		if tn, ok := cg.varTypeNames[e.Value]; ok {
 			return parseTypeName(tn)
 		}
+		if isTypeLiteralIdentifier(e.Value) {
+			return typeType
+		}
 		return typeUnknown
 	case *ast.ArrayLiteral:
 		return typeArray
@@ -1189,7 +1234,7 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
 	case *ast.CallExpression:
 		if fn, ok := e.Function.(*ast.Identifier); ok {
 			switch fn.Value {
-			case "typeof":
+			case "typeof", "typeofValue", "typeofvalue":
 				return typeType
 			case "int":
 				return typeInt
@@ -1267,7 +1312,7 @@ func (cg *CodeGen) inferExpressionTypeName(expr ast.Expression) string {
 		}
 		return "unknown"
 	case *ast.CallExpression:
-		if fn, ok := e.Function.(*ast.Identifier); ok && (fn.Value == "int" || fn.Value == "float" || fn.Value == "string" || fn.Value == "char" || fn.Value == "bool" || fn.Value == "typeof") {
+		if fn, ok := e.Function.(*ast.Identifier); ok && (fn.Value == "int" || fn.Value == "float" || fn.Value == "string" || fn.Value == "char" || fn.Value == "bool" || fn.Value == "typeof" || fn.Value == "typeofValue" || fn.Value == "typeofvalue") {
 			return typeName(cg.inferExpressionType(e))
 		}
 	}
@@ -1842,7 +1887,16 @@ func (cg *CodeGen) computeCaptures(fn *ast.FunctionLiteral, outerScope map[strin
 
 func isBuiltinName(name string) bool {
 	switch name {
-	case "print", "typeof", "int", "float", "string", "char", "bool":
+	case "print", "typeof", "typeofValue", "typeofvalue", "int", "float", "string", "char", "bool":
+		return true
+	default:
+		return false
+	}
+}
+
+func isTypeLiteralIdentifier(name string) bool {
+	switch name {
+	case "int", "bool", "float", "string", "char", "null", "type":
 		return true
 	default:
 		return false

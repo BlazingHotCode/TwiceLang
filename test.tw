@@ -133,6 +133,10 @@ if (gate == 5) {
   print("union reassign if works");
 };
 
+if (typeofValue(gate) == int) {
+  print("typeofValue works");
+};
+
 // array of union values
 let mixed = {1, "two", 3};
 print(typeof(mixed));   // (int||string)[3]

@@ -122,6 +122,21 @@ func TestCodegenTypeofAndCast(t *testing.T) {
 	}
 }
 
+func TestCodegenTypeofValueComparison(t *testing.T) {
+	asm, cg := generateAssembly(t, `let a: int||string = 3; if (typeofValue(a) == int) { print("ran correctly"); };`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "ran correctly\\n") {
+		t.Fatalf("expected branch string literal in assembly, got:\n%s", asm)
+	}
+
+	_, cg = generateAssembly(t, `let a: int||string = 3; if (typeofvalue(a) == int) { print("ok"); };`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors for lowercase alias: %v", cg.Errors())
+	}
+}
+
 func TestCodegenStringConcatAndFloatAdd(t *testing.T) {
 	asm, cg := generateAssembly(t, `let greeting = "Hello, " + "Twice!"; let pi = 1.25 + 2.75; print(greeting); print(pi);`)
 	if len(cg.Errors()) != 0 {

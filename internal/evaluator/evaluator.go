@@ -27,6 +27,22 @@ var builtins = map[string]*object.Builtin{
 			return &object.TypeValue{Name: runtimeTypeName(args[0])}
 		},
 	},
+	"typeofValue": {
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 1 {
+				return newError("typeofValue expects 1 argument, got=%d", len(args))
+			}
+			return &object.TypeValue{Name: runtimeTypeName(args[0])}
+		},
+	},
+	"typeofvalue": {
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 1 {
+				return newError("typeofvalue expects 1 argument, got=%d", len(args))
+			}
+			return &object.TypeValue{Name: runtimeTypeName(args[0])}
+		},
+	},
 	"int": {
 		Fn: func(args ...object.Object) object.Object { return castToInt(args) },
 	},
@@ -240,6 +256,17 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 				}
 			}
 		}
+		if ident, ok := node.Function.(*ast.Identifier); ok {
+			if _, exists := env.Get(ident.Value); !exists {
+				if builtin, ok := builtins[ident.Value]; ok {
+					args, namedArgs, argErr := evalCallArguments(node.Arguments, env)
+					if argErr != nil {
+						return argErr
+					}
+					return applyFunction(builtin, args, namedArgs)
+				}
+			}
+		}
 		function := Eval(node.Function, env)
 		if isError(function) {
 			return function
@@ -307,6 +334,9 @@ func nativeBoolToBooleanObject(input bool) *object.Boolean {
 func evalIdentifier(node *ast.Identifier, env *object.Environment) object.Object {
 	val, ok := env.Get(node.Value)
 	if !ok {
+		if isKnownTypeName(node.Value) {
+			return &object.TypeValue{Name: node.Value}
+		}
 		if builtin, ok := builtins[node.Value]; ok {
 			return builtin
 		}
@@ -387,6 +417,8 @@ func evalInfixExpression(operator string, left, right object.Object) object.Obje
 		return evalStringConcatWithCoercion(left, right)
 	case left.Type() == object.CHAR_OBJ && right.Type() == object.CHAR_OBJ:
 		return evalCharInfixExpression(operator, left, right)
+	case left.Type() == object.TYPE_OBJ && right.Type() == object.TYPE_OBJ:
+		return evalTypeValueInfixExpression(operator, left, right)
 	case left.Type() == object.CHAR_OBJ && right.Type() == object.INTEGER_OBJ && operator == "+":
 		return &object.Char{Value: left.(*object.Char).Value + rune(right.(*object.Integer).Value)}
 	case operator == "==":
@@ -502,6 +534,20 @@ func evalStringInfixExpression(operator string, left, right object.Object) objec
 	switch operator {
 	case "+":
 		return &object.String{Value: leftVal + rightVal}
+	case "==":
+		return nativeBoolToBooleanObject(leftVal == rightVal)
+	case "!=":
+		return nativeBoolToBooleanObject(leftVal != rightVal)
+	default:
+		return newError("unknown operator: %s %s %s", left.Type(), operator, right.Type())
+	}
+}
+
+func evalTypeValueInfixExpression(operator string, left, right object.Object) object.Object {
+	leftVal := left.(*object.TypeValue).Name
+	rightVal := right.(*object.TypeValue).Name
+
+	switch operator {
 	case "==":
 		return nativeBoolToBooleanObject(leftVal == rightVal)
 	case "!=":

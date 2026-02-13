@@ -111,6 +111,9 @@ value = 3;
 if (value == 3) {
   print("union if works");
 };
+if (typeofValue(value) == int) {
+  print("runtime value is int");
+};
 
 let mixed: (int||string)[] = {1, "two", 3};
 ```
@@ -240,6 +243,7 @@ Note: in current codegen, `length()` requires a compile-time-known array size (f
 
 - `print(expr)` supports: `int`, `bool`, `float`, `string`, `char`, `null`, `type`
 - `typeof(expr)` returns the type name
+- `typeofValue(expr)` returns the current value type name (useful for union-typed variables)
 - Casts:
   - `int(...)`
   - `float(...)`
@@ -314,6 +318,9 @@ value = "twice";
 value = 3;
 if (value == 3) {
   print("union if works");
+};
+if (typeofValue(value) == int) {
+  print("runtime value is int");
 };
 
 let grid: int[][2] = {{1}, {2, 3}};

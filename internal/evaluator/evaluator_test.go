@@ -201,6 +201,19 @@ func TestTypeofAndCasts(t *testing.T) {
 	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "string" {
 		t.Fatalf("expected type(string), got=%s (%s)", evaluated.Type(), evaluated.Inspect())
 	}
+
+	evaluated = testEval("let a: int||string = 3; typeofValue(a)")
+	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "int" {
+		t.Fatalf("expected value type(int), got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+
+	evaluated = testEval("let a: int||string = 3; typeofvalue(a)")
+	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "int" {
+		t.Fatalf("expected value type(int), got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+
+	evaluated = testEval("let a: int||string = 3; if (typeofValue(a) == int) { 1 } else { 0 }")
+	testIntegerObject(t, evaluated, 1)
 }
 
 func TestStringConcatenationEval(t *testing.T) {
