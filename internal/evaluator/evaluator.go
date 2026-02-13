@@ -107,14 +107,14 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			}
 		}
 		varType := node.TypeName
-		if varType != "" && !isKnownTypeName(varType) {
+		if varType != "" && !isKnownTypeName(varType, env) {
 			return newError("unknown type: %s", varType)
 		}
 		valType := runtimeTypeName(val)
 		if varType == "" {
 			varType = valType
 		}
-		if !isAssignableToType(varType, valType) {
+		if !isAssignableToType(varType, valType, env) {
 			return newError("cannot assign %s to %s", valType, varType)
 		}
 		env.Set(node.Name.Value, val)
@@ -129,18 +129,33 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			return val
 		}
 		varType := node.TypeName
-		if varType != "" && !isKnownTypeName(varType) {
+		if varType != "" && !isKnownTypeName(varType, env) {
 			return newError("unknown type: %s", varType)
 		}
 		valType := runtimeTypeName(val)
 		if varType == "" {
 			varType = valType
 		}
-		if !isAssignableToType(varType, valType) {
+		if !isAssignableToType(varType, valType, env) {
 			return newError("cannot assign %s to %s", valType, varType)
 		}
 		env.SetConst(node.Name.Value, val)
 		env.SetType(node.Name.Value, varType)
+	case *ast.TypeDeclStatement:
+		if node.Name == nil {
+			return newError("invalid type declaration")
+		}
+		if node.Name.Value == "type" || isBuiltinTypeName(node.Name.Value) {
+			return newError("cannot redefine builtin type: %s", node.Name.Value)
+		}
+		if env.HasTypeAliasInCurrentScope(node.Name.Value) {
+			return newError("type already declared: %s", node.Name.Value)
+		}
+		resolved, ok := resolveTypeName(node.TypeName, env, map[string]struct{}{})
+		if !ok || !isKnownTypeName(resolved, env) {
+			return newError("unknown type: %s", node.TypeName)
+		}
+		env.SetTypeAlias(node.Name.Value, resolved)
 	case *ast.AssignStatement:
 		if !env.Has(node.Name.Value) {
 			return newError("identifier not found: " + node.Name.Value)
@@ -169,7 +184,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			targetType = valType
 			env.SetType(node.Name.Value, targetType)
 		}
-		if !isAssignableToType(targetType, valType) {
+		if !isAssignableToType(targetType, valType, env) {
 			return newError("cannot assign %s to %s", valType, targetType)
 		}
 		env.Assign(node.Name.Value, val)
@@ -241,11 +256,11 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 
 	case *ast.FunctionLiteral:
 		for _, param := range node.Parameters {
-			if param.TypeName != "" && !isKnownTypeName(param.TypeName) {
+			if param.TypeName != "" && !isKnownTypeName(param.TypeName, env) {
 				return newError("unknown type: %s", param.TypeName)
 			}
 		}
-		if node.ReturnType != "" && !isKnownTypeName(node.ReturnType) {
+		if node.ReturnType != "" && !isKnownTypeName(node.ReturnType, env) {
 			return newError("unknown type: %s", node.ReturnType)
 		}
 		name := ""
@@ -351,7 +366,7 @@ func nativeBoolToBooleanObject(input bool) *object.Boolean {
 func evalIdentifier(node *ast.Identifier, env *object.Environment) object.Object {
 	val, ok := env.Get(node.Value)
 	if !ok {
-		if isKnownTypeName(node.Value) {
+		if isKnownTypeName(node.Value, env) {
 			return &object.TypeValue{Name: node.Value}
 		}
 		if builtin, ok := builtins[node.Value]; ok {
@@ -857,7 +872,7 @@ func applyUserFunction(function *object.Function, args []object.Object, namedArg
 			targetType = runtimeTypeName(val)
 		}
 		valType := runtimeTypeName(val)
-		if !isAssignableToType(targetType, valType) {
+		if !isAssignableToType(targetType, valType, extendedEnv) {
 			return newError("cannot assign %s to %s", valType, targetType)
 		}
 		extendedEnv.Set(param.Name.Value, val)
@@ -893,7 +908,7 @@ func applyUserFunction(function *object.Function, args []object.Object, namedArg
 
 	if function.ReturnType != "" {
 		got := runtimeTypeName(result)
-		if !isAssignableToType(function.ReturnType, got) {
+		if !isAssignableToType(function.ReturnType, got, function.Env) {
 			return newError("cannot return %s from function returning %s", got, function.ReturnType)
 		}
 	}
@@ -974,7 +989,7 @@ func evalIndexAssignStatement(node *ast.IndexAssignStatement, env *object.Enviro
 		return val
 	}
 	valType := runtimeTypeName(val)
-	if !isAssignableToType(arr.ElementType, valType) {
+	if !isAssignableToType(arr.ElementType, valType, env) {
 		return newError("cannot assign %s to %s", valType, arr.ElementType)
 	}
 	arr.Elements[idx] = val
@@ -1022,7 +1037,7 @@ func evalArrayLiteral(lit *ast.ArrayLiteral, env *object.Environment) object.Obj
 		}
 		if elemType == "" {
 			elemType = t
-		} else if merged, ok := mergeTypeNames(elemType, t); ok {
+		} else if merged, ok := mergeTypeNames(elemType, t, env); ok {
 			elemType = merged
 		} else {
 			return newError("array literal elements must have the same type")
@@ -1080,7 +1095,9 @@ func runtimeTypeName(obj object.Object) string {
 	}
 }
 
-func isAssignableToType(targetType string, valueType string) bool {
+func isAssignableToType(targetType string, valueType string, env *object.Environment) bool {
+	targetType = normalizeTypeName(targetType, env)
+	valueType = normalizeTypeName(valueType, env)
 	if targetType == "" {
 		return true
 	}
@@ -1095,7 +1112,7 @@ func isAssignableToType(targetType string, valueType string) bool {
 	targetMembers, targetIsUnion := splitTopLevelUnion(targetType)
 	if targetIsUnion {
 		for _, m := range targetMembers {
-			if isAssignableToType(m, valueType) {
+			if isAssignableToType(m, valueType, env) {
 				return true
 			}
 		}
@@ -1103,7 +1120,7 @@ func isAssignableToType(targetType string, valueType string) bool {
 	}
 	if valueMembers, valueIsUnion := splitTopLevelUnion(valueType); valueIsUnion {
 		for _, m := range valueMembers {
-			if !isAssignableToType(targetType, m) {
+			if !isAssignableToType(targetType, m, env) {
 				return false
 			}
 		}
@@ -1129,17 +1146,18 @@ func isAssignableToType(targetType string, valueType string) bool {
 	if len(targetDims) == 0 {
 		return targetBase == valueBase
 	}
-	return isAssignableToType(targetBase, valueBase)
+	return isAssignableToType(targetBase, valueBase, env)
 }
 
-func isKnownTypeName(t string) bool {
+func isKnownTypeName(t string, env *object.Environment) bool {
+	t = normalizeTypeName(t, env)
 	base, _, ok := parseTypeName(t)
 	if !ok {
 		return false
 	}
 	if members, isUnion := splitTopLevelUnion(base); isUnion {
 		for _, m := range members {
-			if !isKnownTypeName(m) {
+			if !isKnownTypeName(m, env) {
 				return false
 			}
 		}
@@ -1153,7 +1171,9 @@ func isKnownTypeName(t string) bool {
 	}
 }
 
-func mergeTypeNames(a, b string) (string, bool) {
+func mergeTypeNames(a, b string, env *object.Environment) (string, bool) {
+	a = normalizeTypeName(a, env)
+	b = normalizeTypeName(b, env)
 	if a == b {
 		return a, true
 	}
@@ -1232,6 +1252,68 @@ func formatTypeName(base string, dims []int) string {
 		out += fmt.Sprintf("[%d]", d)
 	}
 	return out
+}
+
+func normalizeTypeName(t string, env *object.Environment) string {
+	resolved, ok := resolveTypeName(t, env, map[string]struct{}{})
+	if !ok {
+		return t
+	}
+	return resolved
+}
+
+func resolveTypeName(t string, env *object.Environment, visiting map[string]struct{}) (string, bool) {
+	base, dims, ok := parseTypeName(t)
+	if !ok {
+		return "", false
+	}
+	resolvedBase, ok := resolveTypeBase(base, env, visiting)
+	if !ok {
+		return "", false
+	}
+	resolvedType := resolvedBase
+	if len(dims) > 0 {
+		rb, rd, ok := parseTypeName(resolvedBase)
+		if !ok {
+			return "", false
+		}
+		allDims := append(append([]int{}, rd...), dims...)
+		resolvedType = formatTypeName(rb, allDims)
+	}
+	return resolvedType, true
+}
+
+func resolveTypeBase(base string, env *object.Environment, visiting map[string]struct{}) (string, bool) {
+	base = stripOuterParens(base)
+	if parts, isUnion := splitTopLevelUnion(base); isUnion {
+		resolved := make([]string, 0, len(parts))
+		for _, p := range parts {
+			r, ok := resolveTypeBase(p, env, visiting)
+			if !ok {
+				return "", false
+			}
+			resolved = append(resolved, r)
+		}
+		return strings.Join(resolved, "||"), true
+	}
+	if alias, ok := env.TypeAlias(base); ok {
+		if _, seen := visiting[base]; seen {
+			return "", false
+		}
+		visiting[base] = struct{}{}
+		defer delete(visiting, base)
+		return resolveTypeName(alias, env, visiting)
+	}
+	return base, true
+}
+
+func isBuiltinTypeName(name string) bool {
+	switch name {
+	case "int", "float", "string", "char", "bool", "null", "type":
+		return true
+	default:
+		return false
+	}
 }
 
 func splitTopLevelUnion(t string) ([]string, bool) {

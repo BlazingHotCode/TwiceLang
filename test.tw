@@ -1,10 +1,16 @@
 // Twice feature showcase
 
 // typed declarations, inference, null defaults
+type NumOrText = int||string;
+type Row = int[];
+type Grid = Row[];
+
 let s: string = "hello";
 let c = 'A';
 let f = 3.14;
 let n: string; // typed declaration without initializer => null
+let alias_value: NumOrText = "alias works";
+let alias_grid: Grid = {{1, 2}, {3}};
 
 print(s);
 print(c);
@@ -15,6 +21,8 @@ print(typeof(s));
 print(typeof(c));
 print(typeof(f));
 print(typeof(n));
+print(typeof(alias_value));
+print(typeof(alias_grid));
 
 print(int(true));
 print(bool(0));
@@ -208,6 +216,11 @@ if (gate == 5) {
 if (typeofValue(gate) == int) {
   print("typeofValue works");
 };
+
+let arr_or_text: int[]||string = {1, 2, 3};
+print(typeof(arr_or_text));
+arr_or_text = "array or text";
+print(typeof(arr_or_text));
 
 // array of union values
 let mixed = {1, "two", 3};

@@ -183,6 +183,27 @@ func (cs *ConstStatement) String() string {
 	return out.String()
 }
 
+// TypeDeclStatement represents: type <name> = <typeExpr>;
+type TypeDeclStatement struct {
+	Token    token.Token
+	Name     *Identifier
+	TypeName string
+}
+
+func (ts *TypeDeclStatement) statementNode()       {}
+func (ts *TypeDeclStatement) TokenLiteral() string { return ts.Token.Literal }
+func (ts *TypeDeclStatement) String() string {
+	var out bytes.Buffer
+	out.WriteString("type ")
+	if ts.Name != nil {
+		out.WriteString(ts.Name.String())
+	}
+	out.WriteString(" = ")
+	out.WriteString(ts.TypeName)
+	out.WriteString(";")
+	return out.String()
+}
+
 // AssignStatement represents: <name> = <value>;
 type AssignStatement struct {
 	Token token.Token // The IDENT token

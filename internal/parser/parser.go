@@ -236,9 +236,10 @@ func (p *Parser) parseStatement() ast.Statement {
 		return p.parseContinueStatement()
 	case token.RETURN:
 		return p.parseReturnStatement()
-	case token.LBRACE:
-		return p.parseBlockStatement()
 	case token.IDENT:
+		if p.curToken.Literal == "type" && p.peekTokenIs(token.IDENT) {
+			return p.parseTypeDeclStatement()
+		}
 		if p.peekTokenIs(token.ASSIGN) ||
 			p.peekTokenIs(token.PLUS_EQ) ||
 			p.peekTokenIs(token.MINUS_EQ) ||
@@ -250,9 +251,32 @@ func (p *Parser) parseStatement() ast.Statement {
 			return p.parseAssignStatement()
 		}
 		return p.parseExpressionStatement()
+	case token.LBRACE:
+		return p.parseBlockStatement()
 	default:
 		return p.parseExpressionStatement()
 	}
+}
+
+func (p *Parser) parseTypeDeclStatement() ast.Statement {
+	stmt := &ast.TypeDeclStatement{Token: p.curToken}
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	if !p.expectPeek(token.ASSIGN) {
+		return nil
+	}
+	p.nextToken()
+	typeName, ok := p.parseTypeExpressionFromCurrent()
+	if !ok {
+		return nil
+	}
+	stmt.TypeName = typeName
+	if !p.expectPeek(token.SEMICOLON) {
+		return nil
+	}
+	return stmt
 }
 
 func (p *Parser) parseFunctionStatement() *ast.FunctionStatement {

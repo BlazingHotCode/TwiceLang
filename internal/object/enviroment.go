@@ -6,6 +6,7 @@ type Environment struct {
 	store      map[string]Object
 	constStore map[string]bool
 	typeStore  map[string]string
+	typeAlias  map[string]string
 	outer      *Environment // Parent scope, nil for global scope
 }
 
@@ -16,6 +17,7 @@ func NewEnvironment() *Environment {
 		store:      s,
 		constStore: make(map[string]bool),
 		typeStore:  make(map[string]string),
+		typeAlias:  make(map[string]string),
 		outer:      nil,
 	}
 }
@@ -112,4 +114,23 @@ func (e *Environment) HasInCurrentScope(name string) bool {
 // IsConstInCurrentScope reports whether the current-scope binding is const.
 func (e *Environment) IsConstInCurrentScope(name string) bool {
 	return e.constStore[name]
+}
+
+func (e *Environment) SetTypeAlias(name, target string) {
+	e.typeAlias[name] = target
+}
+
+func (e *Environment) TypeAlias(name string) (string, bool) {
+	if t, ok := e.typeAlias[name]; ok {
+		return t, true
+	}
+	if e.outer != nil {
+		return e.outer.TypeAlias(name)
+	}
+	return "", false
+}
+
+func (e *Environment) HasTypeAliasInCurrentScope(name string) bool {
+	_, ok := e.typeAlias[name]
+	return ok
 }

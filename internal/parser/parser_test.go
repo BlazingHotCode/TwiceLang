@@ -112,6 +112,26 @@ func TestTypedLetDeclarationParses(t *testing.T) {
 	}
 }
 
+func TestTypeDeclarationParses(t *testing.T) {
+	p := New(lexer.New("type NumOrText = int||string; let v: NumOrText = 1;"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	if len(program.Statements) != 2 {
+		t.Fatalf("expected 2 statements, got=%d", len(program.Statements))
+	}
+	td, ok := program.Statements[0].(*ast.TypeDeclStatement)
+	if !ok {
+		t.Fatalf("expected type declaration, got=%T", program.Statements[0])
+	}
+	if td.Name.Value != "NumOrText" {
+		t.Fatalf("wrong alias name: %q", td.Name.Value)
+	}
+	if td.TypeName != "int||string" {
+		t.Fatalf("wrong aliased type: %q", td.TypeName)
+	}
+}
+
 func TestTypedArrayLetDeclarationParses(t *testing.T) {
 	p := New(lexer.New("let arr: int[3];"))
 	program := p.ParseProgram()
@@ -157,6 +177,20 @@ func TestUnionTypeParses(t *testing.T) {
 	}
 	if stmt.TypeName != "(int||string)[]" {
 		t.Fatalf("expected type annotation (int||string)[], got=%q", stmt.TypeName)
+	}
+}
+
+func TestUnionArrayOrScalarTypeParses(t *testing.T) {
+	p := New(lexer.New("let v: int[]||string;"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	stmt, ok := program.Statements[0].(*ast.LetStatement)
+	if !ok {
+		t.Fatalf("expected let statement, got=%T", program.Statements[0])
+	}
+	if stmt.TypeName != "int[]||string" {
+		t.Fatalf("expected type annotation int[]||string, got=%q", stmt.TypeName)
 	}
 }
 

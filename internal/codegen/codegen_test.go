@@ -470,6 +470,29 @@ func TestCodegenUnionTypes(t *testing.T) {
 	}
 }
 
+func TestCodegenTypeAliases(t *testing.T) {
+	asm, cg := generateAssembly(t, `type NumOrText = int||string; let v: NumOrText = "ok"; print(typeof(v));`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "NumOrText\\n") {
+		t.Fatalf("expected typeof(v) to preserve alias name, got:\n%s", asm)
+	}
+
+	_, cg = generateAssembly(t, `type N = int; fn add1(x: N) N { return x + 1; } print(add1(2));`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors for alias in function signature: %v", cg.Errors())
+	}
+
+	asm, cg = generateAssembly(t, `let v: int[]||string = {1,2}; v = "ok"; print(typeof(v));`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors for int[]||string: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "int[]||string\\n") {
+		t.Fatalf("expected typeof(v) to preserve int[]||string, got:\n%s", asm)
+	}
+}
+
 func TestCodegenUnionTypedIfComparison(t *testing.T) {
 	asm, cg := generateAssembly(t, `let a: string||int = 3; if (a == 3) { print("entered"); };`)
 	if len(cg.Errors()) != 0 {

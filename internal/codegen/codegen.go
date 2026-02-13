@@ -35,6 +35,7 @@ type CodeGen struct {
 	funcByName       map[string]string
 	funcStmtKeys     map[*ast.FunctionStatement]string
 	varFuncs         map[string]string
+	typeAliases      map[string]string
 	currentFn        string
 	nextAnonFn       int
 	inFunction       bool
@@ -45,6 +46,7 @@ type CodeGen struct {
 	loopContLabels   []string
 	arraySlots       map[*ast.ArrayLiteral]int
 	scopeDecls       []map[string]struct{}
+	typeScopeDecls   []map[string]struct{}
 	errors           []CodegenError
 }
 
@@ -95,10 +97,12 @@ func New() *CodeGen {
 		funcByName:       make(map[string]string),
 		funcStmtKeys:     make(map[*ast.FunctionStatement]string),
 		varFuncs:         make(map[string]string),
+		typeAliases:      make(map[string]string),
 		stackOffset:      0,
 		maxStackOffset:   0,
 		arraySlots:       make(map[*ast.ArrayLiteral]int),
 		scopeDecls:       []map[string]struct{}{},
+		typeScopeDecls:   []map[string]struct{}{},
 		errors:           []CodegenError{},
 	}
 }
@@ -470,6 +474,7 @@ type lexicalScopeState struct {
 	stringVals       map[string]string
 	floatVals        map[string]float64
 	varFuncs         map[string]string
+	typeAliases      map[string]string
 }
 
 func cloneIntMap(in map[string]int) map[string]int {
@@ -528,11 +533,26 @@ func cloneFloat64Map(in map[string]float64) map[string]float64 {
 	return out
 }
 
+func cloneStructMap(in map[string]struct{}) map[string]struct{} {
+	out := make(map[string]struct{}, len(in))
+	for k := range in {
+		out[k] = struct{}{}
+	}
+	return out
+}
+
 func (cg *CodeGen) currentScopeDecls() map[string]struct{} {
 	if len(cg.scopeDecls) == 0 {
 		cg.scopeDecls = append(cg.scopeDecls, make(map[string]struct{}))
 	}
 	return cg.scopeDecls[len(cg.scopeDecls)-1]
+}
+
+func (cg *CodeGen) currentTypeScopeDecls() map[string]struct{} {
+	if len(cg.typeScopeDecls) == 0 {
+		cg.typeScopeDecls = append(cg.typeScopeDecls, make(map[string]struct{}))
+	}
+	return cg.typeScopeDecls[len(cg.typeScopeDecls)-1]
 }
 
 func (cg *CodeGen) isDeclaredInCurrentScope(name string) bool {
@@ -544,8 +564,18 @@ func (cg *CodeGen) markDeclaredInCurrentScope(name string) {
 	cg.currentScopeDecls()[name] = struct{}{}
 }
 
+func (cg *CodeGen) isTypeAliasDeclaredInCurrentScope(name string) bool {
+	_, ok := cg.currentTypeScopeDecls()[name]
+	return ok
+}
+
+func (cg *CodeGen) markTypeAliasDeclaredInCurrentScope(name string) {
+	cg.currentTypeScopeDecls()[name] = struct{}{}
+}
+
 func (cg *CodeGen) enterScope() lexicalScopeState {
 	cg.scopeDecls = append(cg.scopeDecls, make(map[string]struct{}))
+	cg.typeScopeDecls = append(cg.typeScopeDecls, make(map[string]struct{}))
 	return lexicalScopeState{
 		variables:        cloneIntMap(cg.variables),
 		constVars:        cloneBoolMap(cg.constVars),
@@ -560,15 +590,17 @@ func (cg *CodeGen) enterScope() lexicalScopeState {
 		stringVals:       cloneStringMap(cg.stringVals),
 		floatVals:        cloneFloat64Map(cg.floatVals),
 		varFuncs:         cloneStringMap(cg.varFuncs),
+		typeAliases:      cloneStringMap(cg.typeAliases),
 	}
 }
 
 func (cg *CodeGen) exitScope(st lexicalScopeState) {
-	if len(cg.scopeDecls) == 0 {
+	if len(cg.scopeDecls) == 0 || len(cg.typeScopeDecls) == 0 {
 		return
 	}
 	declared := cg.scopeDecls[len(cg.scopeDecls)-1]
 	cg.scopeDecls = cg.scopeDecls[:len(cg.scopeDecls)-1]
+	cg.typeScopeDecls = cg.typeScopeDecls[:len(cg.typeScopeDecls)-1]
 
 	currVariables := cg.variables
 	currConstVars := cg.constVars
@@ -597,6 +629,7 @@ func (cg *CodeGen) exitScope(st lexicalScopeState) {
 	cg.stringVals = st.stringVals
 	cg.floatVals = st.floatVals
 	cg.varFuncs = st.varFuncs
+	cg.typeAliases = st.typeAliases
 
 	for name := range st.variables {
 		if _, shadowed := declared[name]; shadowed {
@@ -676,6 +709,8 @@ func (cg *CodeGen) generateStatement(stmt ast.Statement) {
 		cg.generateLet(s)
 	case *ast.ConstStatement:
 		cg.generateConst(s)
+	case *ast.TypeDeclStatement:
+		cg.generateTypeDecl(s)
 	case *ast.AssignStatement:
 		cg.generateAssign(s)
 	case *ast.IndexAssignStatement:
@@ -1137,8 +1172,8 @@ func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
 		return
 	}
 
-	declared := parseTypeName(ls.TypeName)
-	if ls.TypeName != "" && !isKnownTypeName(ls.TypeName) {
+	declared := cg.parseTypeName(ls.TypeName)
+	if ls.TypeName != "" && !cg.isKnownTypeName(ls.TypeName) {
 		cg.addNodeError("unknown type: "+ls.TypeName, ls)
 		cg.emit("    mov $0, %%rax")
 		return
@@ -1168,7 +1203,7 @@ func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
 	if targetName == "" {
 		targetName = inferredName
 	}
-	if targetName != "unknown" && inferredName != "unknown" && !isAssignableTypeName(targetName, inferredName) {
+	if targetName != "unknown" && inferredName != "unknown" && !cg.isAssignableTypeName(targetName, inferredName) {
 		cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", inferredName, targetName), ls)
 		cg.emit("    mov $0, %%rax")
 		return
@@ -1198,8 +1233,8 @@ func (cg *CodeGen) generateConst(cs *ast.ConstStatement) {
 		return
 	}
 
-	declared := parseTypeName(cs.TypeName)
-	if cs.TypeName != "" && !isKnownTypeName(cs.TypeName) {
+	declared := cg.parseTypeName(cs.TypeName)
+	if cs.TypeName != "" && !cg.isKnownTypeName(cs.TypeName) {
 		cg.addNodeError("unknown type: "+cs.TypeName, cs)
 		cg.emit("    mov $0, %%rax")
 		return
@@ -1222,7 +1257,7 @@ func (cg *CodeGen) generateConst(cs *ast.ConstStatement) {
 	if targetName == "" {
 		targetName = inferredName
 	}
-	if targetName != "unknown" && inferredName != "unknown" && !isAssignableTypeName(targetName, inferredName) {
+	if targetName != "unknown" && inferredName != "unknown" && !cg.isAssignableTypeName(targetName, inferredName) {
 		cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", inferredName, targetName), cs)
 		cg.emit("    mov $0, %%rax")
 		return
@@ -1242,6 +1277,29 @@ func (cg *CodeGen) generateConst(cs *ast.ConstStatement) {
 	cg.trackKnownValue(name, cg.varTypes[name], cs.Value)
 
 	cg.emit("    mov %%rax, -%d(%%rbp)  # const %s", offset, name)
+}
+
+func (cg *CodeGen) generateTypeDecl(ts *ast.TypeDeclStatement) {
+	if ts == nil || ts.Name == nil {
+		cg.addNodeError("invalid type declaration", ts)
+		return
+	}
+	name := ts.Name.Value
+	if name == "type" || isBuiltinTypeName(name) {
+		cg.addNodeError("cannot redefine builtin type: "+name, ts)
+		return
+	}
+	if cg.isTypeAliasDeclaredInCurrentScope(name) {
+		cg.addNodeError("type already declared: "+name, ts)
+		return
+	}
+	resolved, ok := cg.normalizeTypeName(ts.TypeName)
+	if !ok || !cg.isKnownTypeName(resolved) {
+		cg.addNodeError("unknown type: "+ts.TypeName, ts)
+		return
+	}
+	cg.typeAliases[name] = resolved
+	cg.markTypeAliasDeclaredInCurrentScope(name)
 }
 
 // generateAssign handles variable reassignment.
@@ -1285,7 +1343,7 @@ func (cg *CodeGen) generateAssign(as *ast.AssignStatement) {
 			}
 		}
 	}
-	if inferredName != "unknown" && targetName != "unknown" && !isAssignableTypeName(targetName, inferredName) {
+	if inferredName != "unknown" && targetName != "unknown" && !cg.isAssignableTypeName(targetName, inferredName) {
 		cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", inferredName, targetName), as)
 		cg.emit("    mov $0, %%rax")
 		return
@@ -1358,7 +1416,7 @@ func (cg *CodeGen) generateIndexAssign(ias *ast.IndexAssignStatement) {
 	}
 
 	valueTypeName := cg.inferExpressionTypeName(ias.Value)
-	if valueTypeName != "unknown" && !isAssignableTypeName(elemTypeName, valueTypeName) {
+	if valueTypeName != "unknown" && !cg.isAssignableTypeName(elemTypeName, valueTypeName) {
 		cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", valueTypeName, elemTypeName), ias)
 		cg.emit("    mov $0, %%rax")
 		return
@@ -1386,7 +1444,7 @@ func (cg *CodeGen) generateReturn(rs *ast.ReturnStatement) {
 		}
 		if cg.funcRetTypeName != "" {
 			gotName := cg.inferExpressionTypeName(rs.ReturnValue)
-			if gotName != "null" && gotName != "unknown" && !isAssignableTypeName(cg.funcRetTypeName, gotName) {
+			if gotName != "null" && gotName != "unknown" && !cg.isAssignableTypeName(cg.funcRetTypeName, gotName) {
 				cg.addNodeError(fmt.Sprintf("cannot return %s from function returning %s", gotName, cg.funcRetTypeName), rs)
 			}
 		}
@@ -1702,7 +1760,7 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
 			return t
 		}
 		if tn, ok := cg.varTypeNames[e.Value]; ok {
-			return parseTypeName(tn)
+			return cg.parseTypeName(tn)
 		}
 		if isTypeLiteralIdentifier(e.Value) {
 			return typeType
@@ -1798,14 +1856,14 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
 				if fl.Literal.ReturnType == "" {
 					return typeUnknown
 				}
-				return parseTypeName(fl.Literal.ReturnType)
+				return cg.parseTypeName(fl.Literal.ReturnType)
 			}
 			if key, ok := cg.funcByName[fn.Value]; ok {
 				fl := cg.functions[key]
 				if fl.Literal.ReturnType == "" {
 					return typeUnknown
 				}
-				return parseTypeName(fl.Literal.ReturnType)
+				return cg.parseTypeName(fl.Literal.ReturnType)
 			}
 		}
 		return typeUnknown
@@ -1817,7 +1875,7 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
 		if !ok {
 			return typeUnknown
 		}
-		return parseTypeName(elemTypeName)
+		return cg.parseTypeName(elemTypeName)
 	case *ast.MethodCallExpression:
 		if e.Method != nil && e.Method.Value == "length" {
 			return typeInt
@@ -1938,6 +1996,7 @@ func (cg *CodeGen) reset() {
 	cg.funcByName = make(map[string]string)
 	cg.funcStmtKeys = make(map[*ast.FunctionStatement]string)
 	cg.varFuncs = make(map[string]string)
+	cg.typeAliases = make(map[string]string)
 	cg.stackOffset = 0
 	cg.maxStackOffset = 0
 	cg.currentFn = ""
@@ -1950,6 +2009,7 @@ func (cg *CodeGen) reset() {
 	cg.loopContLabels = nil
 	cg.arraySlots = make(map[*ast.ArrayLiteral]int)
 	cg.scopeDecls = []map[string]struct{}{make(map[string]struct{})}
+	cg.typeScopeDecls = []map[string]struct{}{make(map[string]struct{})}
 	cg.errors = []CodegenError{}
 }
 
@@ -2022,6 +2082,8 @@ func (cg *CodeGen) collectFunctionsInStatement(stmt ast.Statement, scope map[str
 		if s != nil && s.Value != nil {
 			cg.collectFunctionsInExpression(s.Value, scope)
 		}
+	case *ast.TypeDeclStatement:
+		return
 	case *ast.AssignStatement:
 		if s != nil && s.Value != nil {
 			cg.collectFunctionsInExpression(s.Value, scope)
@@ -2176,6 +2238,7 @@ type cgState struct {
 	stringVals       map[string]string
 	floatVals        map[string]float64
 	varFuncs         map[string]string
+	typeAliases      map[string]string
 	stackOffset      int
 	maxStackOffset   int
 	inFunction       bool
@@ -2187,6 +2250,7 @@ type cgState struct {
 	loopContLabels   []string
 	arraySlots       map[*ast.ArrayLiteral]int
 	scopeDecls       []map[string]struct{}
+	typeScopeDecls   []map[string]struct{}
 }
 
 func (cg *CodeGen) saveState() cgState {
@@ -2204,6 +2268,7 @@ func (cg *CodeGen) saveState() cgState {
 		stringVals:       cg.stringVals,
 		floatVals:        cg.floatVals,
 		varFuncs:         cg.varFuncs,
+		typeAliases:      cg.typeAliases,
 		stackOffset:      cg.stackOffset,
 		maxStackOffset:   cg.maxStackOffset,
 		inFunction:       cg.inFunction,
@@ -2215,6 +2280,7 @@ func (cg *CodeGen) saveState() cgState {
 		loopContLabels:   cg.loopContLabels,
 		arraySlots:       cg.arraySlots,
 		scopeDecls:       cg.scopeDecls,
+		typeScopeDecls:   cg.typeScopeDecls,
 	}
 }
 
@@ -2232,6 +2298,7 @@ func (cg *CodeGen) restoreState(st cgState) {
 	cg.stringVals = st.stringVals
 	cg.floatVals = st.floatVals
 	cg.varFuncs = st.varFuncs
+	cg.typeAliases = st.typeAliases
 	cg.stackOffset = st.stackOffset
 	cg.maxStackOffset = st.maxStackOffset
 	cg.inFunction = st.inFunction
@@ -2243,6 +2310,7 @@ func (cg *CodeGen) restoreState(st cgState) {
 	cg.loopContLabels = st.loopContLabels
 	cg.arraySlots = st.arraySlots
 	cg.scopeDecls = st.scopeDecls
+	cg.typeScopeDecls = st.typeScopeDecls
 }
 
 func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
@@ -2267,14 +2335,15 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 	cg.maxStackOffset = 0
 	cg.inFunction = true
 	cg.funcRetLbl = cg.newLabel()
-	cg.funcRetType = parseTypeName(fn.Literal.ReturnType)
+	cg.funcRetType = cg.parseTypeName(fn.Literal.ReturnType)
 	cg.funcRetTypeName = fn.Literal.ReturnType
-	if fn.Literal.ReturnType != "" && !isKnownTypeName(fn.Literal.ReturnType) {
+	if fn.Literal.ReturnType != "" && !cg.isKnownTypeName(fn.Literal.ReturnType) {
 		cg.addNodeError("unknown type: "+fn.Literal.ReturnType, fn.Literal)
 	}
 	cg.currentFn = fn.Key
 	cg.arraySlots = make(map[*ast.ArrayLiteral]int)
 	cg.scopeDecls = []map[string]struct{}{make(map[string]struct{})}
+	cg.typeScopeDecls = []map[string]struct{}{make(map[string]struct{})}
 
 	label := fn.Label
 	cg.emit("%s:", label)
@@ -2296,8 +2365,8 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 		cg.variables[p.Name.Value] = offset
 		cg.markDeclaredInCurrentScope(p.Name.Value)
 		cg.emit("    mov %s, -%d(%%rbp)  # param %s", paramRegs[idx], offset, p.Name.Value)
-		pt := parseTypeName(p.TypeName)
-		if p.TypeName != "" && !isKnownTypeName(p.TypeName) {
+		pt := cg.parseTypeName(p.TypeName)
+		if p.TypeName != "" && !cg.isKnownTypeName(p.TypeName) {
 			cg.addNodeError("unknown type: "+p.TypeName, p.Name)
 		}
 		cg.varTypes[p.Name.Value] = pt
@@ -2411,19 +2480,19 @@ func (cg *CodeGen) generateUserFunctionCall(fn *compiledFunction, ce *ast.CallEx
 	}
 
 	for i, arg := range finalArgs {
-		want := parseTypeName(fn.Literal.Parameters[i].TypeName)
+		want := cg.parseTypeName(fn.Literal.Parameters[i].TypeName)
 		got := cg.inferExpressionType(arg)
 		wantName := fn.Literal.Parameters[i].TypeName
 		if wantName == "" {
 			wantName = typeName(want)
 		}
 		gotName := cg.inferExpressionTypeName(arg)
-		if wantName != "unknown" && gotName != "unknown" && !isAssignableTypeName(wantName, gotName) {
+		if wantName != "unknown" && gotName != "unknown" && !cg.isAssignableTypeName(wantName, gotName) {
 			cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", gotName, wantName), ce)
 			cg.emit("    mov $0, %%rax")
 			return
 		}
-		if want != typeUnknown && got != typeUnknown && got != typeNull && got != want && parseTypeName(wantName) != typeArray {
+		if want != typeUnknown && got != typeUnknown && got != typeNull && got != want && cg.parseTypeName(wantName) != typeArray {
 			cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", typeName(got), typeName(want)), ce)
 			cg.emit("    mov $0, %%rax")
 			return
@@ -2873,7 +2942,10 @@ func isNumericType(t valueType) bool {
 	return t == typeInt || t == typeFloat
 }
 
-func parseTypeName(s string) valueType {
+func (cg *CodeGen) parseTypeName(s string) valueType {
+	if resolved, ok := cg.normalizeTypeName(s); ok {
+		s = resolved
+	}
 	if _, dims, ok := parseTypeDescriptor(s); ok && len(dims) > 0 {
 		return typeArray
 	}
@@ -2894,6 +2966,81 @@ func parseTypeName(s string) valueType {
 		return typeNull
 	default:
 		return typeUnknown
+	}
+}
+
+func (cg *CodeGen) isAssignableTypeName(target, value string) bool {
+	if resolved, ok := cg.normalizeTypeName(target); ok {
+		target = resolved
+	}
+	if resolved, ok := cg.normalizeTypeName(value); ok {
+		value = resolved
+	}
+	return isAssignableTypeName(target, value)
+}
+
+func (cg *CodeGen) isKnownTypeName(t string) bool {
+	if resolved, ok := cg.normalizeTypeName(t); ok {
+		t = resolved
+	}
+	return isKnownTypeName(t)
+}
+
+func (cg *CodeGen) normalizeTypeName(t string) (string, bool) {
+	return cg.resolveTypeName(t, map[string]struct{}{})
+}
+
+func (cg *CodeGen) resolveTypeName(t string, visiting map[string]struct{}) (string, bool) {
+	base, dims, ok := parseTypeDescriptor(t)
+	if !ok {
+		return "", false
+	}
+	resolvedBase, ok := cg.resolveTypeBase(base, visiting)
+	if !ok {
+		return "", false
+	}
+	resolvedType := resolvedBase
+	if len(dims) > 0 {
+		rb, rd, ok := parseTypeDescriptor(resolvedBase)
+		if !ok {
+			return "", false
+		}
+		allDims := append(append([]int{}, rd...), dims...)
+		resolvedType = formatTypeDescriptor(rb, allDims)
+	}
+	return resolvedType, true
+}
+
+func (cg *CodeGen) resolveTypeBase(base string, visiting map[string]struct{}) (string, bool) {
+	base = stripOuterParens(base)
+	if parts, isUnion := splitTopLevelUnion(base); isUnion {
+		resolved := make([]string, 0, len(parts))
+		for _, p := range parts {
+			r, ok := cg.resolveTypeBase(p, visiting)
+			if !ok {
+				return "", false
+			}
+			resolved = append(resolved, r)
+		}
+		return strings.Join(resolved, "||"), true
+	}
+	if alias, ok := cg.typeAliases[base]; ok {
+		if _, seen := visiting[base]; seen {
+			return "", false
+		}
+		visiting[base] = struct{}{}
+		defer delete(visiting, base)
+		return cg.resolveTypeName(alias, visiting)
+	}
+	return base, true
+}
+
+func isBuiltinTypeName(name string) bool {
+	switch name {
+	case "int", "bool", "float", "string", "char", "null", "type":
+		return true
+	default:
+		return false
 	}
 }
 

@@ -119,6 +119,18 @@ if (typeofValue(value) == int) {
 let mixed: (int||string)[] = {1, "two", 3};
 ```
 
+Type declarations (aliases) are also supported:
+
+```tw
+type NumOrText = int||string;
+type Row = int[];
+type Grid = Row[];
+
+let value: NumOrText = "ok";
+let g: Grid = {{1, 2}, {3}};
+print(typeof(value)); // NumOrText
+```
+
 ### Assignment
 
 ```tw

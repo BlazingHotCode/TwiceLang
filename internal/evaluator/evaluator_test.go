@@ -559,6 +559,31 @@ func TestUnionTypesEval(t *testing.T) {
 	}
 }
 
+func TestTypeAliasesEval(t *testing.T) {
+	evaluated := testEval(`type NumOrText = int||string; let v: NumOrText = "ok"; v`)
+	if evaluated.Type() != object.STRING_OBJ || evaluated.Inspect() != "ok" {
+		t.Fatalf("expected aliased union assignment to work, got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+
+	evaluated = testEval(`type Row = int[]; type Grid = Row[]; let g: Grid = {{1,2}, {3}}; typeof(g)`)
+	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "Grid" {
+		t.Fatalf("expected declared type name Grid, got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+
+	evaluated = testEval(`type N = int; fn add1(x: N) N { return x + 1; } add1(2)`)
+	testIntegerObject(t, evaluated, 3)
+
+	evaluated = testEval(`let v: int[]||string = {1,2}; v = "ok"; v`)
+	if evaluated.Type() != object.STRING_OBJ || evaluated.Inspect() != "ok" {
+		t.Fatalf("expected int[]||string to accept string assignment, got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+
+	evaluated = testEval(`let v: int[]||string = {1,2}; typeof(v)`)
+	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "int[]||string" {
+		t.Fatalf("expected declared type int[]||string, got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+}
+
 func testEval(input string) object.Object {
 	l := lexer.New(input)
 	p := parser.New(l)
