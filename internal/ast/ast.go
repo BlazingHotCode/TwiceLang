@@ -2,6 +2,7 @@ package ast
 
 import (
 	"bytes"
+	"strconv"
 	"strings"
 	"twice/internal/token"
 )
@@ -126,6 +127,26 @@ func (al *ArrayLiteral) String() string {
 	out.WriteString("{")
 	out.WriteString(strings.Join(parts, ", "))
 	out.WriteString("}")
+	return out.String()
+}
+
+// TupleLiteral represents (expr1, expr2, ...)
+type TupleLiteral struct {
+	Token    token.Token
+	Elements []Expression
+}
+
+func (tl *TupleLiteral) expressionNode()      {}
+func (tl *TupleLiteral) TokenLiteral() string { return tl.Token.Literal }
+func (tl *TupleLiteral) String() string {
+	var out bytes.Buffer
+	parts := make([]string, 0, len(tl.Elements))
+	for _, el := range tl.Elements {
+		parts = append(parts, el.String())
+	}
+	out.WriteString("(")
+	out.WriteString(strings.Join(parts, ", "))
+	out.WriteString(")")
 	return out.String()
 }
 
@@ -595,6 +616,23 @@ func (mce *MethodCallExpression) String() string {
 	out.WriteString("(")
 	out.WriteString(strings.Join(args, ", "))
 	out.WriteString(")")
+	return out.String()
+}
+
+// TupleAccessExpression represents <tupleExpr>.<index>
+type TupleAccessExpression struct {
+	Token token.Token // The . token
+	Left  Expression
+	Index int
+}
+
+func (tae *TupleAccessExpression) expressionNode()      {}
+func (tae *TupleAccessExpression) TokenLiteral() string { return tae.Token.Literal }
+func (tae *TupleAccessExpression) String() string {
+	var out bytes.Buffer
+	out.WriteString(tae.Left.String())
+	out.WriteString(".")
+	out.WriteString(strconv.Itoa(tae.Index))
 	return out.String()
 }
 

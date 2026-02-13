@@ -222,6 +222,21 @@ print(typeof(arr_or_text));
 arr_or_text = "array or text";
 print(typeof(arr_or_text));
 
+// tuples: typed tuple literal and index access via .0/.1/.2...
+let tup: (int, string, bool) = (7, "seven", true);
+print(typeof(tup));
+print(tup.0);
+print(tup.1);
+print(tup.2);
+
+type Pair = (int, string);
+type MaybePair = Pair||string;
+let maybe_pair: MaybePair = (1, "one");
+print(typeof(maybe_pair));
+print(maybe_pair.0);
+maybe_pair = "no pair";
+print(typeof(maybe_pair));
+
 // array of union values
 let mixed = {1, "two", 3};
 print(typeof(mixed));   // (int||string)[3]

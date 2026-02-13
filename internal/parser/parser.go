@@ -863,14 +863,34 @@ func (p *Parser) parseBoolean() ast.Expression {
 func (p *Parser) parseGroupedExpression() ast.Expression {
 	p.nextToken() // Advance past (
 
-	exp := p.parseExpression(LOWEST)
+	first := p.parseExpression(LOWEST)
+	if first == nil {
+		return nil
+	}
+	if p.peekTokenIs(token.COMMA) {
+		tuple := &ast.TupleLiteral{
+			Token:    token.Token{Type: token.LPAREN, Literal: "("},
+			Elements: []ast.Expression{first},
+		}
+		for p.peekTokenIs(token.COMMA) {
+			p.nextToken() // ,
+			p.nextToken() // next element
+			el := p.parseExpression(LOWEST)
+			if el == nil {
+				return nil
+			}
+			tuple.Elements = append(tuple.Elements, el)
+		}
+		if !p.expectPeek(token.RPAREN) {
+			return nil
+		}
+		return tuple
+	}
 
-	// Expect closing )
 	if !p.expectPeek(token.RPAREN) {
 		return nil
 	}
-
-	return exp
+	return first
 }
 
 // parseIfExpression handles: if (<condition>) <consequence> else <alternative>
@@ -1061,6 +1081,20 @@ func (p *Parser) parseIndexExpression(left ast.Expression) ast.Expression {
 }
 
 func (p *Parser) parseMethodCallExpression(left ast.Expression) ast.Expression {
+	if p.peekTokenIs(token.INT) {
+		p.nextToken()
+		idx, err := strconv.Atoi(p.curToken.Literal)
+		if err != nil || idx < 0 {
+			p.errors = append(p.errors, "tuple access index must be a non-negative int literal")
+			return nil
+		}
+		return &ast.TupleAccessExpression{
+			Token: token.Token{Type: token.DOT, Literal: "."},
+			Left:  left,
+			Index: idx,
+		}
+	}
+
 	exp := &ast.MethodCallExpression{Token: p.curToken, Object: left}
 	if !p.expectPeek(token.IDENT) {
 		return nil
@@ -1153,14 +1187,31 @@ func (p *Parser) parseTypeTermFromCurrent() (string, bool) {
 		base = p.curToken.Literal
 	case token.LPAREN:
 		p.nextToken()
-		inner, ok := p.parseTypeExpressionFromCurrent()
+		first, ok := p.parseTypeExpressionFromCurrent()
 		if !ok {
 			return "", false
+		}
+		if p.peekTokenIs(token.COMMA) {
+			parts := []string{first}
+			for p.peekTokenIs(token.COMMA) {
+				p.nextToken()
+				p.nextToken()
+				next, ok := p.parseTypeExpressionFromCurrent()
+				if !ok {
+					return "", false
+				}
+				parts = append(parts, next)
+			}
+			if !p.expectPeek(token.RPAREN) {
+				return "", false
+			}
+			base = "(" + strings.Join(parts, ",") + ")"
+			return p.parseArrayTypeSuffixes(base)
 		}
 		if !p.expectPeek(token.RPAREN) {
 			return "", false
 		}
-		base = "(" + inner + ")"
+		base = "(" + first + ")"
 	default:
 		p.errors = append(p.errors, fmt.Sprintf("expected type, got %s", p.curToken.Type))
 		return "", false

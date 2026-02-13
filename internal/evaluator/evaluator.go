@@ -216,6 +216,8 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 
 	case *ast.ArrayLiteral:
 		return evalArrayLiteral(node, env)
+	case *ast.TupleLiteral:
+		return evalTupleLiteral(node, env)
 
 	case *ast.Boolean:
 		return nativeBoolToBooleanObject(node.Value)
@@ -305,6 +307,12 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		return applyFunction(function, args, namedArgs)
 	case *ast.MethodCallExpression:
 		return evalMethodCallExpression(node, env)
+	case *ast.TupleAccessExpression:
+		left := Eval(node.Left, env)
+		if isError(left) {
+			return left
+		}
+		return evalTupleAccessExpression(left, node.Index)
 	}
 
 	return nil
@@ -1051,6 +1059,37 @@ func evalArrayLiteral(lit *ast.ArrayLiteral, env *object.Environment) object.Obj
 	}
 }
 
+func evalTupleLiteral(lit *ast.TupleLiteral, env *object.Environment) object.Object {
+	if len(lit.Elements) == 0 {
+		return newError("empty tuple literals are not supported")
+	}
+	elements := make([]object.Object, 0, len(lit.Elements))
+	types := make([]string, 0, len(lit.Elements))
+	for _, el := range lit.Elements {
+		val := Eval(el, env)
+		if isError(val) {
+			return val
+		}
+		elements = append(elements, val)
+		types = append(types, runtimeTypeName(val))
+	}
+	return &object.Tuple{
+		ElementTypes: types,
+		Elements:     elements,
+	}
+}
+
+func evalTupleAccessExpression(left object.Object, idx int) object.Object {
+	tup, ok := left.(*object.Tuple)
+	if !ok {
+		return newError("tuple access is only supported on tuples")
+	}
+	if idx < 0 || idx >= len(tup.Elements) {
+		return newError("tuple index out of bounds: %d", idx)
+	}
+	return tup.Elements[idx]
+}
+
 // unwrapReturnValue extracts the actual value from a ReturnValue
 func unwrapReturnValue(obj object.Object) object.Object {
 	if returnValue, ok := obj.(*object.ReturnValue); ok {
@@ -1086,6 +1125,8 @@ func runtimeTypeName(obj object.Object) string {
 		return "bool"
 	case *object.Array:
 		return formatTypeName(v.ElementType, []int{len(v.Elements)})
+	case *object.Tuple:
+		return "(" + strings.Join(v.ElementTypes, ",") + ")"
 	case *object.Null:
 		return "null"
 	case *object.TypeValue:
@@ -1144,6 +1185,19 @@ func isAssignableToType(targetType string, valueType string, env *object.Environ
 		}
 	}
 	if len(targetDims) == 0 {
+		targetTuple, targetIsTuple := splitTopLevelTuple(targetBase)
+		valueTuple, valueIsTuple := splitTopLevelTuple(valueBase)
+		if targetIsTuple || valueIsTuple {
+			if !targetIsTuple || !valueIsTuple || len(targetTuple) != len(valueTuple) {
+				return false
+			}
+			for i := range targetTuple {
+				if !isAssignableToType(targetTuple[i], valueTuple[i], env) {
+					return false
+				}
+			}
+			return true
+		}
 		return targetBase == valueBase
 	}
 	return isAssignableToType(targetBase, valueBase, env)
@@ -1156,6 +1210,14 @@ func isKnownTypeName(t string, env *object.Environment) bool {
 		return false
 	}
 	if members, isUnion := splitTopLevelUnion(base); isUnion {
+		for _, m := range members {
+			if !isKnownTypeName(m, env) {
+				return false
+			}
+		}
+		return true
+	}
+	if members, isTuple := splitTopLevelTuple(base); isTuple {
 		for _, m := range members {
 			if !isKnownTypeName(m, env) {
 				return false
@@ -1195,7 +1257,21 @@ func mergeTypeNames(a, b string, env *object.Environment) (string, bool) {
 	}
 	mergedBase, ok := mergeUnionBases(baseA, baseB)
 	if !ok {
-		return "", false
+		tupleA, okA := splitTopLevelTuple(baseA)
+		tupleB, okB := splitTopLevelTuple(baseB)
+		if !okA || !okB || len(tupleA) != len(tupleB) {
+			return "", false
+		}
+		parts := make([]string, len(tupleA))
+		for i := range tupleA {
+			mt, ok := mergeTypeNames(tupleA[i], tupleB[i], env)
+			if !ok {
+				return "", false
+			}
+			parts[i] = mt
+		}
+		mergedBase = "(" + strings.Join(parts, ",") + ")"
+		return formatTypeName(mergedBase, merged), true
 	}
 	return formatTypeName(mergedBase, merged), true
 }
@@ -1226,7 +1302,7 @@ func parseTypeName(t string) (string, []int, bool) {
 		}
 		base = base[:open]
 	}
-	base = stripOuterParens(base)
+	base = stripOuterGroupingParens(base)
 	if base == "" {
 		return "", nil, false
 	}
@@ -1284,7 +1360,7 @@ func resolveTypeName(t string, env *object.Environment, visiting map[string]stru
 }
 
 func resolveTypeBase(base string, env *object.Environment, visiting map[string]struct{}) (string, bool) {
-	base = stripOuterParens(base)
+	base = stripOuterGroupingParens(base)
 	if parts, isUnion := splitTopLevelUnion(base); isUnion {
 		resolved := make([]string, 0, len(parts))
 		for _, p := range parts {
@@ -1295,6 +1371,17 @@ func resolveTypeBase(base string, env *object.Environment, visiting map[string]s
 			resolved = append(resolved, r)
 		}
 		return strings.Join(resolved, "||"), true
+	}
+	if parts, isTuple := splitTopLevelTuple(base); isTuple {
+		resolved := make([]string, 0, len(parts))
+		for _, p := range parts {
+			r, ok := resolveTypeBase(p, env, visiting)
+			if !ok {
+				return "", false
+			}
+			resolved = append(resolved, r)
+		}
+		return "(" + strings.Join(resolved, ",") + ")", true
 	}
 	if alias, ok := env.TypeAlias(base); ok {
 		if _, seen := visiting[base]; seen {
@@ -1317,7 +1404,7 @@ func isBuiltinTypeName(name string) bool {
 }
 
 func splitTopLevelUnion(t string) ([]string, bool) {
-	s := stripOuterParens(t)
+	s := stripOuterGroupingParens(t)
 	parts := []string{}
 	depth := 0
 	start := 0
@@ -1336,7 +1423,7 @@ func splitTopLevelUnion(t string) ([]string, bool) {
 				if part == "" {
 					return nil, false
 				}
-				parts = append(parts, stripOuterParens(part))
+				parts = append(parts, stripOuterGroupingParens(part))
 				start = i + 2
 				found = true
 				i++
@@ -1350,7 +1437,7 @@ func splitTopLevelUnion(t string) ([]string, bool) {
 	if last == "" {
 		return nil, false
 	}
-	parts = append(parts, stripOuterParens(last))
+	parts = append(parts, stripOuterGroupingParens(last))
 	return parts, true
 }
 
@@ -1360,6 +1447,76 @@ func stripOuterParens(s string) string {
 		out = strings.TrimSpace(out[1 : len(out)-1])
 	}
 	return out
+}
+
+func stripOuterGroupingParens(s string) string {
+	out := strings.TrimSpace(s)
+	for isWrappedInParens(out) {
+		inner := strings.TrimSpace(out[1 : len(out)-1])
+		if hasTopLevelComma(inner) {
+			break
+		}
+		out = inner
+	}
+	return out
+}
+
+func hasTopLevelComma(s string) bool {
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		case ',':
+			if depth == 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func splitTopLevelTuple(t string) ([]string, bool) {
+	s := strings.TrimSpace(t)
+	if !isWrappedInParens(s) {
+		return nil, false
+	}
+	inner := strings.TrimSpace(s[1 : len(s)-1])
+	if inner == "" || !hasTopLevelComma(inner) {
+		return nil, false
+	}
+	parts := []string{}
+	depth := 0
+	start := 0
+	for i := 0; i < len(inner); i++ {
+		switch inner[i] {
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		case ',':
+			if depth == 0 {
+				part := strings.TrimSpace(inner[start:i])
+				if part == "" {
+					return nil, false
+				}
+				parts = append(parts, part)
+				start = i + 1
+			}
+		}
+	}
+	last := strings.TrimSpace(inner[start:])
+	if last == "" {
+		return nil, false
+	}
+	parts = append(parts, last)
+	return parts, true
 }
 
 func isWrappedInParens(s string) bool {
@@ -1385,11 +1542,11 @@ func isWrappedInParens(s string) bool {
 }
 
 func mergeUnionBases(a, b string) (string, bool) {
-	listA := []string{stripOuterParens(a)}
+	listA := []string{stripOuterGroupingParens(a)}
 	if parts, ok := splitTopLevelUnion(a); ok {
 		listA = parts
 	}
-	listB := []string{stripOuterParens(b)}
+	listB := []string{stripOuterGroupingParens(b)}
 	if parts, ok := splitTopLevelUnion(b); ok {
 		listB = parts
 	}

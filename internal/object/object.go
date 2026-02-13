@@ -17,6 +17,7 @@ const (
 	CHAR_OBJ         ObjectType = "CHAR"
 	BOOLEAN_OBJ      ObjectType = "BOOLEAN"
 	ARRAY_OBJ        ObjectType = "ARRAY"
+	TUPLE_OBJ        ObjectType = "TUPLE"
 	TYPE_OBJ         ObjectType = "TYPE"
 	NULL_OBJ         ObjectType = "NULL"
 	RETURN_VALUE_OBJ ObjectType = "RETURN_VALUE"
@@ -90,6 +91,25 @@ func (a *Array) Inspect() string {
 	out.WriteString("{")
 	out.WriteString(strings.Join(parts, ", "))
 	out.WriteString("}")
+	return out.String()
+}
+
+// Tuple is a fixed-size heterogeneous tuple value.
+type Tuple struct {
+	ElementTypes []string
+	Elements     []Object
+}
+
+func (t *Tuple) Type() ObjectType { return TUPLE_OBJ }
+func (t *Tuple) Inspect() string {
+	var out bytes.Buffer
+	parts := make([]string, 0, len(t.Elements))
+	for _, el := range t.Elements {
+		parts = append(parts, el.Inspect())
+	}
+	out.WriteString("(")
+	out.WriteString(strings.Join(parts, ", "))
+	out.WriteString(")")
 	return out.String()
 }
 

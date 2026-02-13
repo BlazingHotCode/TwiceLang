@@ -1,18 +1,14 @@
 # TODO
 
-## 1. Tuple Types
-
-- Add tuple type syntax and semantics so tuples can hold multiple values in one typed value.
-
-## 2. Structs
+## 1. Structs
 
 - Add struct declarations and typed struct values.
 
-## 3. Custom Libraries
+## 2. Custom Libraries
 
 - Add support for custom libraries (for example, a `math` library).
 
-## 4. OOP and Type System Expansion
+## 3. OOP and Type System Expansion
 
 - Add class declarations and object instantiation.
 - Add access modifiers (`public` / `private`) for fields and methods.

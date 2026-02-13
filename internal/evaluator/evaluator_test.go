@@ -584,6 +584,41 @@ func TestTypeAliasesEval(t *testing.T) {
 	}
 }
 
+func TestTupleTypesAndAccessEval(t *testing.T) {
+	evaluated := testEval(`let a: (int,string,bool) = (1, "x", true); a.0`)
+	testIntegerObject(t, evaluated, 1)
+
+	evaluated = testEval(`let a: (int,string,bool) = (1, "x", true); a.1`)
+	if evaluated.Type() != object.STRING_OBJ || evaluated.Inspect() != "x" {
+		t.Fatalf("expected string tuple element, got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+
+	evaluated = testEval(`let a: (int,string,bool) = (1, "x", true); a.2`)
+	testBooleanObject(t, evaluated, true)
+
+	evaluated = testEval(`let a: (int,string,bool) = (1, "x", true); typeof(a)`)
+	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "(int,string,bool)" {
+		t.Fatalf("expected tuple type name, got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+}
+
+func TestTupleUnionAndAliasEval(t *testing.T) {
+	evaluated := testEval(`let v: (int,string)||string = (1, "x"); v = "ok"; v`)
+	if evaluated.Type() != object.STRING_OBJ || evaluated.Inspect() != "ok" {
+		t.Fatalf("expected tuple-union to accept string reassignment, got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+
+	evaluated = testEval(`type Pair = (int,string); let p: Pair = (1, "x"); p.1`)
+	if evaluated.Type() != object.STRING_OBJ || evaluated.Inspect() != "x" {
+		t.Fatalf("expected tuple alias access to work, got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+
+	evaluated = testEval(`type MaybePair = (int,string)||string; let v: MaybePair = (1, "x"); typeof(v)`)
+	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "MaybePair" {
+		t.Fatalf("expected typeof to preserve tuple-union alias, got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+}
+
 func testEval(input string) object.Object {
 	l := lexer.New(input)
 	p := parser.New(l)

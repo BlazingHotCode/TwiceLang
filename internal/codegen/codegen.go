@@ -22,6 +22,7 @@ type CodeGen struct {
 	varDeclared      map[string]valueType
 	varTypeNames     map[string]string
 	varDeclaredNames map[string]string
+	varValueTypeName map[string]string
 	varIsNull        map[string]bool
 	varArrayLen      map[string]int
 	intVals          map[string]int64
@@ -45,6 +46,7 @@ type CodeGen struct {
 	loopBreakLabels  []string
 	loopContLabels   []string
 	arraySlots       map[*ast.ArrayLiteral]int
+	tupleSlots       map[*ast.TupleLiteral]int
 	scopeDecls       []map[string]struct{}
 	typeScopeDecls   []map[string]struct{}
 	errors           []CodegenError
@@ -86,6 +88,7 @@ func New() *CodeGen {
 		varDeclared:      make(map[string]valueType),
 		varTypeNames:     make(map[string]string),
 		varDeclaredNames: make(map[string]string),
+		varValueTypeName: make(map[string]string),
 		varIsNull:        make(map[string]bool),
 		varArrayLen:      make(map[string]int),
 		intVals:          make(map[string]int64),
@@ -101,6 +104,7 @@ func New() *CodeGen {
 		stackOffset:      0,
 		maxStackOffset:   0,
 		arraySlots:       make(map[*ast.ArrayLiteral]int),
+		tupleSlots:       make(map[*ast.TupleLiteral]int),
 		scopeDecls:       []map[string]struct{}{},
 		typeScopeDecls:   []map[string]struct{}{},
 		errors:           []CodegenError{},
@@ -460,6 +464,15 @@ func (cg *CodeGen) ensureArrayLiteralSlot(al *ast.ArrayLiteral) int {
 	return off
 }
 
+func (cg *CodeGen) ensureTupleLiteralSlot(tl *ast.TupleLiteral) int {
+	if off, ok := cg.tupleSlots[tl]; ok {
+		return off
+	}
+	off := cg.allocateSlots(len(tl.Elements))
+	cg.tupleSlots[tl] = off
+	return off
+}
+
 type lexicalScopeState struct {
 	variables        map[string]int
 	constVars        map[string]bool
@@ -467,6 +480,7 @@ type lexicalScopeState struct {
 	varDeclared      map[string]valueType
 	varTypeNames     map[string]string
 	varDeclaredNames map[string]string
+	varValueTypeName map[string]string
 	varIsNull        map[string]bool
 	varArrayLen      map[string]int
 	intVals          map[string]int64
@@ -583,6 +597,7 @@ func (cg *CodeGen) enterScope() lexicalScopeState {
 		varDeclared:      cloneValueTypeMap(cg.varDeclared),
 		varTypeNames:     cloneStringMap(cg.varTypeNames),
 		varDeclaredNames: cloneStringMap(cg.varDeclaredNames),
+		varValueTypeName: cloneStringMap(cg.varValueTypeName),
 		varIsNull:        cloneBoolMap(cg.varIsNull),
 		varArrayLen:      cloneIntMap(cg.varArrayLen),
 		intVals:          cloneInt64Map(cg.intVals),
@@ -608,6 +623,7 @@ func (cg *CodeGen) exitScope(st lexicalScopeState) {
 	currVarDeclared := cg.varDeclared
 	currVarTypeNames := cg.varTypeNames
 	currVarDeclaredNames := cg.varDeclaredNames
+	currVarValueTypeName := cg.varValueTypeName
 	currVarIsNull := cg.varIsNull
 	currVarArrayLen := cg.varArrayLen
 	currIntVals := cg.intVals
@@ -622,6 +638,7 @@ func (cg *CodeGen) exitScope(st lexicalScopeState) {
 	cg.varDeclared = st.varDeclared
 	cg.varTypeNames = st.varTypeNames
 	cg.varDeclaredNames = st.varDeclaredNames
+	cg.varValueTypeName = st.varValueTypeName
 	cg.varIsNull = st.varIsNull
 	cg.varArrayLen = st.varArrayLen
 	cg.intVals = st.intVals
@@ -664,6 +681,11 @@ func (cg *CodeGen) exitScope(st lexicalScopeState) {
 			cg.varDeclaredNames[name] = v
 		} else {
 			delete(cg.varDeclaredNames, name)
+		}
+		if v, ok := currVarValueTypeName[name]; ok {
+			cg.varValueTypeName[name] = v
+		} else {
+			delete(cg.varValueTypeName, name)
 		}
 		if v, ok := currVarIsNull[name]; ok {
 			cg.varIsNull[name] = v
@@ -764,6 +786,8 @@ func (cg *CodeGen) generateExpression(expr ast.Expression) {
 		cg.generateNull(e)
 	case *ast.ArrayLiteral:
 		cg.generateArrayLiteral(e)
+	case *ast.TupleLiteral:
+		cg.generateTupleLiteral(e)
 	case *ast.Boolean:
 		cg.generateBoolean(e)
 	case *ast.InfixExpression:
@@ -780,6 +804,8 @@ func (cg *CodeGen) generateExpression(expr ast.Expression) {
 		cg.generateIndexExpression(e)
 	case *ast.MethodCallExpression:
 		cg.generateMethodCallExpression(e)
+	case *ast.TupleAccessExpression:
+		cg.generateTupleAccessExpression(e)
 	case *ast.FunctionLiteral:
 		cg.addNodeError("function literals are not supported in codegen yet", e)
 		cg.emit("    mov $0, %%rax")
@@ -835,6 +861,20 @@ func (cg *CodeGen) generateArrayLiteral(al *ast.ArrayLiteral) {
 
 	baseOffset := cg.ensureArrayLiteralSlot(al)
 	for i, el := range al.Elements {
+		cg.generateExpression(el)
+		cg.emit("    mov %%rax, -%d(%%rbp)", baseOffset-i*8)
+	}
+	cg.emit("    lea -%d(%%rbp), %%rax", baseOffset)
+}
+
+func (cg *CodeGen) generateTupleLiteral(tl *ast.TupleLiteral) {
+	if tl == nil || len(tl.Elements) == 0 {
+		cg.addNodeError("empty tuple literals are not supported in codegen", tl)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	baseOffset := cg.ensureTupleLiteralSlot(tl)
+	for i, el := range tl.Elements {
 		cg.generateExpression(el)
 		cg.emit("    mov %%rax, -%d(%%rbp)", baseOffset-i*8)
 	}
@@ -930,6 +970,30 @@ func (cg *CodeGen) generateMethodCallExpression(mce *ast.MethodCallExpression) {
 		cg.addNodeError("unknown method: "+mce.Method.Value, mce)
 		cg.emit("    mov $0, %%rax")
 	}
+}
+
+func (cg *CodeGen) generateTupleAccessExpression(tae *ast.TupleAccessExpression) {
+	if tae == nil {
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	leftType := cg.inferCurrentValueTypeName(tae.Left)
+	if resolved, ok := cg.normalizeTypeName(leftType); ok {
+		leftType = resolved
+	}
+	members, ok := splitTopLevelTuple(leftType)
+	if !ok {
+		cg.addNodeError("tuple access is only supported on tuples", tae)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if tae.Index < 0 || tae.Index >= len(members) {
+		cg.addNodeError(fmt.Sprintf("tuple index out of bounds: %d", tae.Index), tae)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	cg.generateExpression(tae.Left)
+	cg.emit("    mov %d(%%rax), %%rax", tae.Index*8)
 }
 
 func (cg *CodeGen) generateBoolean(b *ast.Boolean) {
@@ -1214,6 +1278,7 @@ func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
 		cg.varTypes[name] = inferred
 	}
 	cg.varTypeNames[name] = targetName
+	cg.varValueTypeName[name] = inferredName
 	if _, n, ok := peelArrayType(targetName); ok {
 		cg.varArrayLen[name] = n
 	} else {
@@ -1268,6 +1333,7 @@ func (cg *CodeGen) generateConst(cs *ast.ConstStatement) {
 		cg.varTypes[name] = inferred
 	}
 	cg.varTypeNames[name] = targetName
+	cg.varValueTypeName[name] = inferredName
 	if _, n, ok := peelArrayType(targetName); ok {
 		cg.varArrayLen[name] = n
 	} else {
@@ -1356,6 +1422,7 @@ func (cg *CodeGen) generateAssign(as *ast.AssignStatement) {
 		cg.varTypes[as.Name.Value] = target
 	}
 	cg.varTypeNames[as.Name.Value] = targetName
+	cg.varValueTypeName[as.Name.Value] = inferredName
 	if _, n, ok := peelArrayType(targetName); ok {
 		cg.varArrayLen[as.Name.Value] = n
 	} else {
@@ -1768,6 +1835,8 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
 		return typeUnknown
 	case *ast.ArrayLiteral:
 		return typeArray
+	case *ast.TupleLiteral:
+		return typeUnknown
 	case *ast.PrefixExpression:
 		switch e.Operator {
 		case "!":
@@ -1881,6 +1950,16 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
 			return typeInt
 		}
 		return typeUnknown
+	case *ast.TupleAccessExpression:
+		leftType := cg.inferCurrentValueTypeName(e.Left)
+		if resolved, ok := cg.normalizeTypeName(leftType); ok {
+			leftType = resolved
+		}
+		elem, ok := tupleMemberType(leftType, e.Index)
+		if !ok {
+			return typeUnknown
+		}
+		return cg.parseTypeName(elem)
 	case *ast.NamedArgument:
 		return cg.inferExpressionType(e.Value)
 	default:
@@ -1901,6 +1980,15 @@ func (cg *CodeGen) inferExpressionTypeName(expr ast.Expression) string {
 			return "unknown"
 		}
 		return t
+	case *ast.TupleLiteral:
+		if len(e.Elements) == 0 {
+			return "unknown"
+		}
+		parts := make([]string, 0, len(e.Elements))
+		for _, el := range e.Elements {
+			parts = append(parts, cg.inferExpressionTypeName(el))
+		}
+		return "(" + strings.Join(parts, ",") + ")"
 	case *ast.IndexExpression:
 		if cg.inferExpressionTypeName(e.Left) == "string" {
 			return "char"
@@ -1915,12 +2003,31 @@ func (cg *CodeGen) inferExpressionTypeName(expr ast.Expression) string {
 			return "int"
 		}
 		return "unknown"
+	case *ast.TupleAccessExpression:
+		leftType := cg.inferCurrentValueTypeName(e.Left)
+		if resolved, ok := cg.normalizeTypeName(leftType); ok {
+			leftType = resolved
+		}
+		elem, ok := tupleMemberType(leftType, e.Index)
+		if !ok {
+			return "unknown"
+		}
+		return elem
 	case *ast.CallExpression:
 		if fn, ok := e.Function.(*ast.Identifier); ok && (fn.Value == "int" || fn.Value == "float" || fn.Value == "string" || fn.Value == "char" || fn.Value == "bool" || fn.Value == "typeof" || fn.Value == "typeofValue" || fn.Value == "typeofvalue") {
 			return typeName(cg.inferExpressionType(e))
 		}
 	}
 	return typeName(cg.inferExpressionType(expr))
+}
+
+func (cg *CodeGen) inferCurrentValueTypeName(expr ast.Expression) string {
+	if id, ok := expr.(*ast.Identifier); ok {
+		if t, ok := cg.varValueTypeName[id.Value]; ok && t != "" {
+			return t
+		}
+	}
+	return cg.inferExpressionTypeName(expr)
 }
 
 func (cg *CodeGen) inferArrayLiteralTypeName(al *ast.ArrayLiteral) (string, bool) {
@@ -1985,6 +2092,7 @@ func (cg *CodeGen) reset() {
 	cg.varDeclared = make(map[string]valueType)
 	cg.varTypeNames = make(map[string]string)
 	cg.varDeclaredNames = make(map[string]string)
+	cg.varValueTypeName = make(map[string]string)
 	cg.varIsNull = make(map[string]bool)
 	cg.varArrayLen = make(map[string]int)
 	cg.intVals = make(map[string]int64)
@@ -2008,6 +2116,7 @@ func (cg *CodeGen) reset() {
 	cg.loopBreakLabels = nil
 	cg.loopContLabels = nil
 	cg.arraySlots = make(map[*ast.ArrayLiteral]int)
+	cg.tupleSlots = make(map[*ast.TupleLiteral]int)
 	cg.scopeDecls = []map[string]struct{}{make(map[string]struct{})}
 	cg.typeScopeDecls = []map[string]struct{}{make(map[string]struct{})}
 	cg.errors = []CodegenError{}
@@ -2172,9 +2281,15 @@ func (cg *CodeGen) collectFunctionsInExpression(expr ast.Expression, scope map[s
 		for _, el := range e.Elements {
 			cg.collectFunctionsInExpression(el, scope)
 		}
+	case *ast.TupleLiteral:
+		for _, el := range e.Elements {
+			cg.collectFunctionsInExpression(el, scope)
+		}
 	case *ast.IndexExpression:
 		cg.collectFunctionsInExpression(e.Left, scope)
 		cg.collectFunctionsInExpression(e.Index, scope)
+	case *ast.TupleAccessExpression:
+		cg.collectFunctionsInExpression(e.Left, scope)
 	case *ast.MethodCallExpression:
 		cg.collectFunctionsInExpression(e.Object, scope)
 		for _, arg := range e.Arguments {
@@ -2231,6 +2346,7 @@ type cgState struct {
 	varDeclared      map[string]valueType
 	varTypeNames     map[string]string
 	varDeclaredNames map[string]string
+	varValueTypeName map[string]string
 	varIsNull        map[string]bool
 	varArrayLen      map[string]int
 	intVals          map[string]int64
@@ -2249,6 +2365,7 @@ type cgState struct {
 	loopBreakLabels  []string
 	loopContLabels   []string
 	arraySlots       map[*ast.ArrayLiteral]int
+	tupleSlots       map[*ast.TupleLiteral]int
 	scopeDecls       []map[string]struct{}
 	typeScopeDecls   []map[string]struct{}
 }
@@ -2261,6 +2378,7 @@ func (cg *CodeGen) saveState() cgState {
 		varDeclared:      cg.varDeclared,
 		varTypeNames:     cg.varTypeNames,
 		varDeclaredNames: cg.varDeclaredNames,
+		varValueTypeName: cg.varValueTypeName,
 		varIsNull:        cg.varIsNull,
 		varArrayLen:      cg.varArrayLen,
 		intVals:          cg.intVals,
@@ -2279,6 +2397,7 @@ func (cg *CodeGen) saveState() cgState {
 		loopBreakLabels:  cg.loopBreakLabels,
 		loopContLabels:   cg.loopContLabels,
 		arraySlots:       cg.arraySlots,
+		tupleSlots:       cg.tupleSlots,
 		scopeDecls:       cg.scopeDecls,
 		typeScopeDecls:   cg.typeScopeDecls,
 	}
@@ -2291,6 +2410,7 @@ func (cg *CodeGen) restoreState(st cgState) {
 	cg.varDeclared = st.varDeclared
 	cg.varTypeNames = st.varTypeNames
 	cg.varDeclaredNames = st.varDeclaredNames
+	cg.varValueTypeName = st.varValueTypeName
 	cg.varIsNull = st.varIsNull
 	cg.varArrayLen = st.varArrayLen
 	cg.intVals = st.intVals
@@ -2309,6 +2429,7 @@ func (cg *CodeGen) restoreState(st cgState) {
 	cg.loopBreakLabels = st.loopBreakLabels
 	cg.loopContLabels = st.loopContLabels
 	cg.arraySlots = st.arraySlots
+	cg.tupleSlots = st.tupleSlots
 	cg.scopeDecls = st.scopeDecls
 	cg.typeScopeDecls = st.typeScopeDecls
 }
@@ -2324,6 +2445,7 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 	cg.varDeclared = make(map[string]valueType)
 	cg.varTypeNames = make(map[string]string)
 	cg.varDeclaredNames = make(map[string]string)
+	cg.varValueTypeName = make(map[string]string)
 	cg.varIsNull = make(map[string]bool)
 	cg.varArrayLen = make(map[string]int)
 	cg.intVals = make(map[string]int64)
@@ -2342,6 +2464,7 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 	}
 	cg.currentFn = fn.Key
 	cg.arraySlots = make(map[*ast.ArrayLiteral]int)
+	cg.tupleSlots = make(map[*ast.TupleLiteral]int)
 	cg.scopeDecls = []map[string]struct{}{make(map[string]struct{})}
 	cg.typeScopeDecls = []map[string]struct{}{make(map[string]struct{})}
 
@@ -2374,6 +2497,7 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 		if p.TypeName != "" {
 			cg.varTypeNames[p.Name.Value] = p.TypeName
 			cg.varDeclaredNames[p.Name.Value] = p.TypeName
+			cg.varValueTypeName[p.Name.Value] = p.TypeName
 			if _, n, ok := peelArrayType(p.TypeName); ok {
 				cg.varArrayLen[p.Name.Value] = n
 			}
@@ -2393,6 +2517,7 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 		cg.varTypes[name] = typeUnknown
 		cg.varDeclared[name] = typeUnknown
 		cg.varTypeNames[name] = "unknown"
+		cg.varValueTypeName[name] = "unknown"
 		cg.varIsNull[name] = false
 	}
 
@@ -2700,9 +2825,15 @@ func collectUsedNamesInExpression(expr ast.Expression, used map[string]struct{})
 		for _, el := range e.Elements {
 			collectUsedNamesInExpression(el, used)
 		}
+	case *ast.TupleLiteral:
+		for _, el := range e.Elements {
+			collectUsedNamesInExpression(el, used)
+		}
 	case *ast.IndexExpression:
 		collectUsedNamesInExpression(e.Left, used)
 		collectUsedNamesInExpression(e.Index, used)
+	case *ast.TupleAccessExpression:
+		collectUsedNamesInExpression(e.Left, used)
 	case *ast.MethodCallExpression:
 		collectUsedNamesInExpression(e.Object, used)
 		for _, arg := range e.Arguments {
@@ -3012,7 +3143,7 @@ func (cg *CodeGen) resolveTypeName(t string, visiting map[string]struct{}) (stri
 }
 
 func (cg *CodeGen) resolveTypeBase(base string, visiting map[string]struct{}) (string, bool) {
-	base = stripOuterParens(base)
+	base = stripOuterGroupingParens(base)
 	if parts, isUnion := splitTopLevelUnion(base); isUnion {
 		resolved := make([]string, 0, len(parts))
 		for _, p := range parts {
@@ -3023,6 +3154,17 @@ func (cg *CodeGen) resolveTypeBase(base string, visiting map[string]struct{}) (s
 			resolved = append(resolved, r)
 		}
 		return strings.Join(resolved, "||"), true
+	}
+	if parts, isTuple := splitTopLevelTuple(base); isTuple {
+		resolved := make([]string, 0, len(parts))
+		for _, p := range parts {
+			r, ok := cg.resolveTypeBase(p, visiting)
+			if !ok {
+				return "", false
+			}
+			resolved = append(resolved, r)
+		}
+		return "(" + strings.Join(resolved, ",") + ")", true
 	}
 	if alias, ok := cg.typeAliases[base]; ok {
 		if _, seen := visiting[base]; seen {
@@ -3090,7 +3232,7 @@ func parseTypeDescriptor(t string) (string, []int, bool) {
 		}
 		base = base[:open]
 	}
-	base = stripOuterParens(base)
+	base = stripOuterGroupingParens(base)
 	if base == "" {
 		return "", nil, false
 	}
@@ -3198,6 +3340,19 @@ func isAssignableTypeName(target, value string) bool {
 		}
 	}
 	if len(td) == 0 {
+		targetTuple, targetIsTuple := splitTopLevelTuple(tb)
+		valueTuple, valueIsTuple := splitTopLevelTuple(vb)
+		if targetIsTuple || valueIsTuple {
+			if !targetIsTuple || !valueIsTuple || len(targetTuple) != len(valueTuple) {
+				return false
+			}
+			for i := range targetTuple {
+				if !isAssignableTypeName(targetTuple[i], valueTuple[i]) {
+					return false
+				}
+			}
+			return true
+		}
 		return tb == vb
 	}
 	return isAssignableTypeName(tb, vb)
@@ -3216,6 +3371,14 @@ func isKnownTypeName(t string) bool {
 		}
 		return true
 	}
+	if parts, isTuple := splitTopLevelTuple(base); isTuple {
+		for _, p := range parts {
+			if !isKnownTypeName(p) {
+				return false
+			}
+		}
+		return true
+	}
 	switch base {
 	case "int", "bool", "float", "string", "char", "null", "type":
 		return true
@@ -3225,7 +3388,7 @@ func isKnownTypeName(t string) bool {
 }
 
 func splitTopLevelUnion(t string) ([]string, bool) {
-	s := stripOuterParens(t)
+	s := stripOuterGroupingParens(t)
 	parts := []string{}
 	depth := 0
 	start := 0
@@ -3244,7 +3407,7 @@ func splitTopLevelUnion(t string) ([]string, bool) {
 				if part == "" {
 					return nil, false
 				}
-				parts = append(parts, stripOuterParens(part))
+				parts = append(parts, stripOuterGroupingParens(part))
 				start = i + 2
 				found = true
 				i++
@@ -3258,7 +3421,7 @@ func splitTopLevelUnion(t string) ([]string, bool) {
 	if last == "" {
 		return nil, false
 	}
-	parts = append(parts, stripOuterParens(last))
+	parts = append(parts, stripOuterGroupingParens(last))
 	return parts, true
 }
 
@@ -3268,6 +3431,84 @@ func stripOuterParens(s string) string {
 		out = strings.TrimSpace(out[1 : len(out)-1])
 	}
 	return out
+}
+
+func stripOuterGroupingParens(s string) string {
+	out := strings.TrimSpace(s)
+	for isWrappedInParens(out) {
+		inner := strings.TrimSpace(out[1 : len(out)-1])
+		if hasTopLevelComma(inner) {
+			break
+		}
+		out = inner
+	}
+	return out
+}
+
+func hasTopLevelComma(s string) bool {
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		case ',':
+			if depth == 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func splitTopLevelTuple(t string) ([]string, bool) {
+	s := strings.TrimSpace(t)
+	if !isWrappedInParens(s) {
+		return nil, false
+	}
+	inner := strings.TrimSpace(s[1 : len(s)-1])
+	if inner == "" || !hasTopLevelComma(inner) {
+		return nil, false
+	}
+	parts := []string{}
+	depth := 0
+	start := 0
+	for i := 0; i < len(inner); i++ {
+		switch inner[i] {
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		case ',':
+			if depth == 0 {
+				part := strings.TrimSpace(inner[start:i])
+				if part == "" {
+					return nil, false
+				}
+				parts = append(parts, part)
+				start = i + 1
+			}
+		}
+	}
+	last := strings.TrimSpace(inner[start:])
+	if last == "" {
+		return nil, false
+	}
+	parts = append(parts, last)
+	return parts, true
+}
+
+func tupleMemberType(typeName string, idx int) (string, bool) {
+	parts, ok := splitTopLevelTuple(typeName)
+	if !ok || idx < 0 || idx >= len(parts) {
+		return "", false
+	}
+	return parts[idx], true
 }
 
 func isWrappedInParens(s string) bool {
@@ -3293,11 +3534,11 @@ func isWrappedInParens(s string) bool {
 }
 
 func mergeUnionBases(a, b string) (string, bool) {
-	listA := []string{stripOuterParens(a)}
+	listA := []string{stripOuterGroupingParens(a)}
 	if parts, ok := splitTopLevelUnion(a); ok {
 		listA = parts
 	}
-	listB := []string{stripOuterParens(b)}
+	listB := []string{stripOuterGroupingParens(b)}
 	if parts, ok := splitTopLevelUnion(b); ok {
 		listB = parts
 	}

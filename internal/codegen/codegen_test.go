@@ -493,6 +493,34 @@ func TestCodegenTypeAliases(t *testing.T) {
 	}
 }
 
+func TestCodegenTupleTypesAndAccess(t *testing.T) {
+	asm, cg := generateAssembly(t, `let a: (int,string,bool) = (1, "x", true); print(a.0); print(a.1); print(a.2);`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors for tuple access: %v", cg.Errors())
+	}
+	if strings.Count(asm, "call print_int") < 1 || strings.Count(asm, "call print_cstr") < 1 || strings.Count(asm, "call print_bool") < 1 {
+		t.Fatalf("expected tuple access prints for int/string/bool, got:\n%s", asm)
+	}
+}
+
+func TestCodegenTupleUnionAndAlias(t *testing.T) {
+	asm, cg := generateAssembly(t, `let v: (int,string)||string = (1, "x"); print(v.0); v = "ok"; print(typeof(v));`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors for tuple union: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "(int,string)||string\\n") {
+		t.Fatalf("expected typeof(v) tuple-union literal, got:\n%s", asm)
+	}
+
+	asm, cg = generateAssembly(t, `type Pair = (int,string); let p: Pair = (1, "x"); print(p.1); print(typeof(p));`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors for tuple alias: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "Pair\\n") {
+		t.Fatalf("expected typeof(p) alias name Pair, got:\n%s", asm)
+	}
+}
+
 func TestCodegenUnionTypedIfComparison(t *testing.T) {
 	asm, cg := generateAssembly(t, `let a: string||int = 3; if (a == 3) { print("entered"); };`)
 	if len(cg.Errors()) != 0 {

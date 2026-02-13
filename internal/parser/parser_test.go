@@ -194,6 +194,55 @@ func TestUnionArrayOrScalarTypeParses(t *testing.T) {
 	}
 }
 
+func TestTupleTypeAndLiteralParses(t *testing.T) {
+	p := New(lexer.New("let a: (int, string, bool) = (1, \"x\", true);"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	stmt, ok := program.Statements[0].(*ast.LetStatement)
+	if !ok {
+		t.Fatalf("expected let statement, got=%T", program.Statements[0])
+	}
+	if stmt.TypeName != "(int,string,bool)" {
+		t.Fatalf("expected tuple type annotation, got=%q", stmt.TypeName)
+	}
+	if _, ok := stmt.Value.(*ast.TupleLiteral); !ok {
+		t.Fatalf("expected tuple literal initializer, got=%T", stmt.Value)
+	}
+}
+
+func TestTupleUnionTypeParses(t *testing.T) {
+	p := New(lexer.New(`let v: (int, string)||string = (1, "x");`))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	stmt, ok := program.Statements[0].(*ast.LetStatement)
+	if !ok {
+		t.Fatalf("expected let statement, got=%T", program.Statements[0])
+	}
+	if stmt.TypeName != "(int,string)||string" {
+		t.Fatalf("expected tuple-union annotation, got=%q", stmt.TypeName)
+	}
+}
+
+func TestTupleAccessParses(t *testing.T) {
+	p := New(lexer.New("a.2;"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+	if !ok {
+		t.Fatalf("expected expression statement, got=%T", program.Statements[0])
+	}
+	acc, ok := stmt.Expression.(*ast.TupleAccessExpression)
+	if !ok {
+		t.Fatalf("expected tuple access expression, got=%T", stmt.Expression)
+	}
+	if acc.Index != 2 {
+		t.Fatalf("expected tuple access index 2, got=%d", acc.Index)
+	}
+}
+
 func TestArrayLiteralParsesInLet(t *testing.T) {
 	p := New(lexer.New("let arr = {1, 2, 3};"))
 	program := p.ParseProgram()

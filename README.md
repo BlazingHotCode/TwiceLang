@@ -52,6 +52,7 @@ Notes:
 - Function calls before declaration (resolved by codegen)
 - Arrays with typed declarations, literals, indexing, mutation, and `length()`
 - Union types (`type1||type2`) including array forms like `(int||string)[]`
+- Tuple types and values: `(type1, type2, ...)` with tuple access `value.0`, `value.1`, ...
 
 ## Quick Start
 
@@ -324,6 +325,34 @@ print(arr.length()); // 3
 ```
 
 Note: in current codegen, `length()` requires a compile-time-known array size (for example `int[3]` or `int[][2]`).
+
+### Tuples
+
+Tuple declaration and literal syntax:
+
+```tw
+let a: (int, string, bool) = (1, "x", true);
+```
+
+Tuple element access uses numeric dot indices:
+
+```tw
+print(a.0); // 1
+print(a.1); // "x"
+print(a.2); // true
+```
+
+Tuples also work with unions and aliases:
+
+```tw
+type Pair = (int, string);
+type MaybePair = Pair||string;
+
+let v: MaybePair = (1, "x");
+print(v.0);      // 1
+v = "fallback";
+print(typeof(v)); // MaybePair
+```
 
 ### Builtins
 
