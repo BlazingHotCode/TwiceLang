@@ -316,6 +316,23 @@ func TestCodegenUnionTypes(t *testing.T) {
 	}
 }
 
+func TestCodegenUnionTypedIfComparison(t *testing.T) {
+	asm, cg := generateAssembly(t, `let a: string||int = 3; if (a == 3) { print("entered"); };`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "entered\\n") {
+		t.Fatalf("expected branch string literal in assembly, got:\n%s", asm)
+	}
+}
+
+func TestCodegenUnionTypedIfAfterReassignment(t *testing.T) {
+	_, cg := generateAssembly(t, `let a: string||int = "x"; a = 5; if (a == 5) { print("ok"); };`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+}
+
 func generateAssembly(t *testing.T, input string) (string, *CodeGen) {
 	t.Helper()
 	p := parser.New(lexer.New(input))

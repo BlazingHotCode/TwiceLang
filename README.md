@@ -107,6 +107,10 @@ Union type declarations are supported:
 ```tw
 let value: int||string = 1;
 value = "twice";
+value = 3;
+if (value == 3) {
+  print("union if works");
+};
 
 let mixed: (int||string)[] = {1, "two", 3};
 ```
@@ -304,6 +308,13 @@ print(arr.length());
 print(arr[1]);
 arr[1] = 99;
 print(arr[1]);
+
+let value: int||string = 1;
+value = "twice";
+value = 3;
+if (value == 3) {
+  print("union if works");
+};
 
 let grid: int[][2] = {{1}, {2, 3}};
 print(typeof(grid));

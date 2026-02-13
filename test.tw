@@ -122,6 +122,16 @@ let value: int||string = 1;
 print(typeof(value));
 value = "twice";
 print(typeof(value));
+value = 3;
+if (value == 3) {
+  print("union if works");
+};
+
+let gate: string||int = "x";
+gate = 5;
+if (gate == 5) {
+  print("union reassign if works");
+};
 
 // array of union values
 let mixed = {1, "two", 3};

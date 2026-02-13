@@ -828,7 +828,9 @@ func (cg *CodeGen) generateAssign(as *ast.AssignStatement) {
 		cg.emit("    mov $0, %%rax")
 		return
 	}
-	if target == typeUnknown {
+	if _, isUnion := splitTopLevelUnion(targetName); isUnion && inferred != typeUnknown && inferred != typeNull {
+		cg.varTypes[as.Name.Value] = inferred
+	} else if target == typeUnknown {
 		cg.varTypes[as.Name.Value] = inferred
 	} else {
 		cg.varTypes[as.Name.Value] = target
@@ -1096,14 +1098,26 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) valueType {
 	case *ast.Boolean:
 		return typeBool
 	case *ast.Identifier:
+		if _, ok := cg.intVals[e.Value]; ok {
+			return typeInt
+		}
+		if _, ok := cg.floatVals[e.Value]; ok {
+			return typeFloat
+		}
+		if _, ok := cg.charVals[e.Value]; ok {
+			return typeChar
+		}
+		if _, ok := cg.stringVals[e.Value]; ok {
+			return typeString
+		}
 		if cg.varIsNull[e.Value] {
 			return typeNull
 		}
-		if tn, ok := cg.varTypeNames[e.Value]; ok {
-			return parseTypeName(tn)
-		}
 		if t, ok := cg.varTypes[e.Value]; ok {
 			return t
+		}
+		if tn, ok := cg.varTypeNames[e.Value]; ok {
+			return parseTypeName(tn)
 		}
 		return typeUnknown
 	case *ast.ArrayLiteral:
