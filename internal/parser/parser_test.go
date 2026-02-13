@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"strings"
 	"testing"
 
 	"twice/internal/ast"
@@ -171,7 +172,7 @@ func TestTypedArrayLetDeclarationParses(t *testing.T) {
 }
 
 func TestNestedArrayTypeParses(t *testing.T) {
-	p := New(lexer.New("let grid: int[][];"))
+	p := New(lexer.New("let grid: int[2][3];"))
 	program := p.ParseProgram()
 	checkNoParserErrors(t, p)
 
@@ -179,13 +180,13 @@ func TestNestedArrayTypeParses(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected let statement, got=%T", program.Statements[0])
 	}
-	if stmt.TypeName != "int[][]" {
-		t.Fatalf("expected type annotation int[][], got=%q", stmt.TypeName)
+	if stmt.TypeName != "int[2][3]" {
+		t.Fatalf("expected type annotation int[2][3], got=%q", stmt.TypeName)
 	}
 }
 
 func TestUnionTypeParses(t *testing.T) {
-	p := New(lexer.New("let xs: (int || string)[];"))
+	p := New(lexer.New("let xs: (int || string)[3];"))
 	program := p.ParseProgram()
 	checkNoParserErrors(t, p)
 
@@ -193,13 +194,13 @@ func TestUnionTypeParses(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected let statement, got=%T", program.Statements[0])
 	}
-	if stmt.TypeName != "(int||string)[]" {
-		t.Fatalf("expected type annotation (int||string)[], got=%q", stmt.TypeName)
+	if stmt.TypeName != "(int||string)[3]" {
+		t.Fatalf("expected type annotation (int||string)[3], got=%q", stmt.TypeName)
 	}
 }
 
 func TestUnionArrayOrScalarTypeParses(t *testing.T) {
-	p := New(lexer.New("let v: int[]||string;"))
+	p := New(lexer.New("let v: int[2]||string;"))
 	program := p.ParseProgram()
 	checkNoParserErrors(t, p)
 
@@ -207,8 +208,26 @@ func TestUnionArrayOrScalarTypeParses(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected let statement, got=%T", program.Statements[0])
 	}
-	if stmt.TypeName != "int[]||string" {
-		t.Fatalf("expected type annotation int[]||string, got=%q", stmt.TypeName)
+	if stmt.TypeName != "int[2]||string" {
+		t.Fatalf("expected type annotation int[2]||string, got=%q", stmt.TypeName)
+	}
+}
+
+func TestUnsizedArrayTypeParseError(t *testing.T) {
+	p := New(lexer.New("let xs: int[];"))
+	_ = p.ParseProgram()
+	if len(p.Errors()) == 0 {
+		t.Fatalf("expected parser errors for unsized array type")
+	}
+	found := false
+	for _, err := range p.Errors() {
+		if strings.Contains(err, "array type dimensions require explicit size") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected explicit-size parse error, got=%v", p.Errors())
 	}
 }
 

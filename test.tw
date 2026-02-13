@@ -9,15 +9,15 @@ fn demo_types_and_casts() {
   header("types and casts");
 
   type NumOrText = int||string;
-  type Row = int[];
-  type Grid = Row[];
+  type Row = int[2];
+  type Grid = Row[2];
 
   let s: string = "hello";
   let c = 'A';
   let f = 3.14;
   let n: string;
   let alias_value: NumOrText = "alias works";
-  let alias_grid: Grid = {{1, 2}, {3}};
+  let alias_grid: Grid = {{1, 2}, {3, 4}};
 
   print(s);
   print(c);
@@ -219,7 +219,7 @@ fn demo_arrays_unions_tuples() {
   let fixed: int[3] = {7, 8, 9};
   print(typeof(fixed));
 
-  let grid: int[][2] = {{1}, {2, 3}};
+  let grid: int[2][2] = {{1, 2}, {2, 3}};
   print(typeof(grid));
   print(grid.length());
 
@@ -241,7 +241,7 @@ fn demo_arrays_unions_tuples() {
     print("typeofValue works");
   };
 
-  let arr_or_text: int[]||string = {1, 2, 3};
+  let arr_or_text: int[3]||string = {1, 2, 3};
   print(typeof(arr_or_text));
   arr_or_text = "array or text";
   print(typeof(arr_or_text));

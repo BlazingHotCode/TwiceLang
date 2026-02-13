@@ -548,15 +548,15 @@ func TestCodegenArrayIndexGetAndSet(t *testing.T) {
 }
 
 func TestCodegenArrayTypesAndTypeof(t *testing.T) {
-	asm, cg := generateAssembly(t, "let arr: int[] = {1,2,3}; print(typeof(arr)); let grid: int[][] = {{1}, {2,3}}; print(typeof(grid));")
+	asm, cg := generateAssembly(t, "let arr: int[3] = {1,2,3}; print(typeof(arr)); let grid: int[2][2] = {{1,2}, {2,3}}; print(typeof(grid));")
 	if len(cg.Errors()) != 0 {
 		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
 	}
-	if !strings.Contains(asm, "int[]\\n") {
-		t.Fatalf("expected typeof(arr) literal int[], got:\n%s", asm)
+	if !strings.Contains(asm, "int[3]\\n") {
+		t.Fatalf("expected typeof(arr) literal int[3], got:\n%s", asm)
 	}
-	if !strings.Contains(asm, "int[][]\\n") {
-		t.Fatalf("expected typeof(grid) literal int[][], got:\n%s", asm)
+	if !strings.Contains(asm, "int[2][2]\\n") {
+		t.Fatalf("expected typeof(grid) literal int[2][2], got:\n%s", asm)
 	}
 }
 
@@ -596,15 +596,15 @@ func TestCodegenStringIndexing(t *testing.T) {
 }
 
 func TestCodegenUnionTypes(t *testing.T) {
-	asm, cg := generateAssembly(t, `let v: int||string = 1; v = "ok"; print(typeof(v)); let xs: (int||string)[] = {1, "two", 3}; print(typeof(xs));`)
+	asm, cg := generateAssembly(t, `let v: int||string = 1; v = "ok"; print(typeof(v)); let xs: (int||string)[3] = {1, "two", 3}; print(typeof(xs));`)
 	if len(cg.Errors()) != 0 {
 		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
 	}
 	if !strings.Contains(asm, "int||string\\n") {
 		t.Fatalf("expected typeof(v) literal int||string, got:\n%s", asm)
 	}
-	if !strings.Contains(asm, "(int||string)[]\\n") {
-		t.Fatalf("expected typeof(xs) literal (int||string)[], got:\n%s", asm)
+	if !strings.Contains(asm, "(int||string)[3]\\n") {
+		t.Fatalf("expected typeof(xs) literal (int||string)[3], got:\n%s", asm)
 	}
 }
 
@@ -622,12 +622,12 @@ func TestCodegenTypeAliases(t *testing.T) {
 		t.Fatalf("unexpected codegen errors for alias in function signature: %v", cg.Errors())
 	}
 
-	asm, cg = generateAssembly(t, `let v: int[]||string = {1,2}; v = "ok"; print(typeof(v));`)
+	asm, cg = generateAssembly(t, `let v: int[2]||string = {1,2}; v = "ok"; print(typeof(v));`)
 	if len(cg.Errors()) != 0 {
-		t.Fatalf("unexpected codegen errors for int[]||string: %v", cg.Errors())
+		t.Fatalf("unexpected codegen errors for int[2]||string: %v", cg.Errors())
 	}
-	if !strings.Contains(asm, "int[]||string\\n") {
-		t.Fatalf("expected typeof(v) to preserve int[]||string, got:\n%s", asm)
+	if !strings.Contains(asm, "int[2]||string\\n") {
+		t.Fatalf("expected typeof(v) to preserve int[2]||string, got:\n%s", asm)
 	}
 }
 

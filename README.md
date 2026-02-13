@@ -51,7 +51,7 @@ Notes:
 - Function calls with positional, named, and mixed arguments
 - Function calls before declaration (resolved by codegen)
 - Arrays with typed declarations, literals, indexing, mutation, and `length()`
-- Union types (`type1||type2`) including array forms like `(int||string)[]`
+- Union types (`type1||type2`) including array forms like `(int||string)[3]`
 - Tuple types and values: `(type1, type2, ...)` with tuple access `value.0`, `value.1`, ...
 
 ## Quick Start
@@ -119,7 +119,7 @@ if (typeofValue(value) == int) {
   print("runtime value is int");
 };
 
-let mixed: (int||string)[] = {1, "two", 3};
+let mixed: (int||string)[3] = {1, "two", 3};
 
 let tri: int||string||bool = 1;
 tri = "ok";
@@ -131,11 +131,11 @@ Type declarations (aliases) are also supported:
 
 ```tw
 type NumOrText = int||string;
-type Row = int[];
-type Grid = Row[];
+type Row = int[2];
+type Grid = Row[2];
 
 let value: NumOrText = "ok";
-let g: Grid = {{1, 2}, {3}};
+let g: Grid = {{1, 2}, {3, 4}};
 print(typeof(value)); // NumOrText
 ```
 
@@ -342,8 +342,8 @@ Supported declarations:
 
 ```tw
 let a: int[3];
-let b: int[] = {1, 2, 3};
-let grid: int[][2] = {{1}, {2, 3}};
+let b: int[3] = {1, 2, 3};
+let grid: int[2][2] = {{1, 2}, {2, 3}};
 ```
 
 Indexing and mutation:
@@ -364,7 +364,7 @@ Array length method:
 print(arr.length()); // 3
 ```
 
-Note: in current codegen, `length()` requires a compile-time-known array size (for example `int[3]` or `int[][2]`).
+Note: array type annotations require explicit sizes in every dimension (for example `int[3]`, `int[2][2]`, `(int||string)[3]`).
 
 ### Tuples
 
@@ -498,7 +498,7 @@ if (typeofValue(value) == int) {
   print("runtime value is int");
 };
 
-let grid: int[][2] = {{1}, {2, 3}};
+let grid: int[2][2] = {{1, 2}, {2, 3}};
 print(typeof(grid));
 print(grid.length());
 ```

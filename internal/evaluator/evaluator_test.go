@@ -457,19 +457,19 @@ func TestArrayLiteralAndTypedArrayEval(t *testing.T) {
 		t.Fatalf("expected type(int[3]), got=%s (%s)", evaluated.Type(), evaluated.Inspect())
 	}
 
-	evaluated = testEval("let arr: int[] = {1, 2, 3}; typeof(arr)")
-	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "int[]" {
-		t.Fatalf("expected type(int[]), got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	evaluated = testEval("let arr: int[3] = {1, 2, 3}; typeof(arr)")
+	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "int[3]" {
+		t.Fatalf("expected type(int[3]), got=%s (%s)", evaluated.Type(), evaluated.Inspect())
 	}
 
-	evaluated = testEval("let grid: int[][] = {{1}, {2, 3}}; typeof(grid)")
-	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "int[][]" {
-		t.Fatalf("expected type(int[][]), got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	evaluated = testEval("let grid: int[2][2] = {{1, 2}, {2, 3}}; typeof(grid)")
+	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "int[2][2]" {
+		t.Fatalf("expected type(int[2][2]), got=%s (%s)", evaluated.Type(), evaluated.Inspect())
 	}
 
-	evaluated = testEval("let grid = {{1}, {2, 3}}; typeof(grid)")
-	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "int[][2]" {
-		t.Fatalf("expected type(int[][2]), got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	evaluated = testEval("let grid = {{1, 2}, {2, 3}}; typeof(grid)")
+	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "int[2][2]" {
+		t.Fatalf("expected type(int[2][2]), got=%s (%s)", evaluated.Type(), evaluated.Inspect())
 	}
 }
 
@@ -581,9 +581,9 @@ func TestUnionTypesEval(t *testing.T) {
 		t.Fatalf("expected type(int||string), got=%s (%s)", evaluated.Type(), evaluated.Inspect())
 	}
 
-	evaluated = testEval(`let xs: (int||string)[] = {1, "two", 3}; typeof(xs)`)
-	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "(int||string)[]" {
-		t.Fatalf("expected type((int||string)[]), got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	evaluated = testEval(`let xs: (int||string)[3] = {1, "two", 3}; typeof(xs)`)
+	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "(int||string)[3]" {
+		t.Fatalf("expected type((int||string)[3]), got=%s (%s)", evaluated.Type(), evaluated.Inspect())
 	}
 
 	evaluated = testEval(`let v: int||string||bool = 1; v = "ok"; v = true; v`)
@@ -601,7 +601,7 @@ func TestTypeAliasesEval(t *testing.T) {
 		t.Fatalf("expected aliased union assignment to work, got=%s (%s)", evaluated.Type(), evaluated.Inspect())
 	}
 
-	evaluated = testEval(`type Row = int[]; type Grid = Row[]; let g: Grid = {{1,2}, {3}}; typeof(g)`)
+	evaluated = testEval(`type Row = int[2]; type Grid = Row[2]; let g: Grid = {{1,2}, {3,4}}; typeof(g)`)
 	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "Grid" {
 		t.Fatalf("expected declared type name Grid, got=%s (%s)", evaluated.Type(), evaluated.Inspect())
 	}
@@ -609,14 +609,14 @@ func TestTypeAliasesEval(t *testing.T) {
 	evaluated = testEval(`type N = int; fn add1(x: N) N { return x + 1; } add1(2)`)
 	testIntegerObject(t, evaluated, 3)
 
-	evaluated = testEval(`let v: int[]||string = {1,2}; v = "ok"; v`)
+	evaluated = testEval(`let v: int[2]||string = {1,2}; v = "ok"; v`)
 	if evaluated.Type() != object.STRING_OBJ || evaluated.Inspect() != "ok" {
-		t.Fatalf("expected int[]||string to accept string assignment, got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+		t.Fatalf("expected int[2]||string to accept string assignment, got=%s (%s)", evaluated.Type(), evaluated.Inspect())
 	}
 
-	evaluated = testEval(`let v: int[]||string = {1,2}; typeof(v)`)
-	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "int[]||string" {
-		t.Fatalf("expected declared type int[]||string, got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	evaluated = testEval(`let v: int[2]||string = {1,2}; typeof(v)`)
+	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "int[2]||string" {
+		t.Fatalf("expected declared type int[2]||string, got=%s (%s)", evaluated.Type(), evaluated.Inspect())
 	}
 }
 

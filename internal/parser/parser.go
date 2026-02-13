@@ -1182,7 +1182,7 @@ func (p *Parser) parseCallArgument() ast.Expression {
 }
 
 // parseTypeAnnotation parses type and optional array suffixes:
-// type, type[], type[len], type[][], type[][len], ...
+// type, type[len], type[len][len], ...
 // Caller must have current token on ':'.
 func (p *Parser) parseTypeAnnotation() (string, bool) {
 	p.nextToken()
@@ -1259,12 +1259,8 @@ func (p *Parser) parseArrayTypeSuffixes(base string) (string, bool) {
 	out := base
 	for p.peekTokenIs(token.LBRACKET) {
 		p.nextToken() // '['
-		if p.peekTokenIs(token.RBRACKET) {
-			p.nextToken() // ']'
-			out += "[]"
-			continue
-		}
 		if !p.expectPeek(token.INT) {
+			p.errors = append(p.errors, "array type dimensions require explicit size, use [N]")
 			return "", false
 		}
 		size := p.curToken.Literal
