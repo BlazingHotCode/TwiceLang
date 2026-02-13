@@ -1,22 +1,26 @@
 # TODO
 
-## 1. Type Declarations
+## 1. Scopes
+
+- Add explicit scope support and scope rules for blocks/functions/loops.
+
+## 2. Type Declarations
 
 - Add type declarations (type aliases) so complex types can be named and reused more easily.
 
-## 2. Tuple Types
+## 3. Tuple Types
 
 - Add tuple type syntax and semantics so tuples can hold multiple values in one typed value.
 
-## 3. Structs
+## 4. Structs
 
 - Add struct declarations and typed struct values.
 
-## 4. Custom Libraries
+## 5. Custom Libraries
 
 - Add support for custom libraries (for example, a `math` library).
 
-## 5. OOP and Type System Expansion
+## 6. OOP and Type System Expansion
 
 - Add class declarations and object instantiation.
 - Add access modifiers (`public` / `private`) for fields and methods.
