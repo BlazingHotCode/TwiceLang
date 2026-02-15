@@ -181,6 +181,103 @@ func (cg *CodeGen) generateTupleLiteral(tl *ast.TupleLiteral) {
 	cg.emit("    lea -%d(%%rbp), %%rax", baseOffset)
 }
 
+func (cg *CodeGen) pickTypedEmptyLiteralTarget(typeName string, wantArray bool) (string, bool) {
+	target := typeName
+	if resolved, ok := cg.normalizeTypeName(typeName); ok {
+		target = resolved
+	}
+	if target == "" || target == "unknown" {
+		return "", false
+	}
+	if wantArray {
+		if _, dims, ok := parseTypeDescriptor(target); ok && len(dims) > 0 {
+			return target, true
+		}
+	} else if _, ok := splitTopLevelTuple(target); ok {
+		return target, true
+	}
+
+	parts, isUnion := splitTopLevelUnion(target)
+	if !isUnion {
+		return "", false
+	}
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" || part == "null" {
+			continue
+		}
+		if wantArray {
+			if _, dims, ok := parseTypeDescriptor(part); ok && len(dims) > 0 {
+				return part, true
+			}
+			continue
+		}
+		if _, ok := splitTopLevelTuple(part); ok {
+			return part, true
+		}
+	}
+	return "", false
+}
+
+func (cg *CodeGen) generateTypedDefaultValue(typeName string) bool {
+	target := typeName
+	if resolved, ok := cg.normalizeTypeName(typeName); ok {
+		target = resolved
+	}
+	base, dims, ok := parseTypeDescriptor(target)
+	if ok && len(dims) > 0 {
+		cg.generateTypedArrayDefault(base, dims)
+		return true
+	}
+	if members, ok := splitTopLevelTuple(target); ok {
+		cg.generateTypedTupleDefault(members)
+		return true
+	}
+	return false
+}
+
+func (cg *CodeGen) generateTypedArrayDefault(base string, dims []int) {
+	if len(dims) == 0 {
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	count := dims[0]
+	if count < 0 {
+		count = 0
+	}
+	slots := count
+	if slots == 0 {
+		slots = 1
+	}
+	baseOffset := cg.allocateSlots(slots)
+	if len(dims) > 1 {
+		for i := 0; i < count; i++ {
+			cg.generateTypedArrayDefault(base, dims[1:])
+			cg.emit("    mov %%rax, -%d(%%rbp)", baseOffset-i*8)
+		}
+	} else {
+		cg.emit("    lea null_lit(%%rip), %%rcx")
+		for i := 0; i < count; i++ {
+			cg.emit("    mov %%rcx, -%d(%%rbp)", baseOffset-i*8)
+		}
+	}
+	cg.emit("    lea -%d(%%rbp), %%rax", baseOffset)
+}
+
+func (cg *CodeGen) generateTypedTupleDefault(members []string) {
+	count := len(members)
+	slots := count
+	if slots == 0 {
+		slots = 1
+	}
+	baseOffset := cg.allocateSlots(slots)
+	cg.emit("    lea null_lit(%%rip), %%rcx")
+	for i := 0; i < count; i++ {
+		cg.emit("    mov %%rcx, -%d(%%rbp)", baseOffset-i*8)
+	}
+	cg.emit("    lea -%d(%%rbp), %%rax", baseOffset)
+}
+
 func (cg *CodeGen) generateIndexExpression(ie *ast.IndexExpression) {
 	if ie == nil {
 		cg.emit("    mov $0, %%rax")
@@ -756,22 +853,64 @@ func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
 		cg.varDeclaredNames[ls.Name.Value] = ls.TypeName
 	}
 
+	inferred := typeNull
+	inferredName := "null"
 	if ls.Value == nil {
-		cg.generateNull(&ast.NullLiteral{})
+		targetName := ls.TypeName
+		if targetName != "" {
+			if cg.generateTypedDefaultValue(targetName) {
+				if resolved, ok := cg.normalizeTypeName(targetName); ok {
+					targetName = resolved
+				}
+				inferredName = targetName
+				inferred = cg.parseTypeName(targetName)
+			} else {
+				cg.generateNull(&ast.NullLiteral{})
+			}
+		} else {
+			cg.generateNull(&ast.NullLiteral{})
+		}
 	} else {
-		cg.generateExpression(ls.Value)
+		generatedTypedEmpty := false
+		switch lit := ls.Value.(type) {
+		case *ast.ArrayLiteral:
+			if len(lit.Elements) == 0 {
+				target, ok := cg.pickTypedEmptyLiteralTarget(ls.TypeName, true)
+				if !ok {
+					cg.addNodeError("empty array literal requires array type context", ls.Value)
+					cg.emit("    mov $0, %%rax")
+					return
+				}
+				cg.generateTypedDefaultValue(target)
+				inferredName = target
+				inferred = cg.parseTypeName(target)
+				generatedTypedEmpty = true
+			}
+		case *ast.TupleLiteral:
+			if len(lit.Elements) == 0 {
+				target, ok := cg.pickTypedEmptyLiteralTarget(ls.TypeName, false)
+				if !ok {
+					cg.addNodeError("empty tuple literal requires tuple type context", ls.Value)
+					cg.emit("    mov $0, %%rax")
+					return
+				}
+				cg.generateTypedDefaultValue(target)
+				inferredName = target
+				inferred = cg.parseTypeName(target)
+				generatedTypedEmpty = true
+			}
+		}
+		if !generatedTypedEmpty {
+			cg.generateExpression(ls.Value)
+			inferred = cg.inferExpressionType(ls.Value)
+			inferredName = cg.inferExpressionTypeName(ls.Value)
+		}
 	}
 
 	name := ls.Name.Value
 	offset := cg.allocateSlots(1)
 	cg.variables[name] = offset
 	cg.markDeclaredInCurrentScope(name)
-	inferred := typeNull
-	inferredName := "null"
-	if ls.Value != nil {
-		inferred = cg.inferExpressionType(ls.Value)
-		inferredName = cg.inferExpressionTypeName(ls.Value)
-	}
 	targetName := ls.TypeName
 	if targetName == "" {
 		targetName = inferredName
@@ -824,15 +963,48 @@ func (cg *CodeGen) generateConst(cs *ast.ConstStatement) {
 		cg.varDeclaredNames[cs.Name.Value] = cs.TypeName
 	}
 
-	cg.generateExpression(cs.Value)
+	inferred := typeUnknown
+	inferredName := "unknown"
+	generatedTypedEmpty := false
+	switch lit := cs.Value.(type) {
+	case *ast.ArrayLiteral:
+		if len(lit.Elements) == 0 {
+			target, ok := cg.pickTypedEmptyLiteralTarget(cs.TypeName, true)
+			if !ok {
+				cg.addNodeError("empty array literal requires array type context", cs.Value)
+				cg.emit("    mov $0, %%rax")
+				return
+			}
+			cg.generateTypedDefaultValue(target)
+			inferredName = target
+			inferred = cg.parseTypeName(target)
+			generatedTypedEmpty = true
+		}
+	case *ast.TupleLiteral:
+		if len(lit.Elements) == 0 {
+			target, ok := cg.pickTypedEmptyLiteralTarget(cs.TypeName, false)
+			if !ok {
+				cg.addNodeError("empty tuple literal requires tuple type context", cs.Value)
+				cg.emit("    mov $0, %%rax")
+				return
+			}
+			cg.generateTypedDefaultValue(target)
+			inferredName = target
+			inferred = cg.parseTypeName(target)
+			generatedTypedEmpty = true
+		}
+	}
+	if !generatedTypedEmpty {
+		cg.generateExpression(cs.Value)
+		inferred = cg.inferExpressionType(cs.Value)
+		inferredName = cg.inferExpressionTypeName(cs.Value)
+	}
 
 	name := cs.Name.Value
 	offset := cg.allocateSlots(1)
 	cg.variables[name] = offset
 	cg.markDeclaredInCurrentScope(name)
 	cg.constVars[name] = true
-	inferred := cg.inferExpressionType(cs.Value)
-	inferredName := cg.inferExpressionTypeName(cs.Value)
 	targetName := cs.TypeName
 	if targetName == "" {
 		targetName = inferredName
@@ -907,15 +1079,8 @@ func (cg *CodeGen) generateAssign(as *ast.AssignStatement) {
 		return
 	}
 
-	cg.generateExpression(as.Value)
-	cg.emit("    mov %%rax, -%d(%%rbp)  # assign %s", offset, as.Name.Value)
-	inferred := cg.inferExpressionType(as.Value)
-	inferredName := cg.inferExpressionTypeName(as.Value)
 	target := cg.varTypes[as.Name.Value]
 	targetName := cg.varTypeNames[as.Name.Value]
-	if target == typeNull && inferred != typeNull {
-		target = inferred
-	}
 	if declared, ok := cg.varDeclared[as.Name.Value]; ok {
 		target = declared
 	}
@@ -924,6 +1089,46 @@ func (cg *CodeGen) generateAssign(as *ast.AssignStatement) {
 	}
 	if targetName == "" {
 		targetName = typeName(target)
+	}
+	inferred := typeUnknown
+	inferredName := "unknown"
+	generatedTypedEmpty := false
+	switch lit := as.Value.(type) {
+	case *ast.ArrayLiteral:
+		if len(lit.Elements) == 0 {
+			targetTypeName, ok := cg.pickTypedEmptyLiteralTarget(targetName, true)
+			if !ok {
+				cg.addNodeError("empty array literal requires array type context", as.Value)
+				cg.emit("    mov $0, %%rax")
+				return
+			}
+			cg.generateTypedDefaultValue(targetTypeName)
+			inferredName = targetTypeName
+			inferred = cg.parseTypeName(targetTypeName)
+			generatedTypedEmpty = true
+		}
+	case *ast.TupleLiteral:
+		if len(lit.Elements) == 0 {
+			targetTypeName, ok := cg.pickTypedEmptyLiteralTarget(targetName, false)
+			if !ok {
+				cg.addNodeError("empty tuple literal requires tuple type context", as.Value)
+				cg.emit("    mov $0, %%rax")
+				return
+			}
+			cg.generateTypedDefaultValue(targetTypeName)
+			inferredName = targetTypeName
+			inferred = cg.parseTypeName(targetTypeName)
+			generatedTypedEmpty = true
+		}
+	}
+	if !generatedTypedEmpty {
+		cg.generateExpression(as.Value)
+		inferred = cg.inferExpressionType(as.Value)
+		inferredName = cg.inferExpressionTypeName(as.Value)
+	}
+	cg.emit("    mov %%rax, -%d(%%rbp)  # assign %s", offset, as.Name.Value)
+	if target == typeNull && inferred != typeNull {
+		target = inferred
 	}
 	if inf, ok := as.Value.(*ast.InfixExpression); ok {
 		if inf.Token.Type == token.PLUSPLUS || inf.Token.Type == token.MINUSMIN {

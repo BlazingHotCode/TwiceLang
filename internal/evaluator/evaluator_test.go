@@ -473,6 +473,14 @@ func TestArrayLiteralAndTypedArrayEval(t *testing.T) {
 	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "int[2][2]" {
 		t.Fatalf("expected type(int[2][2]), got=%s (%s)", evaluated.Type(), evaluated.Inspect())
 	}
+
+	evaluated = testEval("let arr: int[3] = {}; typeof(arr)")
+	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "int[3]" {
+		t.Fatalf("expected type(int[3]) from empty literal, got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+
+	evaluated = testEval("let arr: int[3]; arr.length()")
+	testIntegerObject(t, evaluated, 3)
 }
 
 func TestArrayTypeValidationEval(t *testing.T) {
@@ -545,9 +553,7 @@ func TestNullishCoalescingEval(t *testing.T) {
 
 func TestNullSafeMethodCallEval(t *testing.T) {
 	evaluated := testEval(`let arr: int[3]; arr?.length()`)
-	if evaluated != NULL {
-		t.Fatalf("expected null result for null-safe method call on null receiver, got=%T (%s)", evaluated, evaluated.Inspect())
-	}
+	testIntegerObject(t, evaluated, 3)
 
 	evaluated = testEval(`let arr = {1,2,3}; arr?.length()`)
 	testIntegerObject(t, evaluated, 3)
@@ -558,6 +564,13 @@ func TestNullSafeMethodCallEval(t *testing.T) {
 	evaluated = testEval(`let arr: int[3]||null = null; arr?.length()`)
 	if evaluated != NULL {
 		t.Fatalf("expected null result for null-safe method call on null union receiver, got=%T (%s)", evaluated, evaluated.Inspect())
+	}
+}
+
+func TestEmptyTupleLiteralEval(t *testing.T) {
+	evaluated := testEval(`let t: (int, string) = (); t.0`)
+	if evaluated != NULL {
+		t.Fatalf("expected null tuple slot from empty literal, got=%T (%s)", evaluated, evaluated.Inspect())
 	}
 }
 

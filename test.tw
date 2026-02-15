@@ -285,6 +285,12 @@ fn demo_arrays_unions_tuples() {
   let mixed = {1, "two", 3};
   print(typeof(mixed));
   print(mixed.length());
+
+  let empty_arr: int[3] = {};
+  print(empty_arr.length());
+
+  let empty_pair: (int, string) = ();
+  print(empty_pair.0 ?? 7);
   return;
 }
 

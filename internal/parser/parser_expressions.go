@@ -185,7 +185,6 @@ func (p *Parser) isGroupedExpr(expr ast.Expression) bool {
 	return ok
 }
 
-
 // parseBoolean handles true/false
 func (p *Parser) parseBoolean() ast.Expression {
 	return &ast.Boolean{
@@ -197,6 +196,14 @@ func (p *Parser) parseBoolean() ast.Expression {
 // parseGroupedExpression handles ( <expr> )
 // Parentheses let us override precedence: (5 + 3) * 2
 func (p *Parser) parseGroupedExpression() ast.Expression {
+	if p.peekTokenIs(token.RPAREN) {
+		p.nextToken() // )
+		return &ast.TupleLiteral{
+			Token:    token.Token{Type: token.LPAREN, Literal: "("},
+			Elements: []ast.Expression{},
+		}
+	}
+
 	p.nextToken() // Advance past (
 
 	first := p.parseExpression(LOWEST)
@@ -443,8 +450,8 @@ func (p *Parser) parseMethodCallExpression(left ast.Expression) ast.Expression {
 	if !p.peekTokenIs(token.LPAREN) {
 		if isNullSafe {
 			return &ast.NullSafeAccessExpression{
-				Token: token.Token{Type: token.QDOT, Literal: "?."},
-				Object: left,
+				Token:    token.Token{Type: token.QDOT, Literal: "?."},
+				Object:   left,
 				Property: prop,
 			}
 		}

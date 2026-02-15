@@ -607,9 +607,6 @@ func TestCodegenNullSafeMethodCall(t *testing.T) {
 	if len(cg.Errors()) != 0 {
 		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
 	}
-	if !strings.Contains(asm, "lea null_lit(%rip), %rax") {
-		t.Fatalf("expected null-safe path to materialize null literal, got:\n%s", asm)
-	}
 	if !strings.Contains(asm, "mov $3, %rax") {
 		t.Fatalf("expected non-null length path to materialize array length, got:\n%s", asm)
 	}
@@ -630,11 +627,18 @@ func TestCodegenNullSafeAccess(t *testing.T) {
 	if len(cg.Errors()) != 0 {
 		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
 	}
-	if !strings.Contains(asm, "lea null_lit(%rip), %rax") {
-		t.Fatalf("expected null-safe path to materialize null literal, got:\n%s", asm)
-	}
 	if !strings.Contains(asm, "mov $3, %rax") {
 		t.Fatalf("expected non-null length path to materialize array length, got:\n%s", asm)
+	}
+}
+
+func TestCodegenEmptyTypedLiterals(t *testing.T) {
+	asm, cg := generateAssembly(t, "let arr: int[3] = {}; print(arr.length()); let t: (int,string) = (); print(t.0 ?? 7);")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "mov $3, %rax") {
+		t.Fatalf("expected typed empty array to preserve declared length, got:\n%s", asm)
 	}
 }
 

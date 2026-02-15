@@ -151,6 +151,42 @@ func TestCLICompileAndRunPrintBoolean(t *testing.T) {
 	}
 }
 
+func TestCLICompileAndRunEmptyTypedLiterals(t *testing.T) {
+	root := repoRoot(t)
+	ensureToolchain(t)
+
+	srcPath := filepath.Join(t.TempDir(), "empty_typed.tw")
+	source := `
+fn main() {
+  let arr: int[3] = {};
+  print(arr.length());
+  let t: (int, string) = ();
+  print(t.0 ?? 7);
+  return;
+}
+`
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	outputName := "twice_cli_empty_typed_bin"
+	outputPath := filepath.Join(root, outputName)
+	_ = os.Remove(outputPath)
+	t.Cleanup(func() { _ = os.Remove(outputPath) })
+
+	cmd := exec.Command("go", "run", "./cmd/twice", "-run", "-o", outputName, srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("compile/run failed: %v\n%s", err, out)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "\n3\n7\n") {
+		t.Fatalf("expected runtime print output for empty typed literals. output:\n%s", output)
+	}
+}
+
 func TestCLICodegenErrorForPrintArity(t *testing.T) {
 	root := repoRoot(t)
 

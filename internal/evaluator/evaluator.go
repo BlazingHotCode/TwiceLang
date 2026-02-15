@@ -117,16 +117,49 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			}
 			return newError("identifier already declared: %s", node.Name.Value)
 		}
-		var val object.Object = NULL
-		if node.Value != nil {
-			val = Eval(node.Value, env)
-			if isError(val) {
-				return val
-			}
-		}
 		varType := node.TypeName
 		if varType != "" && !isKnownTypeName(varType, env) {
 			return newError("unknown type: %s", varType)
+		}
+		var val object.Object = NULL
+		if node.Value != nil {
+			switch lit := node.Value.(type) {
+			case *ast.ArrayLiteral:
+				if len(lit.Elements) == 0 && varType != "" {
+					if target, ok := pickTypedEmptyLiteralTarget(varType, true, env); ok {
+						arr, _ := instantiateTypedArray(target, env)
+						val = arr
+					} else {
+						return newError("empty array literal requires array type context")
+					}
+				} else {
+					val = Eval(node.Value, env)
+				}
+			case *ast.TupleLiteral:
+				if len(lit.Elements) == 0 && varType != "" {
+					if target, ok := pickTypedEmptyLiteralTarget(varType, false, env); ok {
+						tup, _ := instantiateTypedTuple(target, env)
+						val = tup
+					} else {
+						return newError("empty tuple literal requires tuple type context")
+					}
+				} else {
+					val = Eval(node.Value, env)
+				}
+			default:
+				val = Eval(node.Value, env)
+			}
+			if isError(val) {
+				return val
+			}
+		} else if varType != "" {
+			if _, isUnion := splitTopLevelUnion(normalizeTypeName(varType, env)); !isUnion {
+				if arr, ok := instantiateTypedArray(varType, env); ok {
+					val = arr
+				} else if tup, ok := instantiateTypedTuple(varType, env); ok {
+					val = tup
+				}
+			}
 		}
 		valType := runtimeTypeName(val)
 		if varType == "" {
@@ -142,13 +175,37 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		if env.HasInCurrentScope(node.Name.Value) {
 			return newError("identifier already declared: %s", node.Name.Value)
 		}
-		val := Eval(node.Value, env)
-		if isError(val) {
-			return val
-		}
 		varType := node.TypeName
 		if varType != "" && !isKnownTypeName(varType, env) {
 			return newError("unknown type: %s", varType)
+		}
+		var val object.Object
+		switch lit := node.Value.(type) {
+		case *ast.ArrayLiteral:
+			if len(lit.Elements) == 0 && varType != "" {
+				if target, ok := pickTypedEmptyLiteralTarget(varType, true, env); ok {
+					val, _ = instantiateTypedArray(target, env)
+				} else {
+					return newError("empty array literal requires array type context")
+				}
+			} else {
+				val = Eval(node.Value, env)
+			}
+		case *ast.TupleLiteral:
+			if len(lit.Elements) == 0 && varType != "" {
+				if target, ok := pickTypedEmptyLiteralTarget(varType, false, env); ok {
+					val, _ = instantiateTypedTuple(target, env)
+				} else {
+					return newError("empty tuple literal requires tuple type context")
+				}
+			} else {
+				val = Eval(node.Value, env)
+			}
+		default:
+			val = Eval(node.Value, env)
+		}
+		if isError(val) {
+			return val
 		}
 		valType := runtimeTypeName(val)
 		if varType == "" {
@@ -181,12 +238,39 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		if env.IsConst(node.Name.Value) {
 			return newError("cannot reassign const: %s", node.Name.Value)
 		}
-		val := Eval(node.Value, env)
+		targetType, ok := env.TypeOf(node.Name.Value)
+		if !ok {
+			targetType = "unknown"
+		}
+		var val object.Object
+		switch lit := node.Value.(type) {
+		case *ast.ArrayLiteral:
+			if len(lit.Elements) == 0 {
+				if target, ok := pickTypedEmptyLiteralTarget(targetType, true, env); ok {
+					val, _ = instantiateTypedArray(target, env)
+				} else {
+					return newError("empty array literal requires array type context")
+				}
+			} else {
+				val = Eval(node.Value, env)
+			}
+		case *ast.TupleLiteral:
+			if len(lit.Elements) == 0 {
+				if target, ok := pickTypedEmptyLiteralTarget(targetType, false, env); ok {
+					val, _ = instantiateTypedTuple(target, env)
+				} else {
+					return newError("empty tuple literal requires tuple type context")
+				}
+			} else {
+				val = Eval(node.Value, env)
+			}
+		default:
+			val = Eval(node.Value, env)
+		}
 		if isError(val) {
 			return val
 		}
-		targetType, ok := env.TypeOf(node.Name.Value)
-		if !ok {
+		if targetType == "unknown" {
 			targetType = runtimeTypeName(val)
 			env.SetType(node.Name.Value, targetType)
 		}

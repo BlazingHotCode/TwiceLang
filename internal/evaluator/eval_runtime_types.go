@@ -196,6 +196,94 @@ func evalTupleLiteral(lit *ast.TupleLiteral, env *object.Environment) object.Obj
 	}
 }
 
+func instantiateTypedArray(typeName string, env *object.Environment) (*object.Array, bool) {
+	normalized := normalizeTypeName(typeName, env)
+	base, dims, ok := parseTypeName(normalized)
+	if !ok || len(dims) == 0 {
+		return nil, false
+	}
+	return instantiateArrayFromDims(base, dims), true
+}
+
+func instantiateArrayFromDims(base string, dims []int) *object.Array {
+	if len(dims) == 0 {
+		return nil
+	}
+	count := dims[0]
+	if count < 0 {
+		count = 0
+	}
+	elemType := base
+	if len(dims) > 1 {
+		elemType = formatTypeName(base, dims[1:])
+	}
+	elements := make([]object.Object, count)
+	if len(dims) > 1 {
+		for i := 0; i < count; i++ {
+			elements[i] = instantiateArrayFromDims(base, dims[1:])
+		}
+	} else {
+		for i := 0; i < count; i++ {
+			elements[i] = NULL
+		}
+	}
+	return &object.Array{
+		ElementType: elemType,
+		Elements:    elements,
+	}
+}
+
+func instantiateTypedTuple(typeName string, env *object.Environment) (*object.Tuple, bool) {
+	normalized := normalizeTypeName(typeName, env)
+	parts, ok := splitTopLevelTuple(normalized)
+	if !ok {
+		return nil, false
+	}
+	elements := make([]object.Object, len(parts))
+	for i := range elements {
+		elements[i] = NULL
+	}
+	return &object.Tuple{
+		ElementTypes: parts,
+		Elements:     elements,
+	}, true
+}
+
+func pickTypedEmptyLiteralTarget(typeName string, wantArray bool, env *object.Environment) (string, bool) {
+	normalized := normalizeTypeName(typeName, env)
+	if normalized == "" || normalized == "unknown" {
+		return "", false
+	}
+	if wantArray {
+		if _, dims, ok := parseTypeName(normalized); ok && len(dims) > 0 {
+			return normalized, true
+		}
+	} else if _, ok := splitTopLevelTuple(normalized); ok {
+		return normalized, true
+	}
+
+	parts, isUnion := splitTopLevelUnion(normalized)
+	if !isUnion {
+		return "", false
+	}
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" || part == "null" {
+			continue
+		}
+		if wantArray {
+			if _, dims, ok := parseTypeName(part); ok && len(dims) > 0 {
+				return part, true
+			}
+			continue
+		}
+		if _, ok := splitTopLevelTuple(part); ok {
+			return part, true
+		}
+	}
+	return "", false
+}
+
 func evalTupleAccessExpression(left object.Object, idx int) object.Object {
 	tup, ok := left.(*object.Tuple)
 	if !ok {

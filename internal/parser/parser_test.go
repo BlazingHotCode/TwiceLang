@@ -281,6 +281,24 @@ func TestTupleAccessParses(t *testing.T) {
 	}
 }
 
+func TestEmptyTupleLiteralParses(t *testing.T) {
+	p := New(lexer.New("let t: (int, string) = ();"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	stmt, ok := program.Statements[0].(*ast.LetStatement)
+	if !ok {
+		t.Fatalf("expected let statement, got=%T", program.Statements[0])
+	}
+	tup, ok := stmt.Value.(*ast.TupleLiteral)
+	if !ok {
+		t.Fatalf("expected tuple literal initializer, got=%T", stmt.Value)
+	}
+	if len(tup.Elements) != 0 {
+		t.Fatalf("expected empty tuple literal, got=%d elements", len(tup.Elements))
+	}
+}
+
 func TestArrayLiteralParsesInLet(t *testing.T) {
 	p := New(lexer.New("let arr = {1, 2, 3};"))
 	program := p.ParseProgram()

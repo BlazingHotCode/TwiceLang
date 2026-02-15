@@ -392,7 +392,9 @@ Supported declarations:
 ```tw
 let a: int[3];
 let b: int[3] = {1, 2, 3};
+let c: int[3] = {};
 let grid: int[2][2] = {{1, 2}, {2, 3}};
+let pair: (int, string) = ();
 ```
 
 Indexing and mutation:
@@ -405,6 +407,9 @@ print(arr[1]); // 99
 
 let mixed = {1, "two", 3}; // inferred as (int||string)[3]
 print(typeof(mixed));
+
+print(c.length());      // 3
+print(pair.0 ?? 7);     // 7
 ```
 
 Array length method:
@@ -413,7 +418,7 @@ Array length method:
 print(arr.length()); // 3
 ```
 
-Note: array type annotations require explicit sizes in every dimension (for example `int[3]`, `int[2][2]`, `(int||string)[3]`).
+Note: array type annotations require explicit sizes in every dimension (for example `int[3]`, `int[2][2]`, `(int||string)[3]`). Empty literals (`{}` / `()`) require type context.
 
 ### Tuples
 
