@@ -10,7 +10,7 @@
 - adding snippet to [test.tw](./test.tw) and running using binary to test the code
 - adding guide/points to show the feature in [README](./README.md)
 
-## 1. Generics/Templates (Java-Style)
+## 1. Generics
 
 - Add generic type syntax using angle brackets, like Java: `Type<T>`.
 - Support generic declarations for user-defined types/functions in v1.
