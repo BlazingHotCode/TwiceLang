@@ -73,6 +73,7 @@ const (
 	typeChar
 	typeNull
 	typeType
+	typeAny
 	typeArray
 )
 

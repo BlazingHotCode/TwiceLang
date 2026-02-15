@@ -10,28 +10,7 @@
 - adding snippet to [test.tw](./test.tw) and running using binary to test the code
 - adding guide/points to show the feature in [README](./README.md)
 
-## 1. Any Type
-
-- Add `any` type support for values that can hold any runtime type.
-- `any` can hold `null` for variables/values.
-- Function return typing keeps existing strict nullability behavior (returning null still requires `||null`).
-- `typeofValue(x)` returns the concrete runtime value type (including `null` when value is null).
-- `typeof(x)` keeps declared/static type behavior.
-- Operations on `any` are runtime-checked (no required narrowing):
-- Assignment/pass/return from `any` to concrete types is allowed with runtime checks.
-- Explicit casts from `any` are allowed; invalid casts throw runtime errors.
-- `==` / `!=` compare runtime values; different runtime types are not equal.
-- Ordered comparisons (`<`, `>`) runtime-check operand compatibility and error if incompatible.
-- Arithmetic/index/member/method/read/write operations on `any` are allowed and runtime-checked.
-- `+` with `any` follows existing concat/arith rules (string participation concatenates).
-- `any` is allowed as a generic type argument (for example `List<any>`).
-- Codegen representation for `any` should be boxed with tag + payload.
-- Use coarse kind tags plus metadata pointers where needed.
-- Type metadata should be interned/shared globally (type table), not per-instance.
-- Implement evaluator and codegen parity from day one.
-- Keep backward compatibility with existing array behavior while adding `any`.
-
-## 2. Generics/Templates (Java-Style)
+## 1. Generics/Templates (Java-Style)
 
 - Add generic type syntax using angle brackets, like Java: `Type<T>`.
 - Support generic declarations for user-defined types/functions in v1.
@@ -50,7 +29,7 @@
 - Generic classes are supported by syntax plan, but are implemented together with class support.
 - Keep parser, evaluator, and codegen behavior aligned for generics.
 
-## 3. Lists (Dynamic Arrays)
+## 2. Lists (Dynamic Arrays)
 
 - Add generic list types as dynamic arrays without fixed compile-time length.
 - Use generic syntax for declarations, for example `let xs: List<int>;`.
@@ -77,7 +56,7 @@
 - Fixed array/list interoperability requires explicit conversion both ways.
 - Ensure parser, evaluator, and codegen all support lists consistently.
 
-## 4. Structs
+## 3. Structs
 
 - Add struct declarations and typed struct values.
 - Use literal construction syntax for structs.
@@ -101,14 +80,14 @@
 - Pointer struct function usage syntax (auto-deref):
 - `ptr.methodName(args...)` (no `(*ptr).methodName(...)` required)
 
-## 5. Pointers
+## 4. Pointers
 
 - Pointer types are nullable only when explicitly declared nullable.
 - Add pointer operations (`&value`, `*ptr`, pointer assignment).
 - Pointer method calls auto-deref: allow `p.method()` without requiring `(*p).method()`.
 - Pointer + struct design should be combined, so references and mutation go through pointers.
 
-## 6. Custom Libraries
+## 5. Custom Libraries
 
 - Add `import ...` syntax.
 - Built-in libraries are imported with `twice.<lib>`.
@@ -121,7 +100,7 @@
 - Add member import alias syntax like:
 - `import twice.math.sqrt as sqrt`
 
-## 7. OOP and Type System Expansion
+## 6. OOP and Type System Expansion
 
 - Add class declarations and object instantiation.o
 - Structs stay public-focused; classes support explicit `public`/`private`.
@@ -144,7 +123,7 @@
 - `this` is valid in instance methods and constructors, and invalid in `static` methods.
 - Typed declarations without `new` remain `null` until initialized (for example `let s: Shape;`).
 
-## 8. Inheritance
+## 7. Inheritance
 
 - Add inheritance as a separate feature from base class/object support.
 - Define overriding and method resolution rules.

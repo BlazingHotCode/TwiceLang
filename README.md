@@ -505,6 +505,22 @@ fn main() {
 }
 ```
 
+### Any Type
+
+`any` can hold values of any runtime type.
+
+```tw
+let x: any = 3;
+println(typeof(x));      // any
+println(typeofValue(x)); // int
+println(x + 4);          // 7
+
+x = "ok";
+println(typeof(x));      // any
+println(typeofValue(x)); // string
+println(x + "!");        // ok!
+```
+
 ### Comments
 
 ```tw

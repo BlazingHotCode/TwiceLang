@@ -44,6 +44,9 @@ func TestResolveNormalizeKnownAndAssign(t *testing.T) {
 	if !IsBuiltinTypeName("int") || IsBuiltinTypeName("X") {
 		t.Fatalf("IsBuiltinTypeName unexpected")
 	}
+	if !IsBuiltinTypeName("any") {
+		t.Fatalf("expected any to be a builtin type")
+	}
 	if !IsKnownTypeName("Num", resolve) || !IsKnownTypeName("(Num,string)", resolve) {
 		t.Fatalf("IsKnownTypeName unexpected")
 	}
@@ -64,6 +67,12 @@ func TestResolveNormalizeKnownAndAssign(t *testing.T) {
 	}
 	if !IsAssignableTypeName("int||string", "int||string", resolve) {
 		t.Fatalf("same union assign should pass")
+	}
+	if !IsAssignableTypeName("any", "int||string", resolve) {
+		t.Fatalf("any target should accept union value")
+	}
+	if !IsAssignableTypeName("int", "any", resolve) {
+		t.Fatalf("concrete target should accept any source for runtime-checked flow")
 	}
 	if !IsAssignableTypeName("int||string", "int||int", resolve) {
 		t.Fatalf("union value members should each be assignable")

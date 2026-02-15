@@ -966,7 +966,7 @@ func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
 		cg.emit("    mov $0, %%rax")
 		return
 	}
-	if declared != typeUnknown {
+	if declared != typeUnknown && declared != typeAny {
 		cg.varTypes[name] = declared
 	} else {
 		cg.varTypes[name] = inferred
@@ -1060,7 +1060,7 @@ func (cg *CodeGen) generateConst(cs *ast.ConstStatement) {
 		cg.emit("    mov $0, %%rax")
 		return
 	}
-	if declared != typeUnknown {
+	if declared != typeUnknown && declared != typeAny {
 		cg.varTypes[name] = declared
 	} else {
 		cg.varTypes[name] = inferred
@@ -1128,7 +1128,9 @@ func (cg *CodeGen) generateAssign(as *ast.AssignStatement) {
 	target := cg.varTypes[as.Name.Value]
 	targetName := cg.varTypeNames[as.Name.Value]
 	if declared, ok := cg.varDeclared[as.Name.Value]; ok {
-		target = declared
+		if declared != typeAny {
+			target = declared
+		}
 	}
 	if declaredName, ok := cg.varDeclaredNames[as.Name.Value]; ok {
 		targetName = declaredName
@@ -1190,7 +1192,15 @@ func (cg *CodeGen) generateAssign(as *ast.AssignStatement) {
 		cg.emit("    mov $0, %%rax")
 		return
 	}
-	if _, isUnion := splitTopLevelUnion(targetName); isUnion && inferred != typeUnknown && inferred != typeNull {
+	isTargetAny := targetName == "any"
+	if !isTargetAny {
+		if resolved, ok := cg.normalizeTypeName(targetName); ok && resolved == "any" {
+			isTargetAny = true
+		}
+	}
+	if isTargetAny || target == typeAny {
+		cg.varTypes[as.Name.Value] = inferred
+	} else if _, isUnion := splitTopLevelUnion(targetName); isUnion && inferred != typeUnknown && inferred != typeNull {
 		cg.varTypes[as.Name.Value] = inferred
 	} else if target == typeUnknown {
 		cg.varTypes[as.Name.Value] = inferred
@@ -1306,7 +1316,7 @@ func (cg *CodeGen) generateReturn(rs *ast.ReturnStatement) {
 	}
 	if cg.inFunction {
 		addedTypeError := false
-		if cg.funcRetType != typeUnknown {
+		if cg.funcRetType != typeUnknown && cg.funcRetType != typeAny {
 			got := typeNull
 			if rs.ReturnValue != nil {
 				got = cg.inferExpressionType(rs.ReturnValue)

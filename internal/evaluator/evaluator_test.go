@@ -1110,6 +1110,26 @@ func TestTupleUnionAndAliasEval(t *testing.T) {
 	}
 }
 
+func TestAnyTypeEval(t *testing.T) {
+	evaluated := testEval(`let x: any = 3; x = "ok"; typeof(x)`)
+	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "any" {
+		t.Fatalf("expected typeof(x) to be any, got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+
+	evaluated = testEval(`let x: any = 3; x = "ok"; typeofValue(x)`)
+	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "string" {
+		t.Fatalf("expected typeofValue(x) to be string, got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+
+	evaluated = testEval(`let x: any = 3; x + 4`)
+	testIntegerObject(t, evaluated, 7)
+
+	evaluated = testEval(`let x: any; x`)
+	if evaluated.Type() != object.NULL_OBJ {
+		t.Fatalf("expected default any value to be null, got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+}
+
 func TestRuntimeErrorIncludesPrefixLocationAndContext(t *testing.T) {
 	evaluated := testEval("let arr: int[2] = {1, 2}; let i = 9; arr[i]")
 	errObj, ok := evaluated.(*object.Error)

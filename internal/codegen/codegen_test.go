@@ -1015,6 +1015,29 @@ func TestCodegenUnionWithThreeOrMoreTypes(t *testing.T) {
 	}
 }
 
+func TestCodegenAnyType(t *testing.T) {
+	asm, cg := generateAssembly(t, `let x: any = 3; x = "ok"; print(typeof(x)); print(typeofValue(x));`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "any") {
+		t.Fatalf("expected typeof(x) literal any, got:\n%s", asm)
+	}
+	if !strings.Contains(asm, "string") {
+		t.Fatalf("expected typeofValue(x) to resolve to runtime string after assignment, got:\n%s", asm)
+	}
+}
+
+func TestCodegenAnyTypeInfixWithKnownValue(t *testing.T) {
+	asm, cg := generateAssembly(t, `let x: any = 3; print(x + 4);`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "add %rcx, %rax") {
+		t.Fatalf("expected int add path for known any value, got:\n%s", asm)
+	}
+}
+
 func generateAssembly(t *testing.T, input string) (string, *CodeGen) {
 	t.Helper()
 	p := parser.New(lexer.New(input))

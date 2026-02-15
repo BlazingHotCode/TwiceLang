@@ -168,7 +168,7 @@ func resolveTypeBase(base string, resolve AliasResolver, visiting map[string]str
 
 func IsBuiltinTypeName(name string) bool {
 	switch name {
-	case "int", "bool", "float", "string", "char", "null", "type":
+	case "int", "bool", "float", "string", "char", "null", "type", "any":
 		return true
 	default:
 		return false
@@ -210,6 +210,12 @@ func IsAssignableTypeName(target, value string, resolve AliasResolver) bool {
 		value = resolved
 	}
 	if target == "" || target == "unknown" {
+		return true
+	}
+	if target == "any" {
+		return true
+	}
+	if value == "any" {
 		return true
 	}
 	if value == "null" {
@@ -479,6 +485,9 @@ func mergeUnionBases(a, b string) (string, bool) {
 	for _, x := range append(listA, listB...) {
 		if x == "" {
 			return "", false
+		}
+		if x == "any" {
+			return "any", true
 		}
 		if _, ok := seen[x]; ok {
 			continue

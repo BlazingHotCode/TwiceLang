@@ -539,7 +539,7 @@ func (cg *CodeGen) generateUserFunctionCall(fn *compiledFunction, ce *ast.CallEx
 			cg.emit("    mov $0, %%rax")
 			return
 		}
-		if want != typeUnknown && got != typeUnknown && got != typeNull && got != want && cg.parseTypeName(wantName) != typeArray {
+		if want != typeUnknown && want != typeAny && got != typeUnknown && got != typeNull && got != want && cg.parseTypeName(wantName) != typeArray {
 			cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", typeName(got), typeName(want)), ce)
 			cg.emit("    mov $0, %%rax")
 			return
@@ -648,7 +648,7 @@ func isBuiltinName(name string) bool {
 
 func isTypeLiteralIdentifier(name string) bool {
 	switch name {
-	case "int", "bool", "float", "string", "char", "null", "type":
+	case "int", "bool", "float", "string", "char", "null", "type", "any":
 		return true
 	default:
 		return false

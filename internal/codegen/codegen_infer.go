@@ -617,6 +617,8 @@ func (cg *CodeGen) parseTypeName(s string) valueType {
 		return typeChar
 	case "type":
 		return typeType
+	case "any":
+		return typeAny
 	case "null":
 		return typeNull
 	default:
@@ -720,7 +722,7 @@ func (cg *CodeGen) resolveTypeBase(base string, visiting map[string]struct{}) (s
 
 func isBuiltinTypeName(name string) bool {
 	switch name {
-	case "int", "bool", "float", "string", "char", "null", "type":
+	case "int", "bool", "float", "string", "char", "null", "type", "any":
 		return true
 	default:
 		return false
@@ -743,6 +745,8 @@ func typeName(t valueType) string {
 		return "null"
 	case typeType:
 		return "type"
+	case typeAny:
+		return "any"
 	case typeArray:
 		return "array"
 	default:

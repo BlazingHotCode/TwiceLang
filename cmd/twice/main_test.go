@@ -443,6 +443,43 @@ println(getY());
 	}
 }
 
+func TestCLIAnyTypeRuntimeFlow(t *testing.T) {
+	root := repoRoot(t)
+	ensureToolchain(t)
+
+	srcPath := filepath.Join(t.TempDir(), "any_runtime.tw")
+	source := `let x: any = 3;
+println(typeof(x));
+println(typeofValue(x));
+println(x + 4);
+x = "ok";
+println(typeof(x));
+println(typeofValue(x));
+println(x + "!");
+`
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	outputName := "twice_cli_any_runtime_bin"
+	outputPath := filepath.Join(root, outputName)
+	_ = os.Remove(outputPath)
+	t.Cleanup(func() { _ = os.Remove(outputPath) })
+
+	cmd := exec.Command("go", "run", "./cmd/twice", "-run", "-o", outputName, srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("compile/run failed: %v\n%s", err, out)
+	}
+	output := string(out)
+	for _, want := range []string{"\nany\n", "\nint\n", "\n7\n", "\nany\n", "\nstring\n", "\nok!\n"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("missing expected any-runtime output %q. full output:\n%s", want, output)
+		}
+	}
+}
+
 func TestCLICompileAndRunNewTypesTypeofAndCasts(t *testing.T) {
 	root := repoRoot(t)
 	ensureToolchain(t)

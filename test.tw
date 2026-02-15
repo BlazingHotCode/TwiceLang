@@ -344,6 +344,25 @@ fn demo_null_safe_and_coalesce() {
   return;
 }
 
+fn demo_any_type() {
+  header("any type");
+
+  let x: any = 3;
+  println(typeof(x));
+  println(typeofValue(x));
+  println(x + 4);
+
+  x = "ok";
+  println(typeof(x));
+  println(typeofValue(x));
+  println(x + "!");
+
+  x = true;
+  println(typeof(x));
+  println(typeofValue(x));
+  return;
+}
+
 fn main() {
   demo_types_and_casts();
   demo_operators();
@@ -352,5 +371,6 @@ fn main() {
   demo_functions();
   demo_arrays_unions_tuples();
   demo_null_safe_and_coalesce();
+  demo_any_type();
   return;
 }
