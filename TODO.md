@@ -12,22 +12,9 @@
 
 ## 1. Generics
 
-- Add generic type syntax using angle brackets, like Java: `Type<T>`.
-- Support generic declarations for user-defined types/functions in v1.
-- Support generic type aliases in v1 (for example `type Pair<T, U> = (T, U);`).
-- Support generic call syntax in expression context (not just type positions).
-- Use explicit generic type arguments by default.
-- For generic methods, allow inference only when mapping is unambiguous; otherwise require explicit type arguments.
 - Generic constraints are postponed until after inheritance.
-- Support nested generics in v1 (for example `List<List<int>>`).
-- In type context, parse `>>` as two generic closers when appropriate (not right-shift).
-- Implement generics with monomorphization.
-- Generate specializations on-demand for used instantiations only.
 - Support cross-module specialization in v1 (imports included).
-- Use readable mangled specialization names that include concrete type arguments.
-- Missing/wrong generic type-argument arity must be compile/codegen errors (not runtime).
 - Generic classes are supported by syntax plan, but are implemented together with class support.
-- Keep parser, evaluator, and codegen behavior aligned for generics.
 
 ## 2. Lists (Dynamic Arrays)
 
