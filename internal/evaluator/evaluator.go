@@ -87,6 +87,8 @@ var builtins = map[string]*object.Builtin{
 			switch obj := args[0].(type) {
 			case *object.Array:
 				return nativeBoolToBooleanObject(field.Value == "length" && obj != nil)
+			case *object.List:
+				return nativeBoolToBooleanObject(field.Value == "length" && obj != nil)
 			case *object.String:
 				return nativeBoolToBooleanObject(field.Value == "length" && obj != nil)
 			default:
@@ -363,6 +365,8 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		return annotateErrorWithNode(evalArrayLiteral(node, env), node)
 	case *ast.TupleLiteral:
 		return annotateErrorWithNode(evalTupleLiteral(node, env), node)
+	case *ast.NewExpression:
+		return annotateErrorWithNode(evalNewExpression(node, env), node)
 
 	case *ast.Boolean:
 		return nativeBoolToBooleanObject(node.Value)

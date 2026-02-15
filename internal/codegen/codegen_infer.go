@@ -211,6 +211,9 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) (out valueType) {
 		if leftTypeName == "string" {
 			return typeChar
 		}
+		if listElem, ok := peelListType(leftTypeName); ok {
+			return cg.parseTypeName(listElem)
+		}
 		elemTypeName, _, ok := peelArrayType(leftTypeName)
 		if !ok {
 			return typeUnknown
@@ -219,6 +222,24 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) (out valueType) {
 	case *ast.MethodCallExpression:
 		if e.Method != nil && e.Method.Value == "length" {
 			return typeInt
+		}
+		if e.Method != nil && e.Method.Value == "contains" {
+			return typeBool
+		}
+		if e.Method != nil && e.Method.Value == "append" {
+			return typeNull
+		}
+		if e.Method != nil && (e.Method.Value == "remove" || e.Method.Value == "pop") {
+			objTypeName := cg.inferExpressionTypeName(e.Object)
+			if resolved, ok := cg.normalizeTypeName(objTypeName); ok {
+				objTypeName = resolved
+			}
+			if elem, ok := peelListType(objTypeName); ok {
+				return cg.parseTypeName(elem)
+			}
+		}
+		if e.Method != nil && (e.Method.Value == "insert" || e.Method.Value == "clear") {
+			return typeNull
 		}
 		if e.NullSafe {
 			return typeNull
@@ -246,6 +267,15 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) (out valueType) {
 		return cg.parseTypeName(elem)
 	case *ast.NamedArgument:
 		return cg.inferExpressionType(e.Value)
+	case *ast.NewExpression:
+		typeName := e.TypeName
+		if resolved, ok := cg.normalizeTypeName(typeName); ok {
+			typeName = resolved
+		}
+		if _, ok := peelListType(typeName); ok {
+			return typeArray
+		}
+		return typeUnknown
 	default:
 		return typeUnknown
 	}
@@ -290,6 +320,9 @@ func (cg *CodeGen) inferExpressionTypeName(expr ast.Expression) (out string) {
 		if leftTypeName == "string" {
 			return "char"
 		}
+		if elem, ok := peelListType(leftTypeName); ok {
+			return elem
+		}
 		elem, _, ok := peelArrayType(leftTypeName)
 		if !ok {
 			return "unknown"
@@ -298,6 +331,25 @@ func (cg *CodeGen) inferExpressionTypeName(expr ast.Expression) (out string) {
 	case *ast.MethodCallExpression:
 		if e.Method != nil && e.Method.Value == "length" {
 			return "int"
+		}
+		if e.Method != nil && e.Method.Value == "contains" {
+			return "bool"
+		}
+		if e.Method != nil && e.Method.Value == "append" {
+			return "null"
+		}
+		if e.Method != nil && (e.Method.Value == "remove" || e.Method.Value == "pop") {
+			objTypeName := cg.inferExpressionTypeName(e.Object)
+			if resolved, ok := cg.normalizeTypeName(objTypeName); ok {
+				objTypeName = resolved
+			}
+			if elem, ok := peelListType(objTypeName); ok {
+				return elem
+			}
+			return "unknown"
+		}
+		if e.Method != nil && (e.Method.Value == "insert" || e.Method.Value == "clear") {
+			return "null"
 		}
 		if e.NullSafe {
 			return "null"
@@ -350,6 +402,12 @@ func (cg *CodeGen) inferExpressionTypeName(expr ast.Expression) (out string) {
 		if fn, ok := e.Function.(*ast.Identifier); ok && (fn.Value == "int" || fn.Value == "float" || fn.Value == "string" || fn.Value == "char" || fn.Value == "bool" || fn.Value == "typeof" || fn.Value == "typeofValue" || fn.Value == "typeofvalue") {
 			return typeName(cg.inferExpressionType(e))
 		}
+	case *ast.NewExpression:
+		typeName := e.TypeName
+		if resolved, ok := cg.normalizeTypeName(typeName); ok {
+			typeName = resolved
+		}
+		return typeName
 	}
 	return typeName(cg.inferExpressionType(expr))
 }
@@ -681,6 +739,9 @@ func (cg *CodeGen) parseTypeName(s string) valueType {
 	if _, dims, ok := parseTypeDescriptor(s); ok && len(dims) > 0 {
 		return typeArray
 	}
+	if _, ok := peelListType(s); ok {
+		return typeArray
+	}
 	switch s {
 	case "int":
 		return typeInt
@@ -742,6 +803,12 @@ func (cg *CodeGen) isKnownTypeNameWithParams(t string, typeParams map[string]str
 		return true
 	}
 	if gbase, gargs, ok := splitGenericType(base); ok {
+		if gbase == "List" {
+			if len(gargs) != 1 {
+				return false
+			}
+			return cg.isKnownTypeNameWithParams(gargs[0], typeParams)
+		}
 		if _, ok := cg.genericTypeAliases[gbase]; ok {
 			for _, a := range gargs {
 				if !cg.isKnownTypeNameWithParams(a, typeParams) {

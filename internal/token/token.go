@@ -85,6 +85,7 @@ const (
 	CONTINUE TokenType = "CONTINUE"
 	RETURN   TokenType = "RETURN"
 	NULL     TokenType = "NULL"
+	NEW      TokenType = "NEW"
 )
 
 // keywords maps string identifiers to their token type
@@ -105,6 +106,7 @@ var keywords = map[string]TokenType{
 	"continue": CONTINUE,
 	"return":   RETURN,
 	"null":     NULL,
+	"new":      NEW,
 }
 
 // LookupIdent checks if an identifier is a keyword

@@ -770,7 +770,7 @@ func TestCodegenMethodCallErrors(t *testing.T) {
 	if len(cg.Errors()) == 0 {
 		t.Fatalf("expected codegen error for length() on non-array")
 	}
-	if !strings.Contains(cg.Errors()[0], "length is only supported on arrays") {
+	if !strings.Contains(cg.Errors()[0], "length is only supported on arrays/lists") {
 		t.Fatalf("expected non-array length error, got: %v", cg.Errors())
 	}
 
@@ -788,6 +788,44 @@ func TestCodegenMethodCallErrors(t *testing.T) {
 	}
 	if !strings.Contains(cg.Errors()[0], "unknown method: missing") {
 		t.Fatalf("expected unknown method error, got: %v", cg.Errors())
+	}
+}
+
+func TestCodegenListConstructorAndMethods(t *testing.T) {
+	asm, cg := generateAssembly(t, "let xs: List<int> = new List<int>(1,2); xs.append(3); xs.insert(1,7); print(xs.length()); print(xs[1]); print(xs.remove(2)); print(xs.pop()); print(xs.contains(1)); xs.clear(); print(xs.length());")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	for _, want := range []string{
+		"call list_new",
+		"call list_append",
+		"call list_insert",
+		"call list_remove",
+		"call list_pop",
+		"call list_contains",
+		"call list_clear",
+		"call list_get",
+	} {
+		if !strings.Contains(asm, want) {
+			t.Fatalf("expected %q in assembly, got:\n%s", want, asm)
+		}
+	}
+}
+
+func TestCodegenListTypeValidation(t *testing.T) {
+	_, cg := generateAssembly(t, `let xs: List<int> = new List<int>(1, "x");`)
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen errors for list constructor type mismatch")
+	}
+
+	_, cg = generateAssembly(t, `let xs: List<int> = new List<int>(1,2); xs.append("x");`)
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen errors for append type mismatch")
+	}
+
+	_, cg = generateAssembly(t, `let xs: List<int> = new List<int>(1,2); xs[0] = "x";`)
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen errors for list index assign mismatch")
 	}
 }
 

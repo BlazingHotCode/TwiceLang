@@ -53,6 +53,7 @@ Notes:
 - Function calls with positional, named, and mixed arguments
 - Function calls before declaration (resolved by codegen)
 - Arrays with typed declarations, literals, indexing, mutation, `length()`, and `.length`
+- Generic lists (`List<T>`) with constructor syntax, indexing/mutation, `length`/`length()`, and list methods
 - Null-safe access/coalescing with `?.` and `??`
 - Union types (`type1||type2`) including array forms like `(int||string)[3]`
 - Tuple types and values: `(type1, type2, ...)` with tuple access `value.0`, `value.1`, ...
@@ -475,6 +476,35 @@ println(arr.length()); // 3
 ```
 
 Note: array type annotations require explicit sizes in every dimension (for example `int[3]`, `int[2][2]`, `(int||string)[3]`). Empty literals (`{}` / `()`) require type context.
+
+### Lists
+
+Dynamic lists use generic type syntax:
+
+```tw
+let xs: List<int> = new List<int>(1, 2);
+let empty: List<string> = new List<string>();
+```
+
+Supported list operations:
+
+```tw
+xs.append(3);        // null
+xs.insert(1, 7);     // null
+println(xs[1]);      // 7
+xs[1] = 8;
+println(xs.length);  // 3
+println(xs.length()); // 3
+println(xs.contains(2)); // bool||null
+println(xs.remove(1));   // T||null
+println(xs.pop());       // T||null
+xs.clear();              // null
+```
+
+Notes:
+
+- `List<T>` enforces element typing.
+- Out-of-range list indexing/get/set/remove/insert raises runtime error.
 
 ### Tuples
 

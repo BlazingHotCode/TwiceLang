@@ -73,6 +73,8 @@ func (cg *CodeGen) generateExpression(expr ast.Expression) {
 		cg.generateArrayLiteral(e)
 	case *ast.TupleLiteral:
 		cg.generateTupleLiteral(e)
+	case *ast.NewExpression:
+		cg.generateNewExpression(e)
 	case *ast.Boolean:
 		cg.generateBoolean(e)
 	case *ast.InfixExpression:
@@ -198,6 +200,40 @@ func (cg *CodeGen) generateTupleLiteral(tl *ast.TupleLiteral) {
 	cg.emit("    lea -%d(%%rbp), %%rax", baseOffset)
 }
 
+func (cg *CodeGen) generateNewExpression(ne *ast.NewExpression) {
+	if ne == nil {
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	typeName := ne.TypeName
+	if resolved, ok := cg.normalizeTypeName(typeName); ok {
+		typeName = resolved
+	}
+	elemType, ok := peelListType(typeName)
+	if !ok {
+		cg.addNodeError("new is only supported for List<T>", ne)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+
+	cg.emit("    mov $%d, %%rdi", len(ne.Arguments))
+	cg.emit("    call list_new")
+	cg.emit("    mov %%rax, %%rbx")
+	for _, arg := range ne.Arguments {
+		argType := cg.inferExpressionTypeName(arg)
+		if argType != "unknown" && !cg.isAssignableTypeName(elemType, argType) {
+			cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", argType, elemType), arg)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		cg.generateExpression(arg)
+		cg.emit("    mov %%rbx, %%rdi")
+		cg.emit("    mov %%rax, %%rsi")
+		cg.emit("    call list_append")
+	}
+	cg.emit("    mov %%rbx, %%rax")
+}
+
 func (cg *CodeGen) pickTypedEmptyLiteralTarget(typeName string, wantArray bool) (string, bool) {
 	target := typeName
 	if resolved, ok := cg.normalizeTypeName(typeName); ok {
@@ -302,7 +338,7 @@ func (cg *CodeGen) generateIndexExpression(ie *ast.IndexExpression) {
 	}
 	leftTypeName := cg.inferExpressionTypeName(ie.Left)
 	if id, ok := ie.Left.(*ast.Identifier); ok && cg.varIsNull[id.Value] && leftTypeName != "string" {
-		cg.addNodeError("cannot index null array", ie)
+		cg.addNodeError("cannot index null array/list", ie)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
@@ -352,9 +388,18 @@ func (cg *CodeGen) generateIndexExpression(ie *ast.IndexExpression) {
 	if normalized, ok := cg.normalizeTypeName(leftTypeName); ok {
 		resolvedLeftTypeName = normalized
 	}
+	if _, ok := peelListType(resolvedLeftTypeName); ok {
+		cg.generateExpression(ie.Left) // list pointer
+		cg.emit("    push %%rax")
+		cg.generateExpression(ie.Index)
+		cg.emit("    pop %%rdi")
+		cg.emit("    mov %%rax, %%rsi")
+		cg.emit("    call list_get")
+		return
+	}
 	elemTypeName, arrLen, ok := peelArrayType(resolvedLeftTypeName)
 	if !ok {
-		cg.addNodeError("index operator not supported for non-array/string type", ie)
+		cg.addNodeError("index operator not supported for non-array/string/list type", ie)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
@@ -406,6 +451,18 @@ func (cg *CodeGen) generateMethodByName(mce *ast.MethodCallExpression, nullSafe 
 	switch mce.Method.Value {
 	case "length":
 		cg.generateArrayLengthMethod(mce, nullSafe)
+	case "append":
+		cg.generateListAppendMethod(mce, nullSafe)
+	case "remove":
+		cg.generateListRemoveMethod(mce, nullSafe)
+	case "insert":
+		cg.generateListInsertMethod(mce, nullSafe)
+	case "pop":
+		cg.generateListPopMethod(mce, nullSafe)
+	case "contains":
+		cg.generateListContainsMethod(mce, nullSafe)
+	case "clear":
+		cg.generateListClearMethod(mce, nullSafe)
 	default:
 		cg.generateUnknownMethodError(mce, nullSafe)
 	}
@@ -453,13 +510,18 @@ func (cg *CodeGen) generateArrayLengthMethod(mce *ast.MethodCallExpression, null
 		cg.emit("    mov $0, %%rax")
 		return
 	}
-	n, ok := cg.resolveArrayLengthForAccess(mce.Object, mce.NullSafe)
+	if _, ok := cg.resolveListElementTypeForAccess(mce.Object, mce.NullSafe); ok {
+		cg.generateExpression(mce.Object)
+		cg.emit("    mov (%%rax), %%rax")
+		return
+	}
+	n, ok := cg.resolveLengthForAccess(mce.Object, mce.NullSafe)
 	if !ok {
 		if nullSafe {
 			cg.emit("    lea null_lit(%%rip), %%rax")
 			return
 		}
-		cg.addNodeError("length is only supported on arrays", mce)
+		cg.addNodeError("length is only supported on arrays/lists", mce)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
@@ -473,13 +535,18 @@ func (cg *CodeGen) generateArrayLengthMethod(mce *ast.MethodCallExpression, null
 
 func (cg *CodeGen) generateArrayLengthProperty(object ast.Expression, node ast.Node, nullSafe bool) {
 	_, allowNullable := node.(*ast.NullSafeAccessExpression)
-	n, ok := cg.resolveArrayLengthForAccess(object, allowNullable)
+	if _, ok := cg.resolveListElementTypeForAccess(object, allowNullable); ok {
+		cg.generateExpression(object)
+		cg.emit("    mov (%%rax), %%rax")
+		return
+	}
+	n, ok := cg.resolveLengthForAccess(object, allowNullable)
 	if !ok {
 		if nullSafe {
 			cg.emit("    lea null_lit(%%rip), %%rax")
 			return
 		}
-		cg.addNodeError("length is only supported on arrays", node)
+		cg.addNodeError("length is only supported on arrays/lists", node)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
@@ -491,12 +558,52 @@ func (cg *CodeGen) generateArrayLengthProperty(object ast.Expression, node ast.N
 	cg.emit("    mov $%d, %%rax", n)
 }
 
-func (cg *CodeGen) resolveArrayLengthForAccess(object ast.Expression, allowNullable bool) (int, bool) {
+func (cg *CodeGen) resolveListElementTypeForAccess(object ast.Expression, allowNullable bool) (string, bool) {
 	typeName := cg.inferExpressionTypeName(object)
 	if resolved, ok := cg.normalizeTypeName(typeName); ok {
 		typeName = resolved
 	}
+	if elem, ok := peelListType(typeName); ok {
+		return elem, true
+	}
+	if !allowNullable {
+		return "", false
+	}
+	parts, isUnion := splitTopLevelUnion(typeName)
+	if !isUnion {
+		return "", false
+	}
+	found := false
+	elemType := ""
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" || part == "null" {
+			continue
+		}
+		elem, ok := peelListType(part)
+		if !ok {
+			return "", false
+		}
+		if !found {
+			found = true
+			elemType = elem
+			continue
+		}
+		if elemType != elem {
+			return "", false
+		}
+	}
+	if !found {
+		return "", false
+	}
+	return elemType, true
+}
 
+func (cg *CodeGen) resolveLengthForAccess(object ast.Expression, allowNullable bool) (int, bool) {
+	typeName := cg.inferExpressionTypeName(object)
+	if resolved, ok := cg.normalizeTypeName(typeName); ok {
+		typeName = resolved
+	}
 	_, n, ok := peelArrayType(typeName)
 	if ok {
 		return n, true
@@ -543,6 +650,9 @@ func (cg *CodeGen) typeSupportsLengthField(typeName string) (supports bool, null
 	if _, _, ok := peelArrayType(typeName); ok {
 		return true, false
 	}
+	if _, ok := peelListType(typeName); ok {
+		return true, false
+	}
 	if typeName == "string" {
 		return true, false
 	}
@@ -562,6 +672,10 @@ func (cg *CodeGen) typeSupportsLengthField(typeName string) (supports bool, null
 			sawSupported = true
 			continue
 		}
+		if _, ok := peelListType(part); ok {
+			sawSupported = true
+			continue
+		}
 		if part == "string" {
 			sawSupported = true
 			continue
@@ -578,6 +692,204 @@ func (cg *CodeGen) generateUnknownMethodError(mce *ast.MethodCallExpression, nul
 	}
 	cg.addNodeError("unknown method: "+mce.Method.Value, mce)
 	cg.emit("    mov $0, %%rax")
+}
+
+func (cg *CodeGen) generateListAppendMethod(mce *ast.MethodCallExpression, nullSafe bool) {
+	if len(mce.Arguments) != 1 {
+		if nullSafe {
+			cg.emit("    lea null_lit(%%rip), %%rax")
+			return
+		}
+		cg.addNodeError(fmt.Sprintf("append expects 1 argument, got=%d", len(mce.Arguments)), mce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	elemType, ok := cg.resolveListElementTypeForAccess(mce.Object, mce.NullSafe)
+	if !ok {
+		if nullSafe {
+			cg.emit("    lea null_lit(%%rip), %%rax")
+			return
+		}
+		cg.addNodeError("append is only supported on lists", mce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	argType := cg.inferExpressionTypeName(mce.Arguments[0])
+	if argType != "unknown" && !cg.isAssignableTypeName(elemType, argType) {
+		cg.addNodeError(fmt.Sprintf("cannot append %s to %s", argType, withListElement(elemType)), mce.Arguments[0])
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	cg.generateExpression(mce.Object)
+	cg.emit("    push %%rax")
+	cg.generateExpression(mce.Arguments[0])
+	cg.emit("    mov %%rax, %%rsi")
+	cg.emit("    pop %%rdi")
+	cg.emit("    call list_append")
+	cg.emit("    lea null_lit(%%rip), %%rax")
+}
+
+func (cg *CodeGen) generateListPopMethod(mce *ast.MethodCallExpression, nullSafe bool) {
+	if len(mce.Arguments) != 0 {
+		if nullSafe {
+			cg.emit("    lea null_lit(%%rip), %%rax")
+			return
+		}
+		cg.addNodeError(fmt.Sprintf("pop expects 0 arguments, got=%d", len(mce.Arguments)), mce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if _, ok := cg.resolveListElementTypeForAccess(mce.Object, mce.NullSafe); !ok {
+		if nullSafe {
+			cg.emit("    lea null_lit(%%rip), %%rax")
+			return
+		}
+		cg.addNodeError("pop is only supported on lists", mce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	cg.generateExpression(mce.Object)
+	cg.emit("    mov %%rax, %%rdi")
+	cg.emit("    call list_pop")
+}
+
+func (cg *CodeGen) generateListClearMethod(mce *ast.MethodCallExpression, nullSafe bool) {
+	if len(mce.Arguments) != 0 {
+		if nullSafe {
+			cg.emit("    lea null_lit(%%rip), %%rax")
+			return
+		}
+		cg.addNodeError(fmt.Sprintf("clear expects 0 arguments, got=%d", len(mce.Arguments)), mce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if _, ok := cg.resolveListElementTypeForAccess(mce.Object, mce.NullSafe); !ok {
+		if nullSafe {
+			cg.emit("    lea null_lit(%%rip), %%rax")
+			return
+		}
+		cg.addNodeError("clear is only supported on lists", mce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	cg.generateExpression(mce.Object)
+	cg.emit("    mov %%rax, %%rdi")
+	cg.emit("    call list_clear")
+	cg.emit("    lea null_lit(%%rip), %%rax")
+}
+
+func (cg *CodeGen) generateListRemoveMethod(mce *ast.MethodCallExpression, nullSafe bool) {
+	if len(mce.Arguments) != 1 {
+		if nullSafe {
+			cg.emit("    lea null_lit(%%rip), %%rax")
+			return
+		}
+		cg.addNodeError(fmt.Sprintf("remove expects 1 argument, got=%d", len(mce.Arguments)), mce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if _, ok := cg.resolveListElementTypeForAccess(mce.Object, mce.NullSafe); !ok {
+		if nullSafe {
+			cg.emit("    lea null_lit(%%rip), %%rax")
+			return
+		}
+		cg.addNodeError("remove is only supported on lists", mce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if cg.inferExpressionType(mce.Arguments[0]) != typeInt {
+		cg.addNodeError("remove index must be int", mce.Arguments[0])
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	cg.generateExpression(mce.Object)
+	cg.emit("    push %%rax")
+	cg.generateExpression(mce.Arguments[0])
+	cg.emit("    mov %%rax, %%rsi")
+	cg.emit("    pop %%rdi")
+	cg.emit("    call list_remove")
+}
+
+func (cg *CodeGen) generateListInsertMethod(mce *ast.MethodCallExpression, nullSafe bool) {
+	if len(mce.Arguments) != 2 {
+		if nullSafe {
+			cg.emit("    lea null_lit(%%rip), %%rax")
+			return
+		}
+		cg.addNodeError(fmt.Sprintf("insert expects 2 arguments, got=%d", len(mce.Arguments)), mce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	elemType, ok := cg.resolveListElementTypeForAccess(mce.Object, mce.NullSafe)
+	if !ok {
+		if nullSafe {
+			cg.emit("    lea null_lit(%%rip), %%rax")
+			return
+		}
+		cg.addNodeError("insert is only supported on lists", mce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if cg.inferExpressionType(mce.Arguments[0]) != typeInt {
+		cg.addNodeError("insert index must be int", mce.Arguments[0])
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	valueType := cg.inferExpressionTypeName(mce.Arguments[1])
+	if valueType != "unknown" && !cg.isAssignableTypeName(elemType, valueType) {
+		cg.addNodeError(fmt.Sprintf("cannot insert %s into %s", valueType, withListElement(elemType)), mce.Arguments[1])
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	cg.generateExpression(mce.Object)
+	cg.emit("    push %%rax")
+	cg.generateExpression(mce.Arguments[0])
+	cg.emit("    push %%rax")
+	cg.generateExpression(mce.Arguments[1])
+	cg.emit("    mov %%rax, %%rdx")
+	cg.emit("    pop %%rsi")
+	cg.emit("    pop %%rdi")
+	cg.emit("    call list_insert")
+	cg.emit("    lea null_lit(%%rip), %%rax")
+}
+
+func (cg *CodeGen) generateListContainsMethod(mce *ast.MethodCallExpression, nullSafe bool) {
+	if len(mce.Arguments) != 1 {
+		if nullSafe {
+			cg.emit("    lea null_lit(%%rip), %%rax")
+			return
+		}
+		cg.addNodeError(fmt.Sprintf("contains expects 1 argument, got=%d", len(mce.Arguments)), mce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	elemType, ok := cg.resolveListElementTypeForAccess(mce.Object, mce.NullSafe)
+	if !ok {
+		if nullSafe {
+			cg.emit("    lea null_lit(%%rip), %%rax")
+			return
+		}
+		cg.addNodeError("contains is only supported on lists", mce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	argType := cg.inferExpressionTypeName(mce.Arguments[0])
+	comparable := argType == "unknown" || cg.isAssignableTypeName(elemType, argType) || cg.isAssignableTypeName(argType, elemType)
+	if !comparable {
+		cg.emit("    lea null_lit(%%rip), %%rax")
+		return
+	}
+	cg.generateExpression(mce.Object)
+	cg.emit("    push %%rax")
+	cg.generateExpression(mce.Arguments[0])
+	cg.emit("    mov %%rax, %%rsi")
+	cg.emit("    pop %%rdi")
+	if elemType == "string" {
+		cg.emit("    mov $1, %%rdx")
+	} else {
+		cg.emit("    xor %%rdx, %%rdx")
+	}
+	cg.emit("    call list_contains")
 }
 
 func (cg *CodeGen) emitNullSafeObjectGuard(object ast.Expression) string {
@@ -1282,7 +1594,7 @@ func (cg *CodeGen) generateIndexAssign(ias *ast.IndexAssignStatement) {
 		return
 	}
 	if cg.varIsNull[name] {
-		cg.addNodeError("cannot index null array", ias)
+		cg.addNodeError("cannot index null array/list", ias)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
@@ -1290,6 +1602,31 @@ func (cg *CodeGen) generateIndexAssign(ias *ast.IndexAssignStatement) {
 	arrTypeName := cg.varTypeNames[name]
 	if normalized, ok := cg.normalizeTypeName(arrTypeName); ok {
 		arrTypeName = normalized
+	}
+	if elemTypeName, ok := peelListType(arrTypeName); ok {
+		if cg.inferExpressionType(ias.Left.Index) != typeInt {
+			cg.addNodeError("list index must be int", ias.Left.Index)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		valueTypeName := cg.inferExpressionTypeName(ias.Value)
+		if valueTypeName != "unknown" && !cg.isAssignableTypeName(elemTypeName, valueTypeName) {
+			cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", valueTypeName, elemTypeName), ias)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		cg.generateExpression(ias.Value)
+		cg.emit("    push %%rax")
+		cg.generateExpression(ias.Left.Index)
+		cg.emit("    mov %%rax, %%rsi")
+		cg.emit("    pop %%rdx")
+		cg.emit("    mov -%d(%%rbp), %%rdi", offset)
+		cg.emit("    call list_set")
+		cg.emit("    mov %%rdx, %%rax")
+		cg.varValueTypeName[name] = arrTypeName
+		cg.varIsNull[name] = false
+		delete(cg.varFuncs, name)
+		return
 	}
 	elemTypeName, arrLen, ok := peelArrayType(arrTypeName)
 	if !ok {

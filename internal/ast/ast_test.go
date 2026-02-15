@@ -29,6 +29,7 @@ func TestProgramAndNodeStrings(t *testing.T) {
 	fnLit := &FunctionLiteral{Token: tok(token.FUNCTION, "fn"), Name: &Identifier{Token: tok(token.IDENT, "add"), Value: "add"}, Parameters: []*FunctionParameter{fnParam}, ReturnType: "int", Body: blk}
 	fnStmt := &FunctionStatement{Token: tok(token.FUNCTION, "fn"), Name: fnLit.Name, Function: fnLit}
 	call := &CallExpression{Token: tok(token.LPAREN, "("), Function: fnLit.Name, Arguments: []Expression{int1, idY}}
+	newExpr := &NewExpression{Token: tok(token.NEW, "new"), TypeName: "List<int>", Arguments: []Expression{int1}}
 	meth := &MethodCallExpression{Token: tok(token.DOT, "."), Object: idX, Method: &Identifier{Token: tok(token.IDENT, "length"), Value: "length"}, Arguments: []Expression{}, NullSafe: true}
 	macc := &MemberAccessExpression{Token: tok(token.DOT, "."), Object: idX, Property: idY}
 	tacc := &TupleAccessExpression{Token: tok(token.DOT, "."), Left: tuple, Index: 1}
@@ -57,7 +58,7 @@ func TestProgramAndNodeStrings(t *testing.T) {
 		t.Fatalf("program stringify/token literal empty")
 	}
 
-	exprs := []Expression{idX, int1, flt, str, chr, null, arr, tuple, &Boolean{Token: tok(token.TRUE, "true"), Value: true}, pref, infx, idx, ifx, fnLit, call, meth, macc, tacc, narg, nsafe}
+	exprs := []Expression{idX, int1, flt, str, chr, null, arr, tuple, &Boolean{Token: tok(token.TRUE, "true"), Value: true}, pref, infx, idx, ifx, fnLit, call, newExpr, meth, macc, tacc, narg, nsafe}
 	for _, e := range exprs {
 		if e.TokenLiteral() == "" {
 			t.Fatalf("empty token literal for %T", e)

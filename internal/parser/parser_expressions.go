@@ -202,6 +202,25 @@ func (p *Parser) parseNullLiteral() ast.Expression {
 	return &ast.NullLiteral{Token: p.curToken}
 }
 
+func (p *Parser) parseNewExpression() ast.Expression {
+	exp := &ast.NewExpression{Token: p.curToken}
+
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	typeName, ok := p.parseTypeTermFromCurrent()
+	if !ok {
+		return nil
+	}
+	exp.TypeName = typeName
+
+	if !p.expectPeek(token.LPAREN) {
+		return nil
+	}
+	exp.Arguments = p.parseCallArguments()
+	return exp
+}
+
 func (p *Parser) parseArrayLiteral() ast.Expression {
 	lit := &ast.ArrayLiteral{Token: p.curToken}
 	lit.Elements = []ast.Expression{}

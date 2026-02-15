@@ -71,6 +71,22 @@ func tupleMemberType(typeName string, idx int) (string, bool) {
 	return typesys.TupleMemberType(typeName, idx)
 }
 
+func peelListType(t string) (string, bool) {
+	base, dims, ok := typesys.ParseTypeDescriptor(t)
+	if !ok || len(dims) != 0 {
+		return "", false
+	}
+	gbase, gargs, ok := typesys.SplitGenericType(base)
+	if !ok || gbase != "List" || len(gargs) != 1 {
+		return "", false
+	}
+	return gargs[0], true
+}
+
+func withListElement(elem string) string {
+	return "List<" + elem + ">"
+}
+
 func mergeUnionBases(a, b string) (string, bool) {
 	if merged, ok := typesys.MergeTypeNames(a, b, nil); ok {
 		base, dims, ok := typesys.ParseTypeDescriptor(merged)

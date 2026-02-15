@@ -581,6 +581,29 @@ func (fs *FunctionStatement) String() string {
 	return ""
 }
 
+// NewExpression represents: new <TypeName>(<arguments>)
+type NewExpression struct {
+	Token    token.Token // The NEW token
+	TypeName string
+	Arguments []Expression
+}
+
+func (ne *NewExpression) expressionNode()      {}
+func (ne *NewExpression) TokenLiteral() string { return ne.Token.Literal }
+func (ne *NewExpression) String() string {
+	var out bytes.Buffer
+	args := make([]string, 0, len(ne.Arguments))
+	for _, a := range ne.Arguments {
+		args = append(args, a.String())
+	}
+	out.WriteString("new ")
+	out.WriteString(ne.TypeName)
+	out.WriteString("(")
+	out.WriteString(strings.Join(args, ", "))
+	out.WriteString(")")
+	return out.String()
+}
+
 // CallExpression represents <function>(<arguments>)
 type CallExpression struct {
 	Token         token.Token // The ( token

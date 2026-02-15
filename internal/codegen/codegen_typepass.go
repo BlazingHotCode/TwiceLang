@@ -121,6 +121,10 @@ func (cg *CodeGen) annotateExpressionTypes(expr ast.Expression) {
 		cg.annotateExpressionTypes(e.Object)
 	case *ast.TupleAccessExpression:
 		cg.annotateExpressionTypes(e.Left)
+	case *ast.NewExpression:
+		for _, a := range e.Arguments {
+			cg.annotateExpressionTypes(a)
+		}
 	case *ast.NamedArgument:
 		cg.annotateExpressionTypes(e.Value)
 	}

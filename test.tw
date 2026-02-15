@@ -363,6 +363,24 @@ fn demo_any_type() {
   return;
 }
 
+fn demo_lists() {
+  header("lists");
+
+  let xs: List<int> = new List<int>(1, 2);
+  xs.append(3);
+  xs.insert(1, 7);
+  println(xs.length());
+  println(xs[1]);
+  xs[1] = 8;
+  println(xs[1]);
+  println(xs.contains(2));
+  println(xs.remove(2));
+  println(xs.pop());
+  xs.clear();
+  println(xs.length());
+  return;
+}
+
 fn demo_generics() {
   header("generics");
 
@@ -395,6 +413,7 @@ fn main() {
   demo_arrays_unions_tuples();
   demo_null_safe_and_coalesce();
   demo_any_type();
+  demo_lists();
   demo_generics();
   return;
 }

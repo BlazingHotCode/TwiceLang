@@ -676,6 +676,32 @@ func TestGenericCallSyntaxParses(t *testing.T) {
 	}
 }
 
+func TestNewListExpressionParses(t *testing.T) {
+	p := New(lexer.New(`let xs: List<int> = new List<int>(1, 2, 3);`))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	ls, ok := program.Statements[0].(*ast.LetStatement)
+	if !ok {
+		t.Fatalf("expected let statement, got=%T", program.Statements[0])
+	}
+	if ls.TypeName != "List<int>" {
+		t.Fatalf("expected List<int> type annotation, got=%q", ls.TypeName)
+	}
+	nx, ok := ls.Value.(*ast.NewExpression)
+	if !ok {
+		t.Fatalf("expected new expression, got=%T", ls.Value)
+	}
+	if nx.TypeName != "List<int>" {
+		t.Fatalf("expected new List<int>, got=%q", nx.TypeName)
+	}
+	if len(nx.Arguments) != 3 {
+		t.Fatalf("expected 3 constructor args, got=%d", len(nx.Arguments))
+	}
+}
+
 func TestLessThanStillParsesAsInfix(t *testing.T) {
 	p := New(lexer.New(`let x = a < b;`))
 	program := p.ParseProgram()

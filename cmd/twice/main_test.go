@@ -187,6 +187,81 @@ fn main() {
 	}
 }
 
+func TestCLICompileAndRunListFeature(t *testing.T) {
+	root := repoRoot(t)
+	ensureToolchain(t)
+
+	srcPath := filepath.Join(t.TempDir(), "list.tw")
+	source := `
+fn main() int {
+  let xs: List<int> = new List<int>(1, 2);
+  xs.append(3);
+  xs.insert(1, 7);
+  println(xs.length());
+  println(xs[1]);
+  println(xs.remove(2));
+  println(xs.pop());
+  println(xs.contains(1));
+  xs.clear();
+  println(xs.length());
+  return 0;
+}
+`
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	outputName := "twice_cli_list_bin"
+	outputPath := filepath.Join(root, outputName)
+	_ = os.Remove(outputPath)
+	t.Cleanup(func() { _ = os.Remove(outputPath) })
+
+	cmd := exec.Command("go", "run", "./cmd/twice", "-run", "-o", outputName, srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("compile/run failed: %v\n%s", err, out)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "\n4\n7\n2\n3\ntrue\n0\n") {
+		t.Fatalf("expected list runtime output. output:\n%s", output)
+	}
+}
+
+func TestCLIListRuntimeErrorFormatting(t *testing.T) {
+	root := repoRoot(t)
+	ensureToolchain(t)
+
+	srcPath := filepath.Join(t.TempDir(), "list_oob.tw")
+	source := `
+fn main() int {
+  let xs: List<int> = new List<int>(1, 2);
+  println(xs[9]);
+  return 0;
+}
+`
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	outputName := "twice_cli_list_oob_bin"
+	outputPath := filepath.Join(root, outputName)
+	_ = os.Remove(outputPath)
+	t.Cleanup(func() { _ = os.Remove(outputPath) })
+
+	cmd := exec.Command("go", "run", "./cmd/twice", "-run", "-o", outputName, srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected runtime failure for out-of-bounds list access. output:\n%s", out)
+	}
+	output := string(out)
+	if !strings.Contains(output, "Runtime error: list index out of bounds") {
+		t.Fatalf("missing list runtime error output. output:\n%s", output)
+	}
+}
+
 func TestCLICodegenErrorForPrintArity(t *testing.T) {
 	root := repoRoot(t)
 

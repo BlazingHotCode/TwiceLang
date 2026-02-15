@@ -23,6 +23,12 @@ func evalIndexExpression(left object.Object, index object.Object) object.Object 
 		}
 		return arr.Elements[idx]
 	}
+	if list, ok := left.(*object.List); ok {
+		if idx < 0 || idx >= len(list.Elements) {
+			return newError("list index out of bounds: %d", idx)
+		}
+		return list.Elements[idx]
+	}
 
 	if str, ok := left.(*object.String); ok {
 		if idx < 0 || idx >= len(str.Value) {
@@ -53,7 +59,32 @@ func evalIndexAssignStatement(node *ast.IndexAssignStatement, env *object.Enviro
 	}
 	arr, ok := targetObj.(*object.Array)
 	if !ok {
-		return newError("indexed assignment target is not an array")
+		list, ok := targetObj.(*object.List)
+		if !ok {
+			return newError("indexed assignment target is not an array/list")
+		}
+		indexObj := Eval(node.Left.Index, env)
+		if isError(indexObj) {
+			return indexObj
+		}
+		idxInt, ok := indexObj.(*object.Integer)
+		if !ok {
+			return newError("list index must be int, got %s", runtimeTypeName(indexObj))
+		}
+		idx := int(idxInt.Value)
+		if idx < 0 || idx >= len(list.Elements) {
+			return newError("list index out of bounds: %d", idx)
+		}
+		val := Eval(node.Value, env)
+		if isError(val) {
+			return val
+		}
+		valType := runtimeTypeName(val)
+		if !isAssignableToType(list.ElementType, valType, env) {
+			return newError("cannot assign %s to %s", valType, list.ElementType)
+		}
+		list.Elements[idx] = val
+		return val
 	}
 
 	indexObj := Eval(node.Left.Index, env)
@@ -104,13 +135,184 @@ func evalMethodCallExpression(node *ast.MethodCallExpression, env *object.Enviro
 			return newError("length expects 0 arguments, got=%d", len(node.Arguments))
 		}
 		arr, ok := obj.(*object.Array)
+		if ok {
+			return &object.Integer{Value: int64(len(arr.Elements))}
+		}
+		list, ok := obj.(*object.List)
+		if ok {
+			return &object.Integer{Value: int64(len(list.Elements))}
+		}
 		if !ok {
 			if node.NullSafe {
 				return NULL
 			}
-			return newError("length is only supported on arrays")
+			return newError("length is only supported on arrays/lists")
 		}
 		return &object.Integer{Value: int64(len(arr.Elements))}
+	case "append":
+		list, ok := obj.(*object.List)
+		if !ok {
+			if node.NullSafe {
+				return NULL
+			}
+			return newError("append is only supported on lists")
+		}
+		if len(node.Arguments) != 1 {
+			if node.NullSafe {
+				return NULL
+			}
+			return newError("append expects 1 argument, got=%d", len(node.Arguments))
+		}
+		val := Eval(node.Arguments[0], env)
+		if isError(val) {
+			return val
+		}
+		valType := runtimeTypeName(val)
+		if valType == "null" && !typeAllowsNull(list.ElementType, env) {
+			return newError("cannot append null to %s", list.ElementType)
+		}
+		if !isAssignableToType(list.ElementType, valType, env) {
+			return newError("cannot assign %s to %s", valType, list.ElementType)
+		}
+		list.Elements = append(list.Elements, val)
+		return NULL
+	case "pop":
+		list, ok := obj.(*object.List)
+		if !ok {
+			if node.NullSafe {
+				return NULL
+			}
+			return newError("pop is only supported on lists")
+		}
+		if len(node.Arguments) != 0 {
+			if node.NullSafe {
+				return NULL
+			}
+			return newError("pop expects 0 arguments, got=%d", len(node.Arguments))
+		}
+		if len(list.Elements) == 0 {
+			return NULL
+		}
+		last := list.Elements[len(list.Elements)-1]
+		list.Elements = list.Elements[:len(list.Elements)-1]
+		return last
+	case "clear":
+		list, ok := obj.(*object.List)
+		if !ok {
+			if node.NullSafe {
+				return NULL
+			}
+			return newError("clear is only supported on lists")
+		}
+		if len(node.Arguments) != 0 {
+			if node.NullSafe {
+				return NULL
+			}
+			return newError("clear expects 0 arguments, got=%d", len(node.Arguments))
+		}
+		list.Elements = nil
+		return NULL
+	case "remove":
+		list, ok := obj.(*object.List)
+		if !ok {
+			if node.NullSafe {
+				return NULL
+			}
+			return newError("remove is only supported on lists")
+		}
+		if len(node.Arguments) != 1 {
+			if node.NullSafe {
+				return NULL
+			}
+			return newError("remove expects 1 argument, got=%d", len(node.Arguments))
+		}
+		rawIdx := Eval(node.Arguments[0], env)
+		if isError(rawIdx) {
+			return rawIdx
+		}
+		idxObj, ok := rawIdx.(*object.Integer)
+		if !ok {
+			return newError("remove index must be int, got %s", runtimeTypeName(rawIdx))
+		}
+		idx := int(idxObj.Value)
+		if idx < 0 || idx >= len(list.Elements) {
+			return newError("list index out of bounds: %d", idx)
+		}
+		removed := list.Elements[idx]
+		list.Elements = append(list.Elements[:idx], list.Elements[idx+1:]...)
+		return removed
+	case "insert":
+		list, ok := obj.(*object.List)
+		if !ok {
+			if node.NullSafe {
+				return NULL
+			}
+			return newError("insert is only supported on lists")
+		}
+		if len(node.Arguments) != 2 {
+			if node.NullSafe {
+				return NULL
+			}
+			return newError("insert expects 2 arguments, got=%d", len(node.Arguments))
+		}
+		rawIdx := Eval(node.Arguments[0], env)
+		if isError(rawIdx) {
+			return rawIdx
+		}
+		idxObj, ok := rawIdx.(*object.Integer)
+		if !ok {
+			return newError("insert index must be int, got %s", runtimeTypeName(rawIdx))
+		}
+		idx := int(idxObj.Value)
+		if idx < 0 || idx > len(list.Elements) {
+			return newError("list index out of bounds: %d", idx)
+		}
+		val := Eval(node.Arguments[1], env)
+		if isError(val) {
+			return val
+		}
+		valType := runtimeTypeName(val)
+		if valType == "null" && !typeAllowsNull(list.ElementType, env) {
+			return newError("cannot insert null into %s", list.ElementType)
+		}
+		if !isAssignableToType(list.ElementType, valType, env) {
+			return newError("cannot assign %s to %s", valType, list.ElementType)
+		}
+		list.Elements = append(list.Elements, NULL)
+		copy(list.Elements[idx+1:], list.Elements[idx:])
+		list.Elements[idx] = val
+		return NULL
+	case "contains":
+		list, ok := obj.(*object.List)
+		if !ok {
+			if node.NullSafe {
+				return NULL
+			}
+			return newError("contains is only supported on lists")
+		}
+		if len(node.Arguments) != 1 {
+			if node.NullSafe {
+				return NULL
+			}
+			return newError("contains expects 1 argument, got=%d", len(node.Arguments))
+		}
+		val := Eval(node.Arguments[0], env)
+		if isError(val) {
+			return val
+		}
+		valType := runtimeTypeName(val)
+		if !isAssignableToType(list.ElementType, valType, env) && !isAssignableToType(valType, list.ElementType, env) {
+			return NULL
+		}
+		for _, el := range list.Elements {
+			if runtimeTypeName(el) != valType {
+				continue
+			}
+			if eq := evalInfixExpression("==", el, val); eq == TRUE {
+				return TRUE
+			}
+		}
+		return FALSE
 	default:
 		if node.NullSafe {
 			return NULL
@@ -129,18 +331,60 @@ func evalMemberAccess(obj object.Object, property *ast.Identifier, nullSafe bool
 	switch property.Value {
 	case "length":
 		arr, ok := obj.(*object.Array)
-		if !ok {
-			if nullSafe {
-				return NULL
-			}
-			return newError("length is only supported on arrays")
+		if ok {
+			return &object.Integer{Value: int64(len(arr.Elements))}
 		}
-		return &object.Integer{Value: int64(len(arr.Elements))}
+		list, ok := obj.(*object.List)
+		if ok {
+			return &object.Integer{Value: int64(len(list.Elements))}
+		}
+		if nullSafe {
+			return NULL
+		}
+		return newError("length is only supported on arrays/lists")
 	default:
 		if nullSafe {
 			return NULL
 		}
 		return newError("unknown member: %s", property.Value)
+	}
+}
+
+func evalNewExpression(node *ast.NewExpression, env *object.Environment) object.Object {
+	if node == nil {
+		return newError("invalid new expression")
+	}
+	typeName := normalizeTypeName(node.TypeName, env)
+	base, _, ok := parseTypeName(typeName)
+	if !ok {
+		return newError("invalid type in new expression: %s", node.TypeName)
+	}
+	gbase, gargs, isGeneric := typesys.SplitGenericType(base)
+	if !isGeneric || gbase != "List" {
+		return newError("new is only supported for List<T>")
+	}
+	if len(gargs) != 1 {
+		return newError("wrong number of generic type arguments for List: expected 1, got %d", len(gargs))
+	}
+	elemType := gargs[0]
+	elems := make([]object.Object, 0, len(node.Arguments))
+	for _, arg := range node.Arguments {
+		val := Eval(arg, env)
+		if isError(val) {
+			return val
+		}
+		valType := runtimeTypeName(val)
+		if valType == "null" && !typeAllowsNull(elemType, env) {
+			return newError("cannot add null to %s", elemType)
+		}
+		if !isAssignableToType(elemType, valType, env) {
+			return newError("cannot assign %s to %s", valType, elemType)
+		}
+		elems = append(elems, val)
+	}
+	return &object.List{
+		ElementType: elemType,
+		Elements:    elems,
 	}
 }
 
@@ -326,6 +570,7 @@ const (
 	rtChar
 	rtBool
 	rtArray
+	rtList
 	rtTuple
 	rtNull
 	rtType
@@ -345,6 +590,8 @@ func runtimeTypeKindOf(obj object.Object) runtimeTypeKind {
 		return rtBool
 	case *object.Array:
 		return rtArray
+	case *object.List:
+		return rtList
 	case *object.Tuple:
 		return rtTuple
 	case *object.Null:
@@ -371,6 +618,9 @@ func runtimeTypeName(obj object.Object) string {
 	case rtArray:
 		v := obj.(*object.Array)
 		return formatTypeName(v.ElementType, []int{len(v.Elements)})
+	case rtList:
+		v := obj.(*object.List)
+		return "List<" + v.ElementType + ">"
 	case rtTuple:
 		v := obj.(*object.Tuple)
 		return "(" + strings.Join(v.ElementTypes, ",") + ")"
@@ -431,6 +681,12 @@ func isKnownTypeNameWithParams(t string, env *object.Environment, typeParams map
 		return true
 	}
 	if gbase, gargs, ok := typesys.SplitGenericType(base); ok {
+		if gbase == "List" {
+			if len(gargs) != 1 {
+				return false
+			}
+			return isKnownTypeNameWithParams(gargs[0], env, typeParams)
+		}
 		if _, ok := env.GenericTypeAlias(gbase); ok {
 			for _, a := range gargs {
 				if !isKnownTypeNameWithParams(a, env, typeParams) {
@@ -593,6 +849,11 @@ func genericTypeArityError(typeName string, env *object.Environment, typeParams 
 		return "", false
 	}
 	if gb, args, ok := typesys.SplitGenericType(base); ok {
+		if gb == "List" {
+			if len(args) != 1 {
+				return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", gb, 1, len(args)), true
+			}
+		}
 		if _, exists := env.TypeAlias(gb); exists {
 			return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", gb, 0, len(args)), true
 		} else if alias, exists := env.GenericTypeAlias(gb); exists {
@@ -614,6 +875,9 @@ func genericTypeArityError(typeName string, env *object.Environment, typeParams 
 	}
 	if _, exists := env.TypeAlias(base); exists {
 		return "", false
+	}
+	if base == "List" {
+		return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", base, 1, 0), true
 	}
 	if alias, exists := env.GenericTypeAlias(base); exists && len(alias.TypeParams) > 0 {
 		return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", base, len(alias.TypeParams), 0), true

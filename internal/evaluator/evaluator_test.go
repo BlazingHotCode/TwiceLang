@@ -735,9 +735,51 @@ func TestMethodCallErrorsEval(t *testing.T) {
 		input string
 		want  string
 	}{
-		{`let s = "abc"; s.length()`, "length is only supported on arrays"},
+		{`let s = "abc"; s.length()`, "length is only supported on arrays/lists"},
 		{`let arr = {1,2,3}; arr.length(1)`, "length expects 0 arguments, got=1"},
 		{`let arr = {1,2,3}; arr.missing()`, "unknown method: missing"},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		errObj, ok := evaluated.(*object.Error)
+		if !ok {
+			t.Fatalf("expected error object for %q, got=%T", tt.input, evaluated)
+		}
+		if errObj.Message != tt.want {
+			t.Fatalf("wrong error message for %q: got=%q want=%q", tt.input, errObj.Message, tt.want)
+		}
+	}
+}
+
+func TestListEvalBasics(t *testing.T) {
+	evaluated := testEval(`let xs: List<int> = new List<int>(1, 2); xs.append(3); xs[1] = 9; xs.length()`)
+	testIntegerObject(t, evaluated, 3)
+
+	evaluated = testEval(`let xs: List<int> = new List<int>(1, 2, 3); xs.remove(1)`)
+	testIntegerObject(t, evaluated, 2)
+
+	evaluated = testEval(`let xs: List<int> = new List<int>(1, 2, 3); xs.insert(1, 7); xs[1]`)
+	testIntegerObject(t, evaluated, 7)
+
+	evaluated = testEval(`let xs: List<int> = new List<int>(1, 2, 3); xs.pop()`)
+	testIntegerObject(t, evaluated, 3)
+
+	evaluated = testEval(`let xs: List<int> = new List<int>(1, 2, 3); xs.clear(); xs.length`)
+	testIntegerObject(t, evaluated, 0)
+
+	evaluated = testEval(`let xs: List<int> = new List<int>(1, 2, 3); xs.contains(2)`)
+	testBooleanObject(t, evaluated, true)
+}
+
+func TestListEvalErrors(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{`let xs: List<int> = new List<int>(1, 2); xs[9]`, "list index out of bounds: 9"},
+		{`let xs: List<int> = new List<int>(1, 2); xs[0] = "x"; xs[0]`, "cannot assign string to int"},
+		{`let xs: List<int> = new List<int>(1, 2); xs.append("x"); xs.length()`, "cannot assign string to int"},
 	}
 
 	for _, tt := range tests {

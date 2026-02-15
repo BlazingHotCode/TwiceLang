@@ -17,6 +17,7 @@ const (
 	CHAR_OBJ         ObjectType = "CHAR"
 	BOOLEAN_OBJ      ObjectType = "BOOLEAN"
 	ARRAY_OBJ        ObjectType = "ARRAY"
+	LIST_OBJ         ObjectType = "LIST"
 	TUPLE_OBJ        ObjectType = "TUPLE"
 	TYPE_OBJ         ObjectType = "TYPE"
 	NULL_OBJ         ObjectType = "NULL"
@@ -91,6 +92,25 @@ func (a *Array) Inspect() string {
 	out.WriteString("{")
 	out.WriteString(strings.Join(parts, ", "))
 	out.WriteString("}")
+	return out.String()
+}
+
+// List is a dynamic, homogeneous list value.
+type List struct {
+	ElementType string
+	Elements    []Object
+}
+
+func (l *List) Type() ObjectType { return LIST_OBJ }
+func (l *List) Inspect() string {
+	var out bytes.Buffer
+	parts := make([]string, 0, len(l.Elements))
+	for _, el := range l.Elements {
+		parts = append(parts, el.Inspect())
+	}
+	out.WriteString("List(")
+	out.WriteString(strings.Join(parts, ", "))
+	out.WriteString(")")
 	return out.String()
 }
 

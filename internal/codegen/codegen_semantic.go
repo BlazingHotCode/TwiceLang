@@ -185,6 +185,12 @@ func (cg *CodeGen) semanticKnownTypeWithParams(typeName string, aliases map[stri
 		}
 	}
 	if gbase, gargs, ok := typesys.SplitGenericType(base); ok {
+		if gbase == "List" {
+			if len(gargs) != 1 {
+				return false
+			}
+			return cg.semanticKnownTypeWithParams(gargs[0], aliases, typeParams)
+		}
 		if _, exists := aliases[gbase]; !exists {
 			return false
 		}
@@ -382,6 +388,15 @@ func (cg *CodeGen) semanticCheckExpression(expr ast.Expression, aliases map[stri
 		cg.semanticCheckExpression(e.Object, aliases, genericArities, nonGenericAliases)
 	case *ast.TupleAccessExpression:
 		cg.semanticCheckExpression(e.Left, aliases, genericArities, nonGenericAliases)
+	case *ast.NewExpression:
+		if msg, ok := semanticGenericTypeArityError(e.TypeName, genericArities, nonGenericAliases, nil); ok {
+			cg.addNodeError(msg, e)
+		} else if !cg.semanticKnownType(e.TypeName, aliases) {
+			cg.addNodeError("unknown type: "+e.TypeName, e)
+		}
+		for _, a := range e.Arguments {
+			cg.semanticCheckExpression(a, aliases, genericArities, nonGenericAliases)
+		}
 	case *ast.NamedArgument:
 		cg.semanticCheckExpression(e.Value, aliases, genericArities, nonGenericAliases)
 	}
@@ -409,10 +424,21 @@ func semanticGenericTypeArityError(typeName string, genericArities map[string]in
 		return "", false
 	}
 	if gb, args, ok := typesys.SplitGenericType(base); ok {
+		if gb == "List" {
+			if len(args) != 1 {
+				return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", gb, 1, len(args)), true
+			}
+			for _, a := range args {
+				if msg, ok := semanticGenericTypeArityError(a, genericArities, nonGenericAliases, typeParams); ok {
+					return msg, true
+				}
+			}
+			return "", false
+		}
 		if expected, exists := genericArities[gb]; exists {
 			if expected != len(args) {
 				return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", gb, expected, len(args)), true
-			}
+				}
 		} else if _, isNonGeneric := nonGenericAliases[gb]; isNonGeneric {
 			return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", gb, 0, len(args)), true
 		}
@@ -433,6 +459,9 @@ func semanticGenericTypeArityError(typeName string, genericArities map[string]in
 	}
 	if expected, exists := genericArities[base]; exists && expected > 0 {
 		return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", base, expected, 0), true
+	}
+	if base == "List" {
+		return "wrong number of generic type arguments for List: expected 1, got 0", true
 	}
 	return "", false
 }

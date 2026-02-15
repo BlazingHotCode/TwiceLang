@@ -195,6 +195,10 @@ func (cg *CodeGen) symbolCheckExpression(expr ast.Expression, scopes *[]symbolSc
 		cg.symbolCheckExpression(e.Object, scopes)
 	case *ast.TupleAccessExpression:
 		cg.symbolCheckExpression(e.Left, scopes)
+	case *ast.NewExpression:
+		for _, a := range e.Arguments {
+			cg.symbolCheckExpression(a, scopes)
+		}
 	case *ast.NamedArgument:
 		cg.symbolCheckExpression(e.Value, scopes)
 	}

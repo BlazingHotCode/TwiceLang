@@ -10,34 +10,7 @@
 - adding snippet to [test.tw](./test.tw) and running using binary to test the code
 - adding guide/points to show the feature in [README](./README.md)
 
-## 1. Lists (Dynamic Arrays)
-
-- Add generic list types as dynamic arrays without fixed compile-time length.
-- Use generic syntax for declarations, for example `let xs: List<int>;`.
-- Keep fixed-size arrays (`type[len]`) as a separate type from `List<T>`.
-- `List<T>` element typing is enforced.
-- Mixed-type lists should use `List<any>`.
-- List construction syntax is constructor-only:
-- `new List<T>()`
-- `new List<T>(val1, val2, ...)`
-- List API is methods-only (for example `list.append(x)`), not global helper functions.
-- `length` should work as both property and method (`list.length` and `list.length()`).
-- v1 operations:
-- `append(value)` -> returns `null`
-- `remove(index)` -> returns `T||null`; invalid index throws runtime error
-- `insert(index, value)` with valid index range `0..length`
-- `pop()` -> returns `T||null`; empty list returns `null`
-- `contains(value)` -> returns `bool||null` (null when incomparable)
-- `clear()` -> returns `null`
-- `contains(value)` argument typing:
-- strict for concrete `List<T>`
-- allow broader runtime-checked values for `List<any>` / union element lists
-- List index get/set out-of-range throws runtime error.
-- Appending `null` to `List<T>` where `T` excludes null throws runtime error.
-- Fixed array/list interoperability requires explicit conversion both ways.
-- Ensure parser, evaluator, and codegen all support lists consistently.
-
-## 2. Maps
+## 1. Maps
 
 - Add generic map types with syntax similar to `List`, for example `let m: Map<string, int>;`.
 - Use constructor-style creation similar to `List`:
@@ -47,7 +20,7 @@
 - Support bracket key access syntax, for example `m["k1"]` for get/set.
 - Ensure parser, evaluator, and codegen all support maps consistently.
 
-## 3. Structs
+## 2. Structs
 
 - Add struct declarations and typed struct values.
 - Use literal construction syntax for structs.
@@ -71,14 +44,14 @@
 - Pointer struct function usage syntax (auto-deref):
 - `ptr.methodName(args...)` (no `(*ptr).methodName(...)` required)
 
-## 4. Pointers
+## 3. Pointers
 
 - Pointer types are nullable only when explicitly declared nullable.
 - Add pointer operations (`&value`, `*ptr`, pointer assignment).
 - Pointer method calls auto-deref: allow `p.method()` without requiring `(*p).method()`.
 - Pointer + struct design should be combined, so references and mutation go through pointers.
 
-## 5. Custom Libraries
+## 4. Custom Libraries
 
 - Add `import ...` syntax.
 - Built-in libraries are imported with `twice.<lib>`.
@@ -92,7 +65,7 @@
 - `import twice.math.sqrt as sqrt`
 - Support cross-module generic specialization in v1 (imports included).
 
-## 6. OOP and Type System Expansion
+## 5. OOP and Type System Expansion
 
 - Add class declarations and object instantiation.o
 - Structs stay public-focused; classes support explicit `public`/`private`.
@@ -116,7 +89,7 @@
 - Typed declarations without `new` remain `null` until initialized (for example `let s: Shape;`).
 - Generic classes are supported by syntax plan, but are implemented together with class support.
 
-## 7. Inheritance
+## 6. Inheritance
 
 - Add inheritance as a separate feature from base class/object support.
 - Define overriding and method resolution rules.
