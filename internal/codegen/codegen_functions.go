@@ -35,6 +35,7 @@ func (cg *CodeGen) reset() {
 	cg.funcLitKeys = make(map[*ast.FunctionLiteral]string)
 	cg.varFuncs = make(map[string]string)
 	cg.typeAliases = make(map[string]string)
+	cg.genericTypeAliases = make(map[string]genericTypeAlias)
 	cg.stackOffset = 0
 	cg.maxStackOffset = 0
 	cg.currentFn = ""

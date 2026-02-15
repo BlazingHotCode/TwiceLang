@@ -67,7 +67,53 @@ func semanticAliasResolver(aliases map[string]string) typesys.AliasResolver {
 }
 
 func (cg *CodeGen) semanticKnownType(typeName string, aliases map[string]string) bool {
-	return typesys.IsKnownTypeName(typeName, semanticAliasResolver(aliases))
+	return cg.semanticKnownTypeWithParams(typeName, aliases, nil)
+}
+
+func (cg *CodeGen) semanticKnownTypeWithParams(typeName string, aliases map[string]string, typeParams map[string]struct{}) bool {
+	if resolved, ok := typesys.NormalizeTypeName(typeName, semanticAliasResolver(aliases)); ok {
+		typeName = resolved
+	}
+	base, _, ok := typesys.ParseTypeDescriptor(typeName)
+	if !ok {
+		return false
+	}
+	if parts, isUnion := typesys.SplitTopLevelUnion(base); isUnion {
+		for _, p := range parts {
+			if !cg.semanticKnownTypeWithParams(p, aliases, typeParams) {
+				return false
+			}
+		}
+		return true
+	}
+	if parts, isTuple := typesys.SplitTopLevelTuple(base); isTuple {
+		for _, p := range parts {
+			if !cg.semanticKnownTypeWithParams(p, aliases, typeParams) {
+				return false
+			}
+		}
+		return true
+	}
+	if typeParams != nil {
+		if _, ok := typeParams[base]; ok {
+			return true
+		}
+	}
+	if gbase, gargs, ok := typesys.SplitGenericType(base); ok {
+		if _, exists := aliases[gbase]; !exists {
+			return false
+		}
+		for _, a := range gargs {
+			if !cg.semanticKnownTypeWithParams(a, aliases, typeParams) {
+				return false
+			}
+		}
+		return true
+	}
+	if _, exists := aliases[base]; exists {
+		return true
+	}
+	return typesys.IsBuiltinTypeName(base)
 }
 
 func (cg *CodeGen) semanticCheckStatement(stmt ast.Statement, aliases map[string]string) {
@@ -88,7 +134,8 @@ func (cg *CodeGen) semanticCheckStatement(stmt ast.Statement, aliases map[string
 		}
 	case *ast.TypeDeclStatement:
 		if s.TypeName != "" {
-			if !cg.semanticKnownType(s.TypeName, aliases) {
+			typeParamSet := toTypeParamSet(s.TypeParams)
+			if !cg.semanticKnownTypeWithParams(s.TypeName, aliases, typeParamSet) {
 				cg.addNodeError("unknown type: "+s.TypeName, s)
 			}
 		}
@@ -113,11 +160,12 @@ func (cg *CodeGen) semanticCheckStatement(stmt ast.Statement, aliases map[string
 		}
 	case *ast.FunctionStatement:
 		if s.Function != nil {
-			if s.Function.ReturnType != "" && !cg.semanticKnownType(s.Function.ReturnType, aliases) {
+			typeParamSet := toTypeParamSet(s.Function.TypeParams)
+			if s.Function.ReturnType != "" && !cg.semanticKnownTypeWithParams(s.Function.ReturnType, aliases, typeParamSet) {
 				cg.addNodeError("unknown type: "+s.Function.ReturnType, s.Function)
 			}
 			for _, p := range s.Function.Parameters {
-				if p != nil && p.TypeName != "" && !cg.semanticKnownType(p.TypeName, aliases) {
+				if p != nil && p.TypeName != "" && !cg.semanticKnownTypeWithParams(p.TypeName, aliases, typeParamSet) {
 					cg.addNodeError("unknown type: "+p.TypeName, p.Name)
 				}
 			}
@@ -190,11 +238,12 @@ func (cg *CodeGen) semanticCheckExpression(expr ast.Expression, aliases map[stri
 			}
 		}
 	case *ast.FunctionLiteral:
-		if e.ReturnType != "" && !cg.semanticKnownType(e.ReturnType, aliases) {
+		typeParamSet := toTypeParamSet(e.TypeParams)
+		if e.ReturnType != "" && !cg.semanticKnownTypeWithParams(e.ReturnType, aliases, typeParamSet) {
 			cg.addNodeError("unknown type: "+e.ReturnType, e)
 		}
 		for _, p := range e.Parameters {
-			if p != nil && p.TypeName != "" && !cg.semanticKnownType(p.TypeName, aliases) {
+			if p != nil && p.TypeName != "" && !cg.semanticKnownTypeWithParams(p.TypeName, aliases, typeParamSet) {
 				cg.addNodeError("unknown type: "+p.TypeName, p.Name)
 			}
 		}

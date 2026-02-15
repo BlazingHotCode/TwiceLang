@@ -1,40 +1,42 @@
 package codegen
 
 type lexicalScopeState struct {
-	variables        map[string]int
-	constVars        map[string]bool
-	varTypes         map[string]valueType
-	varDeclared      map[string]valueType
-	varTypeNames     map[string]string
-	varDeclaredNames map[string]string
-	varValueTypeName map[string]string
-	varIsNull        map[string]bool
-	varArrayLen      map[string]int
-	intVals          map[string]int64
-	charVals         map[string]rune
-	stringVals       map[string]string
-	floatVals        map[string]float64
-	varFuncs         map[string]string
-	typeAliases      map[string]string
+	variables          map[string]int
+	constVars          map[string]bool
+	varTypes           map[string]valueType
+	varDeclared        map[string]valueType
+	varTypeNames       map[string]string
+	varDeclaredNames   map[string]string
+	varValueTypeName   map[string]string
+	varIsNull          map[string]bool
+	varArrayLen        map[string]int
+	intVals            map[string]int64
+	charVals           map[string]rune
+	stringVals         map[string]string
+	floatVals          map[string]float64
+	varFuncs           map[string]string
+	typeAliases        map[string]string
+	genericTypeAliases map[string]genericTypeAlias
 }
 
 func (cg *CodeGen) snapshotLexicalState() lexicalScopeState {
 	return lexicalScopeState{
-		variables:        cloneMap(cg.variables),
-		constVars:        cloneMap(cg.constVars),
-		varTypes:         cloneMap(cg.varTypes),
-		varDeclared:      cloneMap(cg.varDeclared),
-		varTypeNames:     cloneMap(cg.varTypeNames),
-		varDeclaredNames: cloneMap(cg.varDeclaredNames),
-		varValueTypeName: cloneMap(cg.varValueTypeName),
-		varIsNull:        cloneMap(cg.varIsNull),
-		varArrayLen:      cloneMap(cg.varArrayLen),
-		intVals:          cloneMap(cg.intVals),
-		charVals:         cloneMap(cg.charVals),
-		stringVals:       cloneMap(cg.stringVals),
-		floatVals:        cloneMap(cg.floatVals),
-		varFuncs:         cloneMap(cg.varFuncs),
-		typeAliases:      cloneMap(cg.typeAliases),
+		variables:          cloneMap(cg.variables),
+		constVars:          cloneMap(cg.constVars),
+		varTypes:           cloneMap(cg.varTypes),
+		varDeclared:        cloneMap(cg.varDeclared),
+		varTypeNames:       cloneMap(cg.varTypeNames),
+		varDeclaredNames:   cloneMap(cg.varDeclaredNames),
+		varValueTypeName:   cloneMap(cg.varValueTypeName),
+		varIsNull:          cloneMap(cg.varIsNull),
+		varArrayLen:        cloneMap(cg.varArrayLen),
+		intVals:            cloneMap(cg.intVals),
+		charVals:           cloneMap(cg.charVals),
+		stringVals:         cloneMap(cg.stringVals),
+		floatVals:          cloneMap(cg.floatVals),
+		varFuncs:           cloneMap(cg.varFuncs),
+		typeAliases:        cloneMap(cg.typeAliases),
+		genericTypeAliases: cloneMap(cg.genericTypeAliases),
 	}
 }
 
@@ -54,6 +56,7 @@ func (cg *CodeGen) restoreLexicalState(st lexicalScopeState) {
 	cg.floatVals = st.floatVals
 	cg.varFuncs = st.varFuncs
 	cg.typeAliases = st.typeAliases
+	cg.genericTypeAliases = st.genericTypeAliases
 }
 
 func cloneMap[K comparable, V any](in map[K]V) map[K]V {

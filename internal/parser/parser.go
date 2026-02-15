@@ -69,7 +69,8 @@ type Parser struct {
 	prefixParseFns map[token.TokenType]prefixParseFn // Functions for tokens that start expressions
 	infixParseFns  map[token.TokenType]infixParseFn  // Functions for tokens that appear in the middle
 
-	groupedExpr map[ast.Expression]struct{}
+	groupedExpr   map[ast.Expression]struct{}
+	typeGtPending int
 }
 
 // prefixParseFn parses expressions that start with a specific token

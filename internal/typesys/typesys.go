@@ -336,19 +336,33 @@ func TypeAllowsNull(t string, resolve AliasResolver) bool {
 func SplitTopLevelUnion(t string) ([]string, bool) {
 	s := stripOuterGroupingParens(t)
 	parts := []string{}
-	depth := 0
+	depthParen := 0
+	depthAngle := 0
+	depthBracket := 0
 	start := 0
 	found := false
 	for i := 0; i < len(s)-1; i++ {
 		switch s[i] {
 		case '(':
-			depth++
+			depthParen++
 		case ')':
-			if depth > 0 {
-				depth--
+			if depthParen > 0 {
+				depthParen--
+			}
+		case '<':
+			depthAngle++
+		case '>':
+			if depthAngle > 0 {
+				depthAngle--
+			}
+		case '[':
+			depthBracket++
+		case ']':
+			if depthBracket > 0 {
+				depthBracket--
 			}
 		case '|':
-			if depth == 0 && s[i+1] == '|' {
+			if depthParen == 0 && depthAngle == 0 && depthBracket == 0 && s[i+1] == '|' {
 				part := strings.TrimSpace(s[start:i])
 				if part == "" {
 					return nil, false
@@ -384,17 +398,31 @@ func stripOuterGroupingParens(s string) string {
 }
 
 func hasTopLevelComma(s string) bool {
-	depth := 0
+	depthParen := 0
+	depthAngle := 0
+	depthBracket := 0
 	for i := 0; i < len(s); i++ {
 		switch s[i] {
 		case '(':
-			depth++
+			depthParen++
 		case ')':
-			if depth > 0 {
-				depth--
+			if depthParen > 0 {
+				depthParen--
+			}
+		case '<':
+			depthAngle++
+		case '>':
+			if depthAngle > 0 {
+				depthAngle--
+			}
+		case '[':
+			depthBracket++
+		case ']':
+			if depthBracket > 0 {
+				depthBracket--
 			}
 		case ',':
-			if depth == 0 {
+			if depthParen == 0 && depthAngle == 0 && depthBracket == 0 {
 				return true
 			}
 		}
@@ -412,18 +440,32 @@ func SplitTopLevelTuple(t string) ([]string, bool) {
 		return nil, false
 	}
 	parts := []string{}
-	depth := 0
+	depthParen := 0
+	depthAngle := 0
+	depthBracket := 0
 	start := 0
 	for i := 0; i < len(inner); i++ {
 		switch inner[i] {
 		case '(':
-			depth++
+			depthParen++
 		case ')':
-			if depth > 0 {
-				depth--
+			if depthParen > 0 {
+				depthParen--
+			}
+		case '<':
+			depthAngle++
+		case '>':
+			if depthAngle > 0 {
+				depthAngle--
+			}
+		case '[':
+			depthBracket++
+		case ']':
+			if depthBracket > 0 {
+				depthBracket--
 			}
 		case ',':
-			if depth == 0 {
+			if depthParen == 0 && depthAngle == 0 && depthBracket == 0 {
 				part := strings.TrimSpace(inner[start:i])
 				if part == "" {
 					return nil, false
@@ -454,6 +496,8 @@ func isWrappedInParens(s string) bool {
 		return false
 	}
 	depth := 0
+	angleDepth := 0
+	bracketDepth := 0
 	for i := 0; i < len(s); i++ {
 		switch s[i] {
 		case '(':
@@ -463,12 +507,163 @@ func isWrappedInParens(s string) bool {
 			if depth == 0 && i != len(s)-1 {
 				return false
 			}
+		case '<':
+			angleDepth++
+		case '>':
+			if angleDepth > 0 {
+				angleDepth--
+			}
+		case '[':
+			bracketDepth++
+		case ']':
+			if bracketDepth > 0 {
+				bracketDepth--
+			}
 		}
 		if depth < 0 {
 			return false
 		}
 	}
-	return depth == 0
+	return depth == 0 && angleDepth == 0 && bracketDepth == 0
+}
+
+func SplitTopLevelComma(s string) []string {
+	parts := []string{}
+	start := 0
+	depthParen := 0
+	depthAngle := 0
+	depthBracket := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '(':
+			depthParen++
+		case ')':
+			if depthParen > 0 {
+				depthParen--
+			}
+		case '<':
+			depthAngle++
+		case '>':
+			if depthAngle > 0 {
+				depthAngle--
+			}
+		case '[':
+			depthBracket++
+		case ']':
+			if depthBracket > 0 {
+				depthBracket--
+			}
+		case ',':
+			if depthParen == 0 && depthAngle == 0 && depthBracket == 0 {
+				parts = append(parts, strings.TrimSpace(s[start:i]))
+				start = i + 1
+			}
+		}
+	}
+	parts = append(parts, strings.TrimSpace(s[start:]))
+	return parts
+}
+
+func SplitGenericType(t string) (string, []string, bool) {
+	s := strings.TrimSpace(t)
+	lt := strings.IndexByte(s, '<')
+	if lt <= 0 || !strings.HasSuffix(s, ">") {
+		return "", nil, false
+	}
+	base := strings.TrimSpace(s[:lt])
+	if base == "" {
+		return "", nil, false
+	}
+	inner := s[lt+1 : len(s)-1]
+	if strings.TrimSpace(inner) == "" {
+		return "", nil, false
+	}
+	args := SplitTopLevelComma(inner)
+	if len(args) == 0 {
+		return "", nil, false
+	}
+	for _, a := range args {
+		if a == "" {
+			return "", nil, false
+		}
+	}
+	return base, args, true
+}
+
+func SubstituteTypeParams(t string, mapping map[string]string) string {
+	if len(mapping) == 0 || t == "" {
+		return t
+	}
+	base, dims, ok := ParseTypeDescriptor(t)
+	if !ok {
+		return substituteTokenIdentifiers(t, mapping)
+	}
+	base = substituteTypeBase(base, mapping)
+	return FormatTypeDescriptor(base, dims)
+}
+
+func substituteTypeBase(base string, mapping map[string]string) string {
+	base = stripOuterGroupingParens(base)
+	if parts, isUnion := SplitTopLevelUnion(base); isUnion {
+		out := make([]string, 0, len(parts))
+		for _, p := range parts {
+			out = append(out, substituteTypeBase(p, mapping))
+		}
+		return strings.Join(out, "||")
+	}
+	if parts, isTuple := SplitTopLevelTuple(base); isTuple {
+		out := make([]string, 0, len(parts))
+		for _, p := range parts {
+			out = append(out, substituteTypeBase(p, mapping))
+		}
+		return "(" + strings.Join(out, ",") + ")"
+	}
+	if gbase, gargs, ok := SplitGenericType(base); ok {
+		out := make([]string, 0, len(gargs))
+		for _, a := range gargs {
+			out = append(out, substituteTypeBase(a, mapping))
+		}
+		if rep, ok := mapping[gbase]; ok {
+			gbase = rep
+		}
+		return gbase + "<" + strings.Join(out, ",") + ">"
+	}
+	if rep, ok := mapping[base]; ok {
+		return rep
+	}
+	return base
+}
+
+func substituteTokenIdentifiers(s string, mapping map[string]string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		ch := s[i]
+		if isIdentStart(ch) {
+			j := i + 1
+			for j < len(s) && isIdentContinue(s[j]) {
+				j++
+			}
+			name := s[i:j]
+			if rep, ok := mapping[name]; ok {
+				b.WriteString(rep)
+			} else {
+				b.WriteString(name)
+			}
+			i = j
+			continue
+		}
+		b.WriteByte(ch)
+		i++
+	}
+	return b.String()
+}
+
+func isIdentStart(ch byte) bool {
+	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_'
+}
+
+func isIdentContinue(ch byte) bool {
+	return isIdentStart(ch) || (ch >= '0' && ch <= '9')
 }
 
 func mergeUnionBases(a, b string) (string, bool) {

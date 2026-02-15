@@ -3,6 +3,7 @@ package evaluator
 import (
 	"twice/internal/ast"
 	"twice/internal/object"
+	"twice/internal/typesys"
 )
 
 func evalExpressions(exps []ast.Expression, env *object.Environment) []object.Object {
@@ -63,6 +64,12 @@ func applyFunction(fn object.Object, args []object.Object, namedArgs map[string]
 
 func applyUserFunction(function *object.Function, args []object.Object, namedArgs map[string]object.Object) object.Object {
 	extendedEnv := object.NewEnclosedEnvironment(function.Env)
+	typeArgMap := map[string]string{}
+	if len(function.TypeParams) > 0 {
+		for _, tp := range function.TypeParams {
+			typeArgMap[tp] = ""
+		}
+	}
 
 	posIdx := 0
 	usedNamed := make(map[string]bool)
@@ -84,6 +91,17 @@ func applyUserFunction(function *object.Function, args []object.Object, namedArg
 		}
 
 		targetType := param.TypeName
+		if len(typeArgMap) > 0 && targetType != "" {
+			if cur, ok := typeArgMap[targetType]; ok {
+				valType := runtimeTypeName(val)
+				if cur == "" {
+					typeArgMap[targetType] = valType
+				} else if cur != valType {
+					return newError("cannot infer generic type %s from both %s and %s", targetType, cur, valType)
+				}
+			}
+			targetType = typesys.SubstituteTypeParams(targetType, typeArgMap)
+		}
 		if targetType == "" {
 			targetType = runtimeTypeName(val)
 		}
@@ -123,19 +141,55 @@ func applyUserFunction(function *object.Function, args []object.Object, namedArg
 	}
 
 	if function.ReturnType != "" {
+		returnType := function.ReturnType
+		if len(typeArgMap) > 0 {
+			for _, tp := range function.TypeParams {
+				if containsTypeToken(returnType, tp) && typeArgMap[tp] == "" {
+					return newError("could not infer generic type argument for %s", tp)
+				}
+			}
+			returnType = typesys.SubstituteTypeParams(returnType, typeArgMap)
+		}
 		got := runtimeTypeName(result)
 		if got == "null" {
-			if !typeAllowsNull(function.ReturnType, function.Env) {
-				return newError("cannot return %s from function returning %s", got, function.ReturnType)
+			if !typeAllowsNull(returnType, function.Env) {
+				return newError("cannot return %s from function returning %s", got, returnType)
 			}
 			return result
 		}
-		if !isAssignableToType(function.ReturnType, got, function.Env) {
-			return newError("cannot return %s from function returning %s", got, function.ReturnType)
+		if !isAssignableToType(returnType, got, function.Env) {
+			return newError("cannot return %s from function returning %s", got, returnType)
 		}
 	}
 
 	return result
+}
+
+func containsTypeToken(typeName, tokenName string) bool {
+	if typeName == "" || tokenName == "" {
+		return false
+	}
+	for i := 0; i < len(typeName); {
+		ch := typeName[i]
+		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_' {
+			j := i + 1
+			for j < len(typeName) {
+				c := typeName[j]
+				if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || (c >= '0' && c <= '9') {
+					j++
+					continue
+				}
+				break
+			}
+			if typeName[i:j] == tokenName {
+				return true
+			}
+			i = j
+			continue
+		}
+		i++
+	}
+	return false
 }
 
 func functionHasParam(fn *object.Function, name string) bool {

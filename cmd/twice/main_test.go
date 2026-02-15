@@ -232,6 +232,42 @@ func TestCLICodegenErrorForPrintUnsupportedType(t *testing.T) {
 	}
 }
 
+func TestCLICompileAndRunGenericTypeAlias(t *testing.T) {
+	root := repoRoot(t)
+	ensureToolchain(t)
+
+	srcPath := filepath.Join(t.TempDir(), "generic_alias.tw")
+	source := `
+type Pair<T, U> = (T, U);
+fn main() int {
+  let p: Pair<int, string> = (7, "seven");
+  println(p.0);
+  println(typeof(p));
+  return 0;
+}
+`
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	outputName := "twice_cli_generic_alias_bin"
+	outputPath := filepath.Join(root, outputName)
+	_ = os.Remove(outputPath)
+	t.Cleanup(func() { _ = os.Remove(outputPath) })
+
+	cmd := exec.Command("go", "run", "./cmd/twice", "-run", "-o", outputName, srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("compile/run failed: %v\n%s", err, out)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "\n7\nPair<int,string>\n") {
+		t.Fatalf("expected generic alias runtime output. output:\n%s", output)
+	}
+}
+
 func TestCLICodegenErrorForUndefinedIdentifier(t *testing.T) {
 	root := repoRoot(t)
 

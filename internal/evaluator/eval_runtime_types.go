@@ -393,11 +393,60 @@ func typeAliasResolver(env *object.Environment) typesys.AliasResolver {
 }
 
 func isAssignableToType(targetType string, valueType string, env *object.Environment) bool {
+	if resolved, ok := resolveTypeName(targetType, env, map[string]struct{}{}); ok {
+		targetType = resolved
+	}
+	if resolved, ok := resolveTypeName(valueType, env, map[string]struct{}{}); ok {
+		valueType = resolved
+	}
 	return typesys.IsAssignableTypeName(targetType, valueType, typeAliasResolver(env))
 }
 
 func isKnownTypeName(t string, env *object.Environment) bool {
-	return typesys.IsKnownTypeName(t, typeAliasResolver(env))
+	return isKnownTypeNameWithParams(t, env, nil)
+}
+
+func isKnownTypeNameWithParams(t string, env *object.Environment, typeParams map[string]struct{}) bool {
+	if resolved, ok := resolveTypeNameWithParams(t, env, map[string]struct{}{}, typeParams); ok {
+		t = resolved
+	}
+	base, _, ok := parseTypeName(t)
+	if !ok {
+		return false
+	}
+	if members, ok := splitTopLevelUnion(base); ok {
+		for _, m := range members {
+			if !isKnownTypeNameWithParams(m, env, typeParams) {
+				return false
+			}
+		}
+		return true
+	}
+	if members, ok := splitTopLevelTuple(base); ok {
+		for _, m := range members {
+			if !isKnownTypeNameWithParams(m, env, typeParams) {
+				return false
+			}
+		}
+		return true
+	}
+	if gbase, gargs, ok := typesys.SplitGenericType(base); ok {
+		if _, ok := env.GenericTypeAlias(gbase); ok {
+			for _, a := range gargs {
+				if !isKnownTypeNameWithParams(a, env, typeParams) {
+					return false
+				}
+			}
+			return true
+		}
+		return false
+	}
+	if typeParams != nil {
+		if _, ok := typeParams[base]; ok {
+			return true
+		}
+	}
+	return typesys.IsBuiltinTypeName(base)
 }
 
 func mergeTypeNames(a, b string, env *object.Environment) (string, bool) {
@@ -413,7 +462,7 @@ func formatTypeName(base string, dims []int) string {
 }
 
 func normalizeTypeName(t string, env *object.Environment) string {
-	resolved, ok := typesys.NormalizeTypeName(t, typeAliasResolver(env))
+	resolved, ok := resolveTypeName(t, env, map[string]struct{}{})
 	if !ok {
 		return t
 	}
@@ -421,7 +470,89 @@ func normalizeTypeName(t string, env *object.Environment) string {
 }
 
 func resolveTypeName(t string, env *object.Environment, _ map[string]struct{}) (string, bool) {
-	return typesys.NormalizeTypeName(t, typeAliasResolver(env))
+	return resolveTypeNameWithParams(t, env, map[string]struct{}{}, nil)
+}
+
+func resolveTypeNameWithParams(t string, env *object.Environment, visiting map[string]struct{}, typeParams map[string]struct{}) (string, bool) {
+	base, dims, ok := parseTypeName(t)
+	if !ok {
+		return "", false
+	}
+	resolvedBase, ok := resolveTypeBaseWithParams(base, env, visiting, typeParams)
+	if !ok {
+		return "", false
+	}
+	resolvedType := resolvedBase
+	if len(dims) > 0 {
+		rb, rd, ok := parseTypeName(resolvedBase)
+		if !ok {
+			return "", false
+		}
+		allDims := append(append([]int{}, rd...), dims...)
+		resolvedType = formatTypeName(rb, allDims)
+	}
+	return resolvedType, true
+}
+
+func resolveTypeBaseWithParams(base string, env *object.Environment, visiting map[string]struct{}, typeParams map[string]struct{}) (string, bool) {
+	if members, ok := splitTopLevelUnion(base); ok {
+		parts := make([]string, 0, len(members))
+		for _, m := range members {
+			r, ok := resolveTypeBaseWithParams(m, env, visiting, typeParams)
+			if !ok {
+				return "", false
+			}
+			parts = append(parts, r)
+		}
+		return strings.Join(parts, "||"), true
+	}
+	if members, ok := splitTopLevelTuple(base); ok {
+		parts := make([]string, 0, len(members))
+		for _, m := range members {
+			r, ok := resolveTypeBaseWithParams(m, env, visiting, typeParams)
+			if !ok {
+				return "", false
+			}
+			parts = append(parts, r)
+		}
+		return "(" + strings.Join(parts, ",") + ")", true
+	}
+	if gbase, gargs, ok := typesys.SplitGenericType(base); ok {
+		resolvedArgs := make([]string, 0, len(gargs))
+		for _, a := range gargs {
+			r, ok := resolveTypeNameWithParams(a, env, visiting, typeParams)
+			if !ok {
+				return "", false
+			}
+			resolvedArgs = append(resolvedArgs, r)
+		}
+		if alias, ok := env.GenericTypeAlias(gbase); ok {
+			if len(alias.TypeParams) != len(resolvedArgs) {
+				return "", false
+			}
+			mapping := map[string]string{}
+			for i, tp := range alias.TypeParams {
+				mapping[tp] = resolvedArgs[i]
+			}
+			inst := typesys.SubstituteTypeParams(alias.TypeName, mapping)
+			return resolveTypeNameWithParams(inst, env, visiting, typeParams)
+		}
+		return gbase + "<" + strings.Join(resolvedArgs, ",") + ">", true
+	}
+	if typeParams != nil {
+		if _, ok := typeParams[base]; ok {
+			return base, true
+		}
+	}
+	if alias, ok := env.TypeAlias(base); ok {
+		if _, seen := visiting[base]; seen {
+			return "", false
+		}
+		visiting[base] = struct{}{}
+		defer delete(visiting, base)
+		return resolveTypeNameWithParams(alias, env, visiting, typeParams)
+	}
+	return base, true
 }
 
 func isBuiltinTypeName(name string) bool {

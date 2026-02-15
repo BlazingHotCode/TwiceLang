@@ -363,6 +363,23 @@ fn demo_any_type() {
   return;
 }
 
+fn demo_generics() {
+  header("generics");
+
+  type Pair<T, U> = (T, U);
+  let p: Pair<int, string> = (7, "seven");
+  println(typeof(p));
+  println(p.0);
+  println(p.1);
+
+  type Box<T> = T[2];
+  let b: Box<int>;
+  b[0] = 3;
+  b[1] = 4;
+  println(typeof(b));
+  return;
+}
+
 fn main() {
   demo_types_and_casts();
   demo_operators();
@@ -372,5 +389,6 @@ fn main() {
   demo_arrays_unions_tuples();
   demo_null_safe_and_coalesce();
   demo_any_type();
+  demo_generics();
   return;
 }

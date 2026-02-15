@@ -960,6 +960,24 @@ func TestCodegenTypeAliases(t *testing.T) {
 	}
 }
 
+func TestCodegenGenericTypeAliases(t *testing.T) {
+	asm, cg := generateAssembly(t, `type Pair<T, U> = (T, U); let p: Pair<int, string> = (1, "x"); print(p.0); print(typeof(p));`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors for generic alias tuple: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "Pair<int,string>") {
+		t.Fatalf("expected generic alias type name in typeof output, got:\n%s", asm)
+	}
+
+	asm, cg = generateAssembly(t, `type Box<T> = T[2]; let b: Box<int>; b[0] = 3; b[1] = 4; print(typeof(b));`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors for generic alias array: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "Box<int>") {
+		t.Fatalf("expected generic alias type name in typeof output, got:\n%s", asm)
+	}
+}
+
 func TestCodegenTupleTypesAndAccess(t *testing.T) {
 	asm, cg := generateAssembly(t, `let a: (int,string,bool) = (1, "x", true); print(a.0); print(a.1); print(a.2);`)
 	if len(cg.Errors()) != 0 {

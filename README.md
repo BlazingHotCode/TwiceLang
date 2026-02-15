@@ -56,6 +56,7 @@ Notes:
 - Null-safe access/coalescing with `?.` and `??`
 - Union types (`type1||type2`) including array forms like `(int||string)[3]`
 - Tuple types and values: `(type1, type2, ...)` with tuple access `value.0`, `value.1`, ...
+- Generic type aliases in type positions, including nested generic type parsing (for example `type Pair<T, U> = (T, U);`)
 
 ## Quick Start
 
@@ -140,6 +141,21 @@ type Grid = Row[2];
 let value: NumOrText = "ok";
 let g: Grid = {{1, 2}, {3, 4}};
 println(typeof(value)); // NumOrText
+```
+
+Generic type aliases are supported in type positions:
+
+```tw
+type Pair<T, U> = (T, U);
+let p: Pair<int, string> = (7, "seven");
+println(typeof(p)); // Pair<int,string>
+println(p.0);       // 7
+
+type Box<T> = T[2];
+let b: Box<int>;
+b[0] = 3;
+b[1] = 4;
+println(typeof(b)); // Box<int>
 ```
 
 ### Assignment

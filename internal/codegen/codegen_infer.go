@@ -637,10 +637,50 @@ func (cg *CodeGen) isAssignableTypeName(target, value string) bool {
 }
 
 func (cg *CodeGen) isKnownTypeName(t string) bool {
-	if resolved, ok := cg.normalizeTypeName(t); ok {
+	return cg.isKnownTypeNameWithParams(t, nil)
+}
+
+func (cg *CodeGen) isKnownTypeNameWithParams(t string, typeParams map[string]struct{}) bool {
+	if resolved, ok := cg.normalizeTypeNameWithParams(t, map[string]struct{}{}, typeParams); ok {
 		t = resolved
 	}
-	return isKnownTypeName(t)
+	base, _, ok := parseTypeDescriptor(t)
+	if !ok {
+		return false
+	}
+	if members, isUnion := splitTopLevelUnion(base); isUnion {
+		for _, m := range members {
+			if !cg.isKnownTypeNameWithParams(m, typeParams) {
+				return false
+			}
+		}
+		return true
+	}
+	if members, isTuple := splitTopLevelTuple(base); isTuple {
+		for _, m := range members {
+			if !cg.isKnownTypeNameWithParams(m, typeParams) {
+				return false
+			}
+		}
+		return true
+	}
+	if gbase, gargs, ok := splitGenericType(base); ok {
+		if _, ok := cg.genericTypeAliases[gbase]; ok {
+			for _, a := range gargs {
+				if !cg.isKnownTypeNameWithParams(a, typeParams) {
+					return false
+				}
+			}
+			return true
+		}
+		return false
+	}
+	if typeParams != nil {
+		if _, ok := typeParams[base]; ok {
+			return true
+		}
+	}
+	return isBuiltinTypeName(base)
 }
 
 func (cg *CodeGen) typeAllowsNullTypeName(t string) bool {
@@ -661,15 +701,15 @@ func (cg *CodeGen) typeAllowsNullTypeName(t string) bool {
 }
 
 func (cg *CodeGen) normalizeTypeName(t string) (string, bool) {
-	return cg.resolveTypeName(t, map[string]struct{}{})
+	return cg.normalizeTypeNameWithParams(t, map[string]struct{}{}, nil)
 }
 
-func (cg *CodeGen) resolveTypeName(t string, visiting map[string]struct{}) (string, bool) {
+func (cg *CodeGen) normalizeTypeNameWithParams(t string, visiting map[string]struct{}, typeParams map[string]struct{}) (string, bool) {
 	base, dims, ok := parseTypeDescriptor(t)
 	if !ok {
 		return "", false
 	}
-	resolvedBase, ok := cg.resolveTypeBase(base, visiting)
+	resolvedBase, ok := cg.resolveTypeBaseWithParams(base, visiting, typeParams)
 	if !ok {
 		return "", false
 	}
@@ -685,12 +725,12 @@ func (cg *CodeGen) resolveTypeName(t string, visiting map[string]struct{}) (stri
 	return resolvedType, true
 }
 
-func (cg *CodeGen) resolveTypeBase(base string, visiting map[string]struct{}) (string, bool) {
+func (cg *CodeGen) resolveTypeBaseWithParams(base string, visiting map[string]struct{}, typeParams map[string]struct{}) (string, bool) {
 	base = stripOuterGroupingParens(base)
 	if parts, isUnion := splitTopLevelUnion(base); isUnion {
 		resolved := make([]string, 0, len(parts))
 		for _, p := range parts {
-			r, ok := cg.resolveTypeBase(p, visiting)
+			r, ok := cg.resolveTypeBaseWithParams(p, visiting, typeParams)
 			if !ok {
 				return "", false
 			}
@@ -701,7 +741,7 @@ func (cg *CodeGen) resolveTypeBase(base string, visiting map[string]struct{}) (s
 	if parts, isTuple := splitTopLevelTuple(base); isTuple {
 		resolved := make([]string, 0, len(parts))
 		for _, p := range parts {
-			r, ok := cg.resolveTypeBase(p, visiting)
+			r, ok := cg.resolveTypeBaseWithParams(p, visiting, typeParams)
 			if !ok {
 				return "", false
 			}
@@ -709,15 +749,53 @@ func (cg *CodeGen) resolveTypeBase(base string, visiting map[string]struct{}) (s
 		}
 		return "(" + strings.Join(resolved, ",") + ")", true
 	}
+	if gbase, gargs, ok := splitGenericType(base); ok {
+		resolvedArgs := make([]string, 0, len(gargs))
+		for _, a := range gargs {
+			r, ok := cg.normalizeTypeNameWithParams(a, visiting, typeParams)
+			if !ok {
+				return "", false
+			}
+			resolvedArgs = append(resolvedArgs, r)
+		}
+		if alias, ok := cg.genericTypeAliases[gbase]; ok {
+			if len(alias.TypeParams) != len(resolvedArgs) {
+				return "", false
+			}
+			mapping := map[string]string{}
+			for i, tp := range alias.TypeParams {
+				mapping[tp] = resolvedArgs[i]
+			}
+			inst := substituteTypeParams(alias.TypeName, mapping)
+			return cg.normalizeTypeNameWithParams(inst, visiting, typeParams)
+		}
+		return gbase + "<" + strings.Join(resolvedArgs, ",") + ">", true
+	}
+	if typeParams != nil {
+		if _, ok := typeParams[base]; ok {
+			return base, true
+		}
+	}
 	if alias, ok := cg.typeAliases[base]; ok {
 		if _, seen := visiting[base]; seen {
 			return "", false
 		}
 		visiting[base] = struct{}{}
 		defer delete(visiting, base)
-		return cg.resolveTypeName(alias, visiting)
+		return cg.normalizeTypeNameWithParams(alias, visiting, typeParams)
 	}
 	return base, true
+}
+
+func toTypeParamSet(params []string) map[string]struct{} {
+	if len(params) == 0 {
+		return nil
+	}
+	out := make(map[string]struct{}, len(params))
+	for _, p := range params {
+		out[p] = struct{}{}
+	}
+	return out
 }
 
 func isBuiltinTypeName(name string) bool {

@@ -43,6 +43,14 @@ func splitTopLevelTuple(t string) ([]string, bool) {
 	return typesys.SplitTopLevelTuple(t)
 }
 
+func splitGenericType(t string) (string, []string, bool) {
+	return typesys.SplitGenericType(t)
+}
+
+func substituteTypeParams(t string, mapping map[string]string) string {
+	return typesys.SubstituteTypeParams(t, mapping)
+}
+
 func stripOuterGroupingParens(s string) string {
 	out := strings.TrimSpace(s)
 	for len(out) >= 2 && out[0] == '(' && out[len(out)-1] == ')' {

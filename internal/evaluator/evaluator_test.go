@@ -1050,6 +1050,27 @@ func TestUnionTypesEval(t *testing.T) {
 	}
 }
 
+func TestGenericTypeAliasesEval(t *testing.T) {
+	evaluated := testEval(`type Pair<T, U> = (T, U); let p: Pair<int, string> = (7, "seven"); p.0`)
+	testIntegerObject(t, evaluated, 7)
+
+	evaluated = testEval(`type Pair<T, U> = (T, U); let p: Pair<int, string> = (7, "seven"); typeof(p)`)
+	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "Pair<int,string>" {
+		t.Fatalf("expected normalized tuple type, got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+
+	evaluated = testEval(`type Box<T> = T[2]; let xs: Box<int>; xs[0] = 4; xs[1] = 9; xs[1]`)
+	testIntegerObject(t, evaluated, 9)
+}
+
+func TestGenericFunctionEval(t *testing.T) {
+	evaluated := testEval(`fn id<T>(x: T) T { return x; } id(11);`)
+	testIntegerObject(t, evaluated, 11)
+
+	evaluated = testEval(`fn first<T>(a: T, b: T) T { return a; } first(3, 5);`)
+	testIntegerObject(t, evaluated, 3)
+}
+
 func TestTypeAliasesEval(t *testing.T) {
 	evaluated := testEval(`type NumOrText = int||string; let v: NumOrText = "ok"; v`)
 	if evaluated.Type() != object.STRING_OBJ || evaluated.Inspect() != "ok" {

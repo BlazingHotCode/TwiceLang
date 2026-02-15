@@ -131,6 +131,10 @@ func TestUnionTupleSplitsAndTupleMember(t *testing.T) {
 	if _, ok := TupleMemberType("(int,string)", 9); ok {
 		t.Fatalf("expected tuple member OOB failure")
 	}
+
+	if parts, ok := SplitTopLevelUnion("Box<int||string>||bool"); !ok || len(parts) != 2 {
+		t.Fatalf("SplitTopLevelUnion with generics unexpected: %v %v", parts, ok)
+	}
 }
 
 func TestNormalizeCycleFails(t *testing.T) {
@@ -167,5 +171,22 @@ func TestParseInvalidDescriptorsAndHelpers(t *testing.T) {
 	}
 	if _, n, ok := PeelArrayType("int"); ok || n != 0 {
 		t.Fatalf("PeelArrayType non-array should fail")
+	}
+}
+
+func TestGenericTypeHelpers(t *testing.T) {
+	base, args, ok := SplitGenericType("Pair<int, Box<string>>")
+	if !ok || base != "Pair" || len(args) != 2 || args[0] != "int" || args[1] != "Box<string>" {
+		t.Fatalf("SplitGenericType unexpected: %q %v %v", base, args, ok)
+	}
+
+	got := SubstituteTypeParams("(T,U)||Box<T>", map[string]string{"T": "int", "U": "string"})
+	if got != "(int,string)||Box<int>" {
+		t.Fatalf("SubstituteTypeParams=%q", got)
+	}
+
+	parts := SplitTopLevelComma("A<int>, B<(int,string)>, C")
+	if len(parts) != 3 || parts[0] != "A<int>" || parts[1] != "B<(int,string)>" || parts[2] != "C" {
+		t.Fatalf("SplitTopLevelComma unexpected: %v", parts)
 	}
 }

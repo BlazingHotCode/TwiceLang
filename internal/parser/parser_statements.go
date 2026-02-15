@@ -155,6 +155,11 @@ func (p *Parser) parseTypeDeclStatement() ast.Statement {
 		return nil
 	}
 	stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	typeParams, ok := p.parseTypeParameterList()
+	if !ok {
+		return nil
+	}
+	stmt.TypeParams = typeParams
 	if !p.expectPeek(token.ASSIGN) {
 		return nil
 	}
@@ -183,6 +188,11 @@ func (p *Parser) parseFunctionStatement() *ast.FunctionStatement {
 		Token: fnToken,
 		Name:  name,
 	}
+	typeParams, ok := p.parseTypeParameterList()
+	if !ok {
+		return nil
+	}
+	lit.TypeParams = typeParams
 
 	if !p.expectPeek(token.LPAREN) {
 		return nil

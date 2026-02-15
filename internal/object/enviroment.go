@@ -3,22 +3,29 @@ package object
 // Environment stores variable bindings
 // It's a map with a link to an outer scope (for nested functions)
 type Environment struct {
-	store      map[string]Object
-	constStore map[string]bool
-	typeStore  map[string]string
-	typeAlias  map[string]string
-	outer      *Environment // Parent scope, nil for global scope
+	store            map[string]Object
+	constStore       map[string]bool
+	typeStore        map[string]string
+	typeAlias        map[string]string
+	genericTypeAlias map[string]GenericTypeAlias
+	outer            *Environment // Parent scope, nil for global scope
+}
+
+type GenericTypeAlias struct {
+	TypeParams []string
+	TypeName   string
 }
 
 // NewEnvironment creates a new global environment
 func NewEnvironment() *Environment {
 	s := make(map[string]Object)
 	return &Environment{
-		store:      s,
-		constStore: make(map[string]bool),
-		typeStore:  make(map[string]string),
-		typeAlias:  make(map[string]string),
-		outer:      nil,
+		store:            s,
+		constStore:       make(map[string]bool),
+		typeStore:        make(map[string]string),
+		typeAlias:        make(map[string]string),
+		genericTypeAlias: make(map[string]GenericTypeAlias),
+		outer:            nil,
 	}
 }
 
@@ -132,5 +139,24 @@ func (e *Environment) TypeAlias(name string) (string, bool) {
 
 func (e *Environment) HasTypeAliasInCurrentScope(name string) bool {
 	_, ok := e.typeAlias[name]
+	return ok
+}
+
+func (e *Environment) SetGenericTypeAlias(name string, alias GenericTypeAlias) {
+	e.genericTypeAlias[name] = alias
+}
+
+func (e *Environment) GenericTypeAlias(name string) (GenericTypeAlias, bool) {
+	if t, ok := e.genericTypeAlias[name]; ok {
+		return t, true
+	}
+	if e.outer != nil {
+		return e.outer.GenericTypeAlias(name)
+	}
+	return GenericTypeAlias{}, false
+}
+
+func (e *Environment) HasGenericTypeAliasInCurrentScope(name string) bool {
+	_, ok := e.genericTypeAlias[name]
 	return ok
 }

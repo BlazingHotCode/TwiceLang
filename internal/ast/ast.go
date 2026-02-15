@@ -206,9 +206,10 @@ func (cs *ConstStatement) String() string {
 
 // TypeDeclStatement represents: type <name> = <typeExpr>;
 type TypeDeclStatement struct {
-	Token    token.Token
-	Name     *Identifier
-	TypeName string
+	Token      token.Token
+	Name       *Identifier
+	TypeParams []string
+	TypeName   string
 }
 
 func (ts *TypeDeclStatement) statementNode()       {}
@@ -218,6 +219,11 @@ func (ts *TypeDeclStatement) String() string {
 	out.WriteString("type ")
 	if ts.Name != nil {
 		out.WriteString(ts.Name.String())
+	}
+	if len(ts.TypeParams) > 0 {
+		out.WriteString("<")
+		out.WriteString(strings.Join(ts.TypeParams, ", "))
+		out.WriteString(">")
 	}
 	out.WriteString(" = ")
 	out.WriteString(ts.TypeName)
@@ -511,6 +517,7 @@ func (bs *BlockStatement) String() string {
 type FunctionLiteral struct {
 	Token      token.Token // The FN token
 	Name       *Identifier // Optional function name
+	TypeParams []string
 	Parameters []*FunctionParameter
 	ReturnType string
 	Body       *BlockStatement
@@ -543,6 +550,11 @@ func (fl *FunctionLiteral) String() string {
 		out.WriteString(" ")
 		out.WriteString(fl.Name.String())
 	}
+	if len(fl.TypeParams) > 0 {
+		out.WriteString("<")
+		out.WriteString(strings.Join(fl.TypeParams, ", "))
+		out.WriteString(">")
+	}
 	out.WriteString("(")
 	out.WriteString(strings.Join(params, ", "))
 	out.WriteString(") ")
@@ -571,9 +583,10 @@ func (fs *FunctionStatement) String() string {
 
 // CallExpression represents <function>(<arguments>)
 type CallExpression struct {
-	Token     token.Token // The ( token
-	Function  Expression  // Identifier or FunctionLiteral
-	Arguments []Expression
+	Token         token.Token // The ( token
+	Function      Expression  // Identifier or FunctionLiteral
+	TypeArguments []string
+	Arguments     []Expression
 }
 
 func (ce *CallExpression) expressionNode()      {}
@@ -586,6 +599,11 @@ func (ce *CallExpression) String() string {
 		args = append(args, a.String())
 	}
 	out.WriteString(ce.Function.String())
+	if len(ce.TypeArguments) > 0 {
+		out.WriteString("<")
+		out.WriteString(strings.Join(ce.TypeArguments, ", "))
+		out.WriteString(">")
+	}
 	out.WriteString("(")
 	out.WriteString(strings.Join(args, ", "))
 	out.WriteString(")")
@@ -647,7 +665,6 @@ func (mae *MemberAccessExpression) String() string {
 	}
 	return out.String()
 }
-
 
 // TupleAccessExpression represents <tupleExpr>.<index>
 type TupleAccessExpression struct {

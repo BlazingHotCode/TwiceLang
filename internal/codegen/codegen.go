@@ -9,48 +9,49 @@ import (
 
 // CodeGen holds the state for code generation
 type CodeGen struct {
-	output           strings.Builder
-	funcDefs         strings.Builder
-	labelCount       int
-	exitLabel        string
-	normalExit       string
-	variables        map[string]int // name -> stack offset
-	constVars        map[string]bool
-	varTypes         map[string]valueType
-	varDeclared      map[string]valueType
-	varTypeNames     map[string]string
-	varDeclaredNames map[string]string
-	varValueTypeName map[string]string
-	varIsNull        map[string]bool
-	varArrayLen      map[string]int
-	intVals          map[string]int64
-	charVals         map[string]rune
-	stringVals       map[string]string
-	floatVals        map[string]float64
-	stringLits       map[string]string
-	stackOffset      int // current stack position
-	maxStackOffset   int
-	functions        map[string]*compiledFunction
-	funcByName       map[string]string
-	funcStmtKeys     map[*ast.FunctionStatement]string
-	funcLitKeys      map[*ast.FunctionLiteral]string
-	varFuncs         map[string]string
-	typeAliases      map[string]string
-	currentFn        string
-	nextAnonFn       int
-	inFunction       bool
-	funcRetLbl       string
-	funcRetType      valueType
-	funcRetTypeName  string
-	loopBreakLabels  []string
-	loopContLabels   []string
-	arraySlots       map[*ast.ArrayLiteral]int
-	tupleSlots       map[*ast.TupleLiteral]int
-	scopeDecls       []map[string]struct{}
-	typeScopeDecls   []map[string]struct{}
-	inferTypeCache   map[ast.Expression]valueType
-	inferNameCache   map[ast.Expression]string
-	errors           []CodegenError
+	output             strings.Builder
+	funcDefs           strings.Builder
+	labelCount         int
+	exitLabel          string
+	normalExit         string
+	variables          map[string]int // name -> stack offset
+	constVars          map[string]bool
+	varTypes           map[string]valueType
+	varDeclared        map[string]valueType
+	varTypeNames       map[string]string
+	varDeclaredNames   map[string]string
+	varValueTypeName   map[string]string
+	varIsNull          map[string]bool
+	varArrayLen        map[string]int
+	intVals            map[string]int64
+	charVals           map[string]rune
+	stringVals         map[string]string
+	floatVals          map[string]float64
+	stringLits         map[string]string
+	stackOffset        int // current stack position
+	maxStackOffset     int
+	functions          map[string]*compiledFunction
+	funcByName         map[string]string
+	funcStmtKeys       map[*ast.FunctionStatement]string
+	funcLitKeys        map[*ast.FunctionLiteral]string
+	varFuncs           map[string]string
+	typeAliases        map[string]string
+	genericTypeAliases map[string]genericTypeAlias
+	currentFn          string
+	nextAnonFn         int
+	inFunction         bool
+	funcRetLbl         string
+	funcRetType        valueType
+	funcRetTypeName    string
+	loopBreakLabels    []string
+	loopContLabels     []string
+	arraySlots         map[*ast.ArrayLiteral]int
+	tupleSlots         map[*ast.TupleLiteral]int
+	scopeDecls         []map[string]struct{}
+	typeScopeDecls     []map[string]struct{}
+	inferTypeCache     map[ast.Expression]valueType
+	inferNameCache     map[ast.Expression]string
+	errors             []CodegenError
 }
 
 type compiledFunction struct {
@@ -60,6 +61,11 @@ type compiledFunction struct {
 	Literal          *ast.FunctionLiteral
 	Captures         []string
 	CaptureTypeNames []string
+}
+
+type genericTypeAlias struct {
+	TypeParams []string
+	TypeName   string
 }
 
 type valueType int
@@ -87,35 +93,36 @@ type CodegenError struct {
 // New creates a new code generator
 func New() *CodeGen {
 	return &CodeGen{
-		variables:        make(map[string]int),
-		constVars:        make(map[string]bool),
-		varTypes:         make(map[string]valueType),
-		varDeclared:      make(map[string]valueType),
-		varTypeNames:     make(map[string]string),
-		varDeclaredNames: make(map[string]string),
-		varValueTypeName: make(map[string]string),
-		varIsNull:        make(map[string]bool),
-		varArrayLen:      make(map[string]int),
-		intVals:          make(map[string]int64),
-		charVals:         make(map[string]rune),
-		stringVals:       make(map[string]string),
-		floatVals:        make(map[string]float64),
-		stringLits:       make(map[string]string),
-		functions:        make(map[string]*compiledFunction),
-		funcByName:       make(map[string]string),
-		funcStmtKeys:     make(map[*ast.FunctionStatement]string),
-		funcLitKeys:      make(map[*ast.FunctionLiteral]string),
-		varFuncs:         make(map[string]string),
-		typeAliases:      make(map[string]string),
-		stackOffset:      0,
-		maxStackOffset:   0,
-		arraySlots:       make(map[*ast.ArrayLiteral]int),
-		tupleSlots:       make(map[*ast.TupleLiteral]int),
-		scopeDecls:       []map[string]struct{}{},
-		typeScopeDecls:   []map[string]struct{}{},
-		inferTypeCache:   make(map[ast.Expression]valueType),
-		inferNameCache:   make(map[ast.Expression]string),
-		errors:           []CodegenError{},
+		variables:          make(map[string]int),
+		constVars:          make(map[string]bool),
+		varTypes:           make(map[string]valueType),
+		varDeclared:        make(map[string]valueType),
+		varTypeNames:       make(map[string]string),
+		varDeclaredNames:   make(map[string]string),
+		varValueTypeName:   make(map[string]string),
+		varIsNull:          make(map[string]bool),
+		varArrayLen:        make(map[string]int),
+		intVals:            make(map[string]int64),
+		charVals:           make(map[string]rune),
+		stringVals:         make(map[string]string),
+		floatVals:          make(map[string]float64),
+		stringLits:         make(map[string]string),
+		functions:          make(map[string]*compiledFunction),
+		funcByName:         make(map[string]string),
+		funcStmtKeys:       make(map[*ast.FunctionStatement]string),
+		funcLitKeys:        make(map[*ast.FunctionLiteral]string),
+		varFuncs:           make(map[string]string),
+		typeAliases:        make(map[string]string),
+		genericTypeAliases: make(map[string]genericTypeAlias),
+		stackOffset:        0,
+		maxStackOffset:     0,
+		arraySlots:         make(map[*ast.ArrayLiteral]int),
+		tupleSlots:         make(map[*ast.TupleLiteral]int),
+		scopeDecls:         []map[string]struct{}{},
+		typeScopeDecls:     []map[string]struct{}{},
+		inferTypeCache:     make(map[ast.Expression]valueType),
+		inferNameCache:     make(map[ast.Expression]string),
+		errors:             []CodegenError{},
 	}
 }
 

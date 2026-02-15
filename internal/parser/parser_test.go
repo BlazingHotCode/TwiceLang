@@ -152,6 +152,47 @@ func TestTypeDeclarationParses(t *testing.T) {
 	}
 }
 
+func TestGenericTypeDeclarationParses(t *testing.T) {
+	p := New(lexer.New("type Pair<T, U> = (T, U); let p: Pair<int, string>;"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	if len(program.Statements) != 2 {
+		t.Fatalf("expected 2 statements, got=%d", len(program.Statements))
+	}
+	td, ok := program.Statements[0].(*ast.TypeDeclStatement)
+	if !ok {
+		t.Fatalf("expected type declaration, got=%T", program.Statements[0])
+	}
+	if len(td.TypeParams) != 2 || td.TypeParams[0] != "T" || td.TypeParams[1] != "U" {
+		t.Fatalf("unexpected generic params: %#v", td.TypeParams)
+	}
+	if td.TypeName != "(T,U)" {
+		t.Fatalf("unexpected generic alias body: %q", td.TypeName)
+	}
+	ls, ok := program.Statements[1].(*ast.LetStatement)
+	if !ok {
+		t.Fatalf("expected let statement, got=%T", program.Statements[1])
+	}
+	if ls.TypeName != "Pair<int,string>" {
+		t.Fatalf("expected Pair<int,string>, got=%q", ls.TypeName)
+	}
+}
+
+func TestNestedGenericTypeParsesWithShiftCloser(t *testing.T) {
+	p := New(lexer.New("let xs: Box<Box<int>>;"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	stmt, ok := program.Statements[0].(*ast.LetStatement)
+	if !ok {
+		t.Fatalf("expected let statement, got=%T", program.Statements[0])
+	}
+	if stmt.TypeName != "Box<Box<int>>" {
+		t.Fatalf("expected nested generic type, got=%q", stmt.TypeName)
+	}
+}
+
 func TestTypedArrayLetDeclarationParses(t *testing.T) {
 	p := New(lexer.New("let arr: int[3];"))
 	program := p.ParseProgram()
@@ -588,6 +629,30 @@ func TestNamedFunctionSyntaxParses(t *testing.T) {
 	}
 	if stmt.Function.Parameters[1].DefaultValue == nil {
 		t.Fatalf("expected default value for second parameter")
+	}
+}
+
+func TestGenericFunctionSyntaxParses(t *testing.T) {
+	input := `fn id<T>(x: T) T { return x; }`
+	p := New(lexer.New(input))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	stmt, ok := program.Statements[0].(*ast.FunctionStatement)
+	if !ok {
+		t.Fatalf("expected function statement, got=%T", program.Statements[0])
+	}
+	if len(stmt.Function.TypeParams) != 1 || stmt.Function.TypeParams[0] != "T" {
+		t.Fatalf("unexpected function type params: %#v", stmt.Function.TypeParams)
+	}
+	if stmt.Function.Parameters[0].TypeName != "T" {
+		t.Fatalf("expected parameter type T, got=%q", stmt.Function.Parameters[0].TypeName)
+	}
+	if stmt.Function.ReturnType != "T" {
+		t.Fatalf("expected return type T, got=%q", stmt.Function.ReturnType)
 	}
 }
 

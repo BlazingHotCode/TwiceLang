@@ -171,6 +171,7 @@ func (e *Error) Inspect() string {
 // It has parameters, a body (AST block), and its own environment (closure)
 type Function struct {
 	Name       string
+	TypeParams []string
 	Parameters []*ast.FunctionParameter
 	ReturnType string
 	Body       *ast.BlockStatement
@@ -197,6 +198,11 @@ func (f *Function) Inspect() string {
 	if f.Name != "" {
 		out.WriteString(" ")
 		out.WriteString(f.Name)
+	}
+	if len(f.TypeParams) > 0 {
+		out.WriteString("<")
+		out.WriteString(strings.Join(f.TypeParams, ", "))
+		out.WriteString(">")
 	}
 	out.WriteString("(")
 	out.WriteString(strings.Join(params, ", "))

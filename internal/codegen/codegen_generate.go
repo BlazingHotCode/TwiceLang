@@ -348,7 +348,11 @@ func (cg *CodeGen) generateIndexExpression(ie *ast.IndexExpression) {
 		return
 	}
 
-	elemTypeName, arrLen, ok := peelArrayType(leftTypeName)
+	resolvedLeftTypeName := leftTypeName
+	if normalized, ok := cg.normalizeTypeName(leftTypeName); ok {
+		resolvedLeftTypeName = normalized
+	}
+	elemTypeName, arrLen, ok := peelArrayType(resolvedLeftTypeName)
 	if !ok {
 		cg.addNodeError("index operator not supported for non-array/string type", ie)
 		cg.emit("    mov $0, %%rax")
@@ -973,7 +977,11 @@ func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
 	}
 	cg.varTypeNames[name] = targetName
 	cg.varValueTypeName[name] = inferredName
-	if _, n, ok := peelArrayType(targetName); ok {
+	normalizedTargetName := targetName
+	if resolved, ok := cg.normalizeTypeName(targetName); ok {
+		normalizedTargetName = resolved
+	}
+	if _, n, ok := peelArrayType(normalizedTargetName); ok {
 		cg.varArrayLen[name] = n
 	} else {
 		delete(cg.varArrayLen, name)
@@ -1067,7 +1075,11 @@ func (cg *CodeGen) generateConst(cs *ast.ConstStatement) {
 	}
 	cg.varTypeNames[name] = targetName
 	cg.varValueTypeName[name] = inferredName
-	if _, n, ok := peelArrayType(targetName); ok {
+	normalizedTargetName := targetName
+	if resolved, ok := cg.normalizeTypeName(targetName); ok {
+		normalizedTargetName = resolved
+	}
+	if _, n, ok := peelArrayType(normalizedTargetName); ok {
 		cg.varArrayLen[name] = n
 	} else {
 		delete(cg.varArrayLen, name)
@@ -1103,11 +1115,23 @@ func (cg *CodeGen) generateTypeDecl(ts *ast.TypeDeclStatement) {
 		cg.addNodeError("type already declared: "+name, ts)
 		return
 	}
-	resolved, ok := cg.normalizeTypeName(ts.TypeName)
-	if !ok || !cg.isKnownTypeName(resolved) {
+	if len(ts.TypeParams) == 0 {
+		resolved, ok := cg.normalizeTypeName(ts.TypeName)
+		if !ok || !cg.isKnownTypeName(resolved) {
+			return
+		}
+		cg.typeAliases[name] = resolved
+		cg.markTypeAliasDeclaredInCurrentScope(name)
 		return
 	}
-	cg.typeAliases[name] = resolved
+	resolved, ok := cg.normalizeTypeNameWithParams(ts.TypeName, make(map[string]struct{}), toTypeParamSet(ts.TypeParams))
+	if !ok || !cg.isKnownTypeNameWithParams(resolved, toTypeParamSet(ts.TypeParams)) {
+		return
+	}
+	cg.genericTypeAliases[name] = genericTypeAlias{
+		TypeParams: append([]string{}, ts.TypeParams...),
+		TypeName:   resolved,
+	}
 	cg.markTypeAliasDeclaredInCurrentScope(name)
 }
 
@@ -1209,7 +1233,11 @@ func (cg *CodeGen) generateAssign(as *ast.AssignStatement) {
 	}
 	cg.varTypeNames[as.Name.Value] = targetName
 	cg.varValueTypeName[as.Name.Value] = inferredName
-	if _, n, ok := peelArrayType(targetName); ok {
+	normalizedTargetName := targetName
+	if resolved, ok := cg.normalizeTypeName(targetName); ok {
+		normalizedTargetName = resolved
+	}
+	if _, n, ok := peelArrayType(normalizedTargetName); ok {
 		cg.varArrayLen[as.Name.Value] = n
 	} else {
 		delete(cg.varArrayLen, as.Name.Value)
@@ -1260,6 +1288,9 @@ func (cg *CodeGen) generateIndexAssign(ias *ast.IndexAssignStatement) {
 	}
 
 	arrTypeName := cg.varTypeNames[name]
+	if normalized, ok := cg.normalizeTypeName(arrTypeName); ok {
+		arrTypeName = normalized
+	}
 	elemTypeName, arrLen, ok := peelArrayType(arrTypeName)
 	if !ok {
 		cg.addNodeError("indexed assignment target is not an array", ias)

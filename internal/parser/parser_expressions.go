@@ -424,6 +424,11 @@ func (p *Parser) parseBlockStatement() *ast.BlockStatement {
 // parseFunctionLiteral handles: fn(<params>) { <body> }
 func (p *Parser) parseFunctionLiteral() ast.Expression {
 	lit := &ast.FunctionLiteral{Token: p.curToken}
+	typeParams, ok := p.parseTypeParameterList()
+	if !ok {
+		return nil
+	}
+	lit.TypeParams = typeParams
 
 	// Expect (
 	if !p.expectPeek(token.LPAREN) {

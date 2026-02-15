@@ -242,14 +242,25 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		if node.Name.Value == "type" || isBuiltinTypeName(node.Name.Value) {
 			return newError("cannot redefine builtin type: %s", node.Name.Value)
 		}
-		if env.HasTypeAliasInCurrentScope(node.Name.Value) {
+		if env.HasTypeAliasInCurrentScope(node.Name.Value) || env.HasGenericTypeAliasInCurrentScope(node.Name.Value) {
 			return newError("type already declared: %s", node.Name.Value)
 		}
-		resolved, ok := resolveTypeName(node.TypeName, env, map[string]struct{}{})
-		if !ok || !isKnownTypeName(resolved, env) {
+		typeParamSet := make(map[string]struct{}, len(node.TypeParams))
+		for _, tp := range node.TypeParams {
+			typeParamSet[tp] = struct{}{}
+		}
+		resolved, ok := resolveTypeNameWithParams(node.TypeName, env, map[string]struct{}{}, typeParamSet)
+		if !ok || !isKnownTypeNameWithParams(resolved, env, typeParamSet) {
 			return newError("unknown type: %s", node.TypeName)
 		}
-		env.SetTypeAlias(node.Name.Value, resolved)
+		if len(node.TypeParams) == 0 {
+			env.SetTypeAlias(node.Name.Value, resolved)
+		} else {
+			env.SetGenericTypeAlias(node.Name.Value, object.GenericTypeAlias{
+				TypeParams: append([]string{}, node.TypeParams...),
+				TypeName:   resolved,
+			})
+		}
 	case *ast.AssignStatement:
 		if !env.Has(node.Name.Value) {
 			return newError("identifier not found: " + node.Name.Value)
@@ -378,12 +389,16 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		return annotateErrorWithNode(evalIfExpression(node, env), node)
 
 	case *ast.FunctionLiteral:
+		typeParamSet := make(map[string]struct{}, len(node.TypeParams))
+		for _, tp := range node.TypeParams {
+			typeParamSet[tp] = struct{}{}
+		}
 		for _, param := range node.Parameters {
-			if param.TypeName != "" && !isKnownTypeName(param.TypeName, env) {
+			if param.TypeName != "" && !isKnownTypeNameWithParams(param.TypeName, env, typeParamSet) {
 				return newError("unknown type: %s", param.TypeName)
 			}
 		}
-		if node.ReturnType != "" && !isKnownTypeName(node.ReturnType, env) {
+		if node.ReturnType != "" && !isKnownTypeNameWithParams(node.ReturnType, env, typeParamSet) {
 			return newError("unknown type: %s", node.ReturnType)
 		}
 		name := ""
@@ -392,6 +407,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		}
 		return &object.Function{
 			Name:       name,
+			TypeParams: append([]string{}, node.TypeParams...),
 			Parameters: node.Parameters,
 			ReturnType: node.ReturnType,
 			Body:       node.Body,
