@@ -88,6 +88,8 @@ func (cg *CodeGen) generateExpression(expr ast.Expression) {
 		cg.generateIndexExpression(e)
 	case *ast.MethodCallExpression:
 		cg.generateMethodCallExpression(e)
+	case *ast.NullSafeAccessExpression:
+		cg.generateNullSafeAccessExpression(e)
 	case *ast.TupleAccessExpression:
 		cg.generateTupleAccessExpression(e)
 	case *ast.FunctionLiteral:
@@ -230,30 +232,69 @@ func (cg *CodeGen) generateMethodCallExpression(mce *ast.MethodCallExpression) {
 		cg.emit("    mov $0, %%rax")
 		return
 	}
+	if mce.NullSafe {
+		doneLabel := cg.emitNullSafeObjectGuard(mce.Object)
+		cg.generateMethodByName(mce)
+		cg.emit("%s:", doneLabel)
+		return
+	}
+	cg.generateMethodByName(mce)
+}
+
+func (cg *CodeGen) generateMethodByName(mce *ast.MethodCallExpression) {
 	switch mce.Method.Value {
 	case "length":
-		if len(mce.Arguments) != 0 {
-			cg.addNodeError(fmt.Sprintf("length expects 0 arguments, got=%d", len(mce.Arguments)), mce)
-			cg.emit("    mov $0, %%rax")
-			return
-		}
-		typeName := cg.inferExpressionTypeName(mce.Object)
-		_, n, ok := peelArrayType(typeName)
-		if !ok {
-			cg.addNodeError("length is only supported on arrays", mce)
-			cg.emit("    mov $0, %%rax")
-			return
-		}
-		if n < 0 {
-			cg.addNodeError("array length is unknown at compile time", mce)
-			cg.emit("    mov $0, %%rax")
-			return
-		}
-		cg.emit("    mov $%d, %%rax", n)
+		cg.generateArrayLengthMethod(mce)
 	default:
-		cg.addNodeError("unknown method: "+mce.Method.Value, mce)
-		cg.emit("    mov $0, %%rax")
+		cg.generateUnknownMethodError(mce)
 	}
+}
+
+func (cg *CodeGen) generateArrayLengthMethod(mce *ast.MethodCallExpression) {
+	if len(mce.Arguments) != 0 {
+		cg.addNodeError(fmt.Sprintf("length expects 0 arguments, got=%d", len(mce.Arguments)), mce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	typeName := cg.inferExpressionTypeName(mce.Object)
+	_, n, ok := peelArrayType(typeName)
+	if !ok {
+		cg.addNodeError("length is only supported on arrays", mce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if n < 0 {
+		cg.addNodeError("array length is unknown at compile time", mce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	cg.emit("    mov $%d, %%rax", n)
+}
+
+func (cg *CodeGen) generateUnknownMethodError(mce *ast.MethodCallExpression) {
+	cg.addNodeError("unknown method: "+mce.Method.Value, mce)
+	cg.emit("    mov $0, %%rax")
+}
+
+func (cg *CodeGen) emitNullSafeObjectGuard(object ast.Expression) string {
+	nonNullLabel := cg.newLabel()
+	doneLabel := cg.newLabel()
+
+	cg.generateExpression(object)
+	cg.emit("    lea null_lit(%%rip), %%rcx")
+	cg.emit("    cmp %%rcx, %%rax")
+	cg.emit("    jne %s", nonNullLabel)
+	cg.emit("    lea null_lit(%%rip), %%rax")
+	cg.emit("    jmp %s", doneLabel)
+	cg.emit("%s:", nonNullLabel)
+
+	return doneLabel
+}
+
+func (cg *CodeGen) generateNullSafeAccessExpression(e *ast.NullSafeAccessExpression) {
+	doneLabel := cg.emitNullSafeObjectGuard(e.Object)
+	cg.failNode("member access is only supported for methods", e)
+	cg.emit("%s:", doneLabel)
 }
 
 func (cg *CodeGen) generateTupleAccessExpression(tae *ast.TupleAccessExpression) {
@@ -291,6 +332,29 @@ func (cg *CodeGen) generateBoolean(b *ast.Boolean) {
 // generateInfix handles binary operations: left op right
 // We use the stack to hold intermediate results
 func (cg *CodeGen) generateInfix(ie *ast.InfixExpression) {
+	if ie.Operator == "??" {
+		// Evaluate left first.
+		cg.generateExpression(ie.Left)
+		cg.emit("    push %%rax")
+		cg.emit("    lea null_lit(%%rip), %%rcx")
+		cg.emit("    cmp %%rcx, %%rax")
+		useRight := cg.newLabel()
+		done := cg.newLabel()
+		cg.emit("    je %s", useRight)
+
+		// left is non-null -> result is left
+		cg.emit("    pop %%rax")
+		cg.emit("    jmp %s", done)
+
+		// left is null -> evaluate/use right
+		cg.emit("%s:", useRight)
+		cg.emit("    add $8, %%rsp") // discard saved left
+		cg.generateExpression(ie.Right)
+
+		cg.emit("%s:", done)
+		return
+	}
+
 	leftType := cg.inferExpressionType(ie.Left)
 	rightType := cg.inferExpressionType(ie.Right)
 
@@ -1028,6 +1092,29 @@ func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 		}
 		label := cg.stringLabel(typeNameStr + "\n")
 		cg.emit("    lea %s(%%rip), %%rax", label)
+	case "hasField":
+		if len(ce.Arguments) != 2 {
+			cg.failNodef(ce, "hasField expects exactly 2 arguments, got=%d", len(ce.Arguments))
+			return
+		}
+		for _, arg := range ce.Arguments {
+			if _, ok := arg.(*ast.NamedArgument); ok {
+				cg.failNode("named arguments are not supported for hasField", arg)
+				return
+			}
+		}
+		field, ok := cg.constStringValue(ce.Arguments[1])
+		if !ok {
+			cg.failNode("hasField field must be compile-time string in codegen", ce.Arguments[1])
+			return
+		}
+		objTypeName := cg.inferExpressionTypeName(ce.Arguments[0])
+		_, _, isArray := peelArrayType(objTypeName)
+		if isArray && field == "length" {
+			cg.emit("    mov $1, %%rax")
+		} else {
+			cg.emit("    mov $0, %%rax")
+		}
 	case "int", "float", "string", "char", "bool":
 		cg.generateCastCall(fn.Value, ce)
 	default:

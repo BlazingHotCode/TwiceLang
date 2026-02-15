@@ -76,6 +76,24 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) (out valueType) {
 		left := cg.inferExpressionType(e.Left)
 		right := cg.inferExpressionType(e.Right)
 		switch e.Operator {
+		case "??":
+			// Null-coalescing evaluates to the non-null operand type.
+			if left == typeNull {
+				return right
+			}
+			if right == typeNull {
+				return left
+			}
+			if left == right {
+				return left
+			}
+			if left == typeUnknown {
+				return right
+			}
+			if right == typeUnknown {
+				return left
+			}
+			return typeUnknown
 		case "&&", "||", "^^":
 			if left == typeBool && right == typeBool {
 				return typeBool
@@ -133,6 +151,8 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) (out valueType) {
 			switch fn.Value {
 			case "typeof", "typeofValue", "typeofvalue":
 				return typeType
+			case "hasField":
+				return typeBool
 			case "int":
 				return typeInt
 			case "float":
