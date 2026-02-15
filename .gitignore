@@ -39,3 +39,5 @@ go.work.sum
 
 # Keep sample source file tracked
 !/test.tw
+
+.fake
