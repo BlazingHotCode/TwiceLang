@@ -1067,6 +1067,29 @@ func TestCodegenFunctionLiteralAssignedCallWithCapture(t *testing.T) {
 	}
 }
 
+func TestCodegenLambdaLiteralDirectCall(t *testing.T) {
+	asm, cg := generateAssembly(t, "print(((a: int) int => { return a + 1; })(2));")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "call fn_lit_") {
+		t.Fatalf("expected direct call to generated lambda label, got:\n%s", asm)
+	}
+	if !strings.Contains(asm, "call print_int") {
+		t.Fatalf("expected lambda result to print as int, got:\n%s", asm)
+	}
+}
+
+func TestCodegenLambdaAssignedCall(t *testing.T) {
+	asm, cg := generateAssembly(t, "const square = (a: int) int => { return a * a; }; print(square(2));")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "call fn_lit_") {
+		t.Fatalf("expected call to generated lambda label, got:\n%s", asm)
+	}
+}
+
 func TestCodegenUnknownFunctionError(t *testing.T) {
 	_, cg := generateAssembly(t, "doesNotExist();")
 	if len(cg.Errors()) == 0 {

@@ -10,14 +10,13 @@
 - adding snippet to [test.tw](./test.tw) and running using binary to test the code
 - adding guide/points to show the feature in [README](./README.md)
 
-## 1. Lambda Functions
+## 1. Array Functional Methods
 
-- Add lambda function syntax: `(var1: type1) returnType => { ... }`
-- Allow assigning lambdas to constants/variables:
-- `const mylambda = (a: int) int => { return a * a; };`
-- Allow direct invocation of lambda values:
-- `mylambda(2)`
-- Support parser/evaluator/codegen parity for lambda declaration, typing, and invocation.
+- Add JS-style array methods such as `.map`, `.filter`, and related operations.
+- Methods should accept lambda/function arguments (for example callbacks like `(x: int) int => { ... }`).
+- Define consistent typing rules for callback parameter and return types.
+- Ensure parser/evaluator/codegen/runtime parity for these methods.
+- Add tests and docs examples for array functional method usage.
 
 ## 2. OOP and Type System Expansion
 

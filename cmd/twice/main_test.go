@@ -1011,6 +1011,36 @@ println(getY());
 	}
 }
 
+func TestCLILambdaDirectCallAndAssignment(t *testing.T) {
+	root := repoRoot(t)
+	ensureToolchain(t)
+
+	srcPath := filepath.Join(t.TempDir(), "lambda_call.tw")
+	source := `const square = (a: int) int => { return a * a; };
+println(square(2));
+println(((a: int) int => { return a + 1; })(2));
+`
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	outputName := "twice_cli_lambda_call_bin"
+	outputPath := filepath.Join(root, outputName)
+	_ = os.Remove(outputPath)
+	t.Cleanup(func() { _ = os.Remove(outputPath) })
+
+	cmd := exec.Command("go", "run", "./cmd/twice", "-run", "-o", outputName, srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("compile/run failed: %v\n%s", err, out)
+	}
+	output := string(out)
+	if !strings.Contains(output, "\n4\n3\n") {
+		t.Fatalf("unexpected lambda runtime output. output:\n%s", output)
+	}
+}
+
 func TestCLIAnyTypeRuntimeFlow(t *testing.T) {
 	root := repoRoot(t)
 	ensureToolchain(t)

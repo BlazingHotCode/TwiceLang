@@ -667,6 +667,7 @@ func (bs *BlockStatement) String() string {
 type FunctionLiteral struct {
 	Token      token.Token // The FN token
 	Name       *Identifier // Optional function name
+	IsLambda   bool
 	TypeParams []string
 	Parameters []*FunctionParameter
 	ReturnType string
@@ -696,6 +697,19 @@ func (fl *FunctionLiteral) String() string {
 		params = append(params, param)
 	}
 	out.WriteString(fl.TokenLiteral())
+	if fl.IsLambda {
+		out.Reset()
+		out.WriteString("(")
+		out.WriteString(strings.Join(params, ", "))
+		out.WriteString(") ")
+		if fl.ReturnType != "" {
+			out.WriteString(fl.ReturnType)
+			out.WriteString(" ")
+		}
+		out.WriteString("=> ")
+		out.WriteString(fl.Body.String())
+		return out.String()
+	}
 	if fl.Name != nil {
 		out.WriteString(" ")
 		out.WriteString(fl.Name.String())

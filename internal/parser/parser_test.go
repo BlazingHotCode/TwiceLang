@@ -1088,6 +1088,50 @@ func TestFunctionLiteralExpressionParses(t *testing.T) {
 	}
 }
 
+func TestLambdaLiteralExpressionParses(t *testing.T) {
+	p := New(lexer.New("const square = (a: int) int => { return a * a; };"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	stmt, ok := program.Statements[0].(*ast.ConstStatement)
+	if !ok {
+		t.Fatalf("expected const statement, got=%T", program.Statements[0])
+	}
+	fl, ok := stmt.Value.(*ast.FunctionLiteral)
+	if !ok {
+		t.Fatalf("expected function literal value, got=%T", stmt.Value)
+	}
+	if !fl.IsLambda {
+		t.Fatalf("expected lambda function literal flag to be true")
+	}
+	if fl.ReturnType != "int" {
+		t.Fatalf("expected lambda return type int, got=%q", fl.ReturnType)
+	}
+	if len(fl.Parameters) != 1 || fl.Parameters[0].TypeName != "int" {
+		t.Fatalf("unexpected lambda parameters: %#v", fl.Parameters)
+	}
+}
+
+func TestLambdaLiteralDirectCallParses(t *testing.T) {
+	p := New(lexer.New("let x = ((a: int) int => { return a + 1; })(2);"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	stmt, ok := program.Statements[0].(*ast.LetStatement)
+	if !ok {
+		t.Fatalf("expected let statement, got=%T", program.Statements[0])
+	}
+	call, ok := stmt.Value.(*ast.CallExpression)
+	if !ok {
+		t.Fatalf("expected call expression, got=%T", stmt.Value)
+	}
+	if _, ok := call.Function.(*ast.FunctionLiteral); !ok {
+		t.Fatalf("expected lambda literal call target, got=%T", call.Function)
+	}
+}
+
 func TestForConstStatementParses(t *testing.T) {
 	p := New(lexer.New("for (const i = 0; i < 1; i++) { }"))
 	program := p.ParseProgram()

@@ -391,6 +391,14 @@ println((fn(a: int) int { return a + 1; })(2)); // 3
 println(getY()); // 3
 ```
 
+Lambda syntax is also supported:
+
+```tw
+const square = (a: int) int => { return a * a; };
+println(square(2)); // 4
+println(((a: int) int => { return a + 1; })(2)); // 3
+```
+
 Higher-arity functions and capture-heavy closures are supported:
 
 ```tw

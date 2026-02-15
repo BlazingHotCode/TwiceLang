@@ -29,6 +29,7 @@ const (
 
 	// Operators
 	ASSIGN   TokenType = "="
+	ARROW    TokenType = "=>"
 	PLUS     TokenType = "+"
 	MINUS    TokenType = "-"
 	PLUSPLUS TokenType = "++"

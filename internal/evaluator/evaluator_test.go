@@ -207,6 +207,16 @@ func TestFunctionCallEval(t *testing.T) {
 	testIntegerObject(t, evaluated, 5)
 }
 
+func TestLambdaCallEval(t *testing.T) {
+	evaluated := testEval("const square = (a: int) int => { return a * a; }; square(2)")
+	testIntegerObject(t, evaluated, 4)
+}
+
+func TestLambdaDirectCallWithCaptureEval(t *testing.T) {
+	evaluated := testEval("let y = 3; ((x: int) int => { return x + y; })(2)")
+	testIntegerObject(t, evaluated, 5)
+}
+
 func TestFunctionEmptyReturnEval(t *testing.T) {
 	evaluated := testEval("fn noop() { return; } noop()")
 	if evaluated.Type() != object.NULL_OBJ {

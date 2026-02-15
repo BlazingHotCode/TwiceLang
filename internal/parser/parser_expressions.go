@@ -330,6 +330,10 @@ func (p *Parser) parseBoolean() ast.Expression {
 // parseGroupedExpression handles ( <expr> )
 // Parentheses let us override precedence: (5 + 3) * 2
 func (p *Parser) parseGroupedExpression() ast.Expression {
+	if p.isLambdaLiteralStart() {
+		return p.parseLambdaLiteral()
+	}
+
 	if p.peekTokenIs(token.RPAREN) {
 		p.nextToken() // )
 		return &ast.TupleLiteral{
@@ -369,6 +373,126 @@ func (p *Parser) parseGroupedExpression() ast.Expression {
 	}
 	p.groupedExpr[first] = struct{}{}
 	return first
+}
+
+func (p *Parser) isLambdaLiteralStart() bool {
+	if !p.curTokenIs(token.LPAREN) {
+		return false
+	}
+
+	depth := 1
+	closeIdx := -1
+	for i := 1; i <= 512; i++ {
+		tok := p.peekTokenN(i)
+		switch tok.Type {
+		case token.EOF, token.SEMICOLON:
+			return false
+		case token.LPAREN:
+			depth++
+		case token.RPAREN:
+			depth--
+			if depth == 0 {
+				closeIdx = i
+				goto foundClose
+			}
+		}
+	}
+	return false
+
+foundClose:
+	next := p.peekTokenN(closeIdx + 1)
+	if next.Type == token.ARROW {
+		return true
+	}
+	if !isTypeStartToken(next.Type) {
+		return false
+	}
+
+	typeParenDepth := 0
+	typeAngleDepth := 0
+	for i := closeIdx + 1; i <= 1024; i++ {
+		tok := p.peekTokenN(i)
+		switch tok.Type {
+		case token.EOF, token.SEMICOLON, token.LBRACE:
+			return false
+		case token.ARROW:
+			if typeParenDepth == 0 && typeAngleDepth == 0 {
+				return true
+			}
+		case token.LPAREN:
+			typeParenDepth++
+		case token.RPAREN:
+			if typeParenDepth > 0 {
+				typeParenDepth--
+			} else {
+				return false
+			}
+		case token.LT:
+			typeAngleDepth++
+		case token.GT:
+			if typeAngleDepth > 0 {
+				typeAngleDepth--
+			}
+		case token.SHR:
+			if typeAngleDepth >= 2 {
+				typeAngleDepth -= 2
+			} else if typeAngleDepth == 1 {
+				typeAngleDepth = 0
+			}
+		}
+	}
+	return false
+}
+
+func isTypeStartToken(tt token.TokenType) bool {
+	switch tt {
+	case token.IDENT, token.LPAREN, token.NULL, token.ASTERISK:
+		return true
+	default:
+		return false
+	}
+}
+
+func (p *Parser) parseLambdaLiteral() ast.Expression {
+	start := p.curToken
+	lit := &ast.FunctionLiteral{
+		Token: token.Token{
+			Type:    token.FUNCTION,
+			Literal: "fn",
+			Line:    start.Line,
+			Column:  start.Column,
+		},
+		IsLambda: true,
+	}
+
+	lit.Parameters = p.parseFunctionParameters()
+	if lit.Parameters == nil {
+		return nil
+	}
+
+	if p.peekTokenIs(token.ARROW) {
+		p.nextToken()
+	} else {
+		if !isTypeStartToken(p.peekToken.Type) {
+			p.addErrorPeek("expected lambda return type or => after lambda parameters", p.peekToken.Literal)
+			return nil
+		}
+		p.nextToken()
+		returnType, ok := p.parseTypeExpressionFromCurrent()
+		if !ok {
+			return nil
+		}
+		lit.ReturnType = returnType
+		if !p.expectPeek(token.ARROW) {
+			return nil
+		}
+	}
+
+	if !p.expectPeek(token.LBRACE) {
+		return nil
+	}
+	lit.Body = p.parseBlockStatement()
+	return lit
 }
 
 // parseIfExpression handles: if (<condition>) <consequence> else <alternative>

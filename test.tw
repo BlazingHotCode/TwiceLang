@@ -232,9 +232,12 @@ fn demo_functions() {
   let a4 = 4;
   let a5 = 5;
   let addCaps = fn(x: int, y: int) int { return a1 + a2 + a3 + a4 + a5 + x + y; };
+  const square = (a: int) int => { return a * a; };
 
   println((fn(a: int) int { return a + 1; })(2));
+  println(((a: int) int => { return a + 1; })(2));
   println(getY());
+  println(square(2));
   println(sum7(1, 2, 3, 4, 5, 6, 7));
   println(addCaps(6, 7));
   return;
