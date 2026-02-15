@@ -377,6 +377,42 @@ func (cg *CodeGen) resolveArrayLengthForAccess(object ast.Expression, allowNulla
 	return targetLen, true
 }
 
+func (cg *CodeGen) typeSupportsLengthField(typeName string) (supports bool, nullable bool) {
+	if resolved, ok := cg.normalizeTypeName(typeName); ok {
+		typeName = resolved
+	}
+
+	if _, _, ok := peelArrayType(typeName); ok {
+		return true, false
+	}
+	if typeName == "string" {
+		return true, false
+	}
+
+	parts, isUnion := splitTopLevelUnion(typeName)
+	if !isUnion {
+		return false, false
+	}
+	sawSupported := false
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "null" {
+			nullable = true
+			continue
+		}
+		if _, _, ok := peelArrayType(part); ok {
+			sawSupported = true
+			continue
+		}
+		if part == "string" {
+			sawSupported = true
+			continue
+		}
+		return false, nullable
+	}
+	return sawSupported, nullable
+}
+
 func (cg *CodeGen) generateUnknownMethodError(mce *ast.MethodCallExpression, nullSafe bool) {
 	if nullSafe {
 		cg.emit("    lea null_lit(%%rip), %%rax")
@@ -1213,18 +1249,45 @@ func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 				return
 			}
 		}
-		field, ok := cg.constStringValue(ce.Arguments[1])
-		if !ok {
-			cg.failNode("hasField field must be compile-time string in codegen", ce.Arguments[1])
+		// Evaluate object first to preserve argument side effects.
+		cg.generateExpression(ce.Arguments[0])
+		cg.emit("    push %%rax")
+
+		fieldType := cg.inferExpressionType(ce.Arguments[1])
+		cg.generateExpression(ce.Arguments[1])
+		if fieldType != typeString {
+			cg.emit("    add $8, %%rsp")
+			cg.failNodef(ce.Arguments[1], "hasField field must be string, got %s", typeName(fieldType))
 			return
 		}
+
 		objTypeName := cg.inferExpressionTypeName(ce.Arguments[0])
-		_, _, isArray := peelArrayType(objTypeName)
-		if isArray && field == "length" {
-			cg.emit("    mov $1, %%rax")
-		} else {
+		supportsLength, nullable := cg.typeSupportsLengthField(objTypeName)
+		if !supportsLength {
+			cg.emit("    add $8, %%rsp")
 			cg.emit("    mov $0, %%rax")
+			return
 		}
+
+		cg.emit("    mov %%rax, %%rdi")
+		cg.emit("    lea hasfield_length(%%rip), %%rsi")
+		cg.emit("    call cstr_eq")
+
+		if nullable {
+			nonNullLabel := cg.newLabel()
+			doneLabel := cg.newLabel()
+			cg.emit("    pop %%rcx")
+			cg.emit("    lea null_lit(%%rip), %%rdx")
+			cg.emit("    cmp %%rdx, %%rcx")
+			cg.emit("    jne %s", nonNullLabel)
+			cg.emit("    mov $0, %%rax")
+			cg.emit("    jmp %s", doneLabel)
+			cg.emit("%s:", nonNullLabel)
+			cg.emit("%s:", doneLabel)
+			return
+		}
+
+		cg.emit("    add $8, %%rsp")
 	case "int", "float", "string", "char", "bool":
 		cg.generateCastCall(fn.Value, ce)
 	default:

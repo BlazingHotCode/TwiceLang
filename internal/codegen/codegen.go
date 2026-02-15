@@ -310,6 +310,32 @@ func (cg *CodeGen) emitHeader() {
 	cg.emit("    ret")
 	cg.emit("")
 
+	// Compare two null-terminated strings.
+	// Input: rdi = left c-string, rsi = right c-string
+	// Output: rax = 1 if equal, 0 otherwise
+	cg.emit("cstr_eq:")
+	cg.emit("    push %%rbp")
+	cg.emit("    mov %%rsp, %%rbp")
+	cg.emit("cstr_eq_loop:")
+	cg.emit("    movzbq (%%rdi), %%rax")
+	cg.emit("    movzbq (%%rsi), %%rcx")
+	cg.emit("    cmp %%rcx, %%rax")
+	cg.emit("    jne cstr_eq_false")
+	cg.emit("    test %%rax, %%rax")
+	cg.emit("    je cstr_eq_true")
+	cg.emit("    inc %%rdi")
+	cg.emit("    inc %%rsi")
+	cg.emit("    jmp cstr_eq_loop")
+	cg.emit("cstr_eq_true:")
+	cg.emit("    mov $1, %%rax")
+	cg.emit("    pop %%rbp")
+	cg.emit("    ret")
+	cg.emit("cstr_eq_false:")
+	cg.emit("    mov $0, %%rax")
+	cg.emit("    pop %%rbp")
+	cg.emit("    ret")
+	cg.emit("")
+
 	// Print char helper.
 	// Input: rax = codepoint (low byte used)
 	cg.emit("# Function: print_char")
@@ -564,6 +590,7 @@ func (cg *CodeGen) emitFooter() {
 	cg.emit("bool_true:  .ascii \"true\\n\"")
 	cg.emit("bool_false: .ascii \"false\\n\"")
 	cg.emit("null_lit:   .asciz \"null\\n\"")
+	cg.emit("hasfield_length: .asciz \"length\\n\"")
 	for lit, label := range cg.stringLits {
 		cg.emit("%s: .asciz \"%s\"", label, escapeAsmString(lit))
 	}

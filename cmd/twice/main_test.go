@@ -257,6 +257,39 @@ fn main() {
 	}
 }
 
+func TestCLIHasFieldRuntimeFieldName(t *testing.T) {
+	root := repoRoot(t)
+	ensureToolchain(t)
+
+	srcPath := filepath.Join(t.TempDir(), "hasfield_runtime.tw")
+	source := `let arr = {1,2,3};
+let f: string = "length";
+print(hasField(arr, f));
+f = "missing";
+print(hasField(arr, f));
+print(hasField("abc", "length"));
+`
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	outputName := "twice_cli_hasfield_runtime_bin"
+	outputPath := filepath.Join(root, outputName)
+	_ = os.Remove(outputPath)
+	t.Cleanup(func() { _ = os.Remove(outputPath) })
+
+	cmd := exec.Command("go", "run", "./cmd/twice", "-run", "-o", outputName, srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("compile/run failed: %v\n%s", err, out)
+	}
+	output := string(out)
+	if !strings.Contains(output, "\ntrue\nfalse\ntrue\n") {
+		t.Fatalf("unexpected hasField runtime output. output:\n%s", output)
+	}
+}
+
 func TestCLICompileAndRunNewTypesTypeofAndCasts(t *testing.T) {
 	root := repoRoot(t)
 	ensureToolchain(t)

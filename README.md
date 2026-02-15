@@ -246,12 +246,18 @@ print(arr2?.missing());        // null
 print(arr2?.missing ?? "n/a"); // "n/a"
 
 print(hasField(arr2, "length")); // true
+let f: string = "length";
+print(hasField(arr2, f));        // true
+f = "missing";
+print(hasField(arr2, f));        // false
+print(hasField("abc", "length"));// true
 ```
 
 Notes:
 
 - `?.` supports method calls and field reads.
 - Missing/unsupported members or methods accessed through `?.` evaluate to `null` instead of erroring.
+- `hasField(obj, field)` accepts runtime string values for `field` (not only compile-time string literals).
 - `??` only falls back when the left side is `null`.
 - Mixing `??` with `&&`/`||` requires parentheses.
 

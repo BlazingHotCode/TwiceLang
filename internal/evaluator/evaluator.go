@@ -68,6 +68,8 @@ var builtins = map[string]*object.Builtin{
 			switch obj := args[0].(type) {
 			case *object.Array:
 				return nativeBoolToBooleanObject(field.Value == "length" && obj != nil)
+			case *object.String:
+				return nativeBoolToBooleanObject(field.Value == "length" && obj != nil)
 			default:
 				return FALSE
 			}

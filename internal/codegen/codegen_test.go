@@ -739,20 +739,25 @@ func TestCodegenBuiltinCallErrors(t *testing.T) {
 	if len(cg.Errors()) == 0 || !strings.Contains(cg.Errors()[0], "hasField expects exactly 2 arguments") {
 		t.Fatalf("expected hasField arity error, got: %v", cg.Errors())
 	}
+
+	_, cg = generateAssembly(t, `hasField({1,2,3}, 1);`)
+	if len(cg.Errors()) == 0 || !strings.Contains(cg.Errors()[0], "hasField field must be string") {
+		t.Fatalf("expected hasField field-type error, got: %v", cg.Errors())
+	}
 }
 
 func TestCodegenHasFieldBuiltin(t *testing.T) {
-	asm, cg := generateAssembly(t, `let arr = {1,2,3}; print(hasField(arr, "length")); print(hasField(1, "length"));`)
+	asm, cg := generateAssembly(t, `let arr = {1,2,3}; print(hasField(arr, "length")); print(hasField("abc", "length")); print(hasField(1, "length"));`)
 	if len(cg.Errors()) != 0 {
 		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
 	}
-	if strings.Count(asm, "call print_bool") < 2 {
+	if strings.Count(asm, "call print_bool") < 3 {
 		t.Fatalf("expected hasField results to print as bool, got:\n%s", asm)
 	}
 
-	_, cg = generateAssembly(t, `let arr = {1,2,3}; let f = "length"; print(hasField(arr, f));`)
+	_, cg = generateAssembly(t, `let arr = {1,2,3}; let f = "length"; print(hasField(arr, f)); f = "x"; print(hasField(arr, f));`)
 	if len(cg.Errors()) != 0 {
-		t.Fatalf("unexpected codegen errors with const string identifier field: %v", cg.Errors())
+		t.Fatalf("unexpected codegen errors with runtime string identifier field: %v", cg.Errors())
 	}
 }
 

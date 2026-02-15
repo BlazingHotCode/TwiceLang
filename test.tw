@@ -303,6 +303,11 @@ fn demo_null_safe_and_coalesce() {
   print(arr?.missing() ?? "no method");
 
   print(hasField(arr, "length"));
+  let field_name: string = "length";
+  print(hasField(arr, field_name));
+  field_name = "missing";
+  print(hasField(arr, field_name));
+  print(hasField("abc", "length"));
   print(hasField(1, "length"));
 
   let a: int;

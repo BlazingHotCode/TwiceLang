@@ -611,6 +611,9 @@ func TestHasFieldBuiltinEval(t *testing.T) {
 	evaluated := testEval(`hasField({1,2,3}, "length")`)
 	testBooleanObject(t, evaluated, true)
 
+	evaluated = testEval(`hasField("abc", "length")`)
+	testBooleanObject(t, evaluated, true)
+
 	evaluated = testEval(`hasField(1, "x")`)
 	testBooleanObject(t, evaluated, false)
 
