@@ -262,6 +262,88 @@ fn main() int {
 	}
 }
 
+func TestCLICompileAndRunMapFeature(t *testing.T) {
+	root := repoRoot(t)
+	ensureToolchain(t)
+
+	srcPath := filepath.Join(t.TempDir(), "map.tw")
+	source := `
+fn main() int {
+  let m: Map<string,int> = new Map<string,int>(("a", 1), ("b", 2));
+  m["c"] = 3;
+  println(m["a"]);
+  println(m["z"] ?? 0);
+  println(m.length());
+  println(m.has("a"));
+  println(m.removeKey("b"));
+  m.clear();
+  println(m.length());
+  return 0;
+}
+`
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	outputName := "twice_cli_map_bin"
+	outputPath := filepath.Join(root, outputName)
+	_ = os.Remove(outputPath)
+	t.Cleanup(func() { _ = os.Remove(outputPath) })
+
+	cmd := exec.Command("go", "run", "./cmd/twice", "-run", "-o", outputName, srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("compile/run failed: %v\n%s", err, out)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "\n1\n0\n3\ntrue\n2\n0\n") {
+		t.Fatalf("expected map runtime output. output:\n%s", output)
+	}
+}
+
+func TestCLICompileAndRunStructFeature(t *testing.T) {
+	root := repoRoot(t)
+	ensureToolchain(t)
+
+	srcPath := filepath.Join(t.TempDir(), "struct.tw")
+	source := `
+struct Point { x: int, y?: int, z: int = 7 }
+
+fn main() int {
+  let p = new Point(x = 2, y = 3);
+  println(p.x);
+  p.y = 9;
+  println(p.y);
+  println(p.z);
+  println(hasField(p, "x"));
+  println(hasField(p, "missing"));
+  return 0;
+}
+`
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	outputName := "twice_cli_struct_bin"
+	outputPath := filepath.Join(root, outputName)
+	_ = os.Remove(outputPath)
+	t.Cleanup(func() { _ = os.Remove(outputPath) })
+
+	cmd := exec.Command("go", "run", "./cmd/twice", "-run", "-o", outputName, srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("compile/run failed: %v\n%s", err, out)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "\n2\n9\n7\ntrue\nfalse\n") {
+		t.Fatalf("expected struct runtime output. output:\n%s", output)
+	}
+}
+
 func TestCLICodegenErrorForPrintArity(t *testing.T) {
 	root := repoRoot(t)
 

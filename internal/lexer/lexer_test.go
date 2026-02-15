@@ -309,16 +309,41 @@ func TestNullSafeAndCoalesceTokens(t *testing.T) {
 	}
 }
 
-func TestQuestionMarkWithoutDotOrCoalesceIsIllegal(t *testing.T) {
+func TestQuestionMarkToken(t *testing.T) {
 	l := New(`a ? b`)
 
 	_ = l.NextToken() // a
 	tok := l.NextToken()
-	if tok.Type != token.ILLEGAL {
-		t.Fatalf("expected ILLEGAL token for '?', got=%q", tok.Type)
+	if tok.Type != token.QUESTION {
+		t.Fatalf("expected QUESTION token for '?', got=%q", tok.Type)
 	}
 	if tok.Literal != "?" {
 		t.Fatalf("expected literal '?', got=%q", tok.Literal)
+	}
+}
+
+func TestStructTokens(t *testing.T) {
+	input := `struct Point { x?: int }`
+	tests := []struct {
+		typ token.TokenType
+		lit string
+	}{
+		{token.STRUCT, "struct"},
+		{token.IDENT, "Point"},
+		{token.LBRACE, "{"},
+		{token.IDENT, "x"},
+		{token.QUESTION, "?"},
+		{token.COLON, ":"},
+		{token.IDENT, "int"},
+		{token.RBRACE, "}"},
+		{token.EOF, ""},
+	}
+	l := New(input)
+	for i, tt := range tests {
+		tok := l.NextToken()
+		if tok.Type != tt.typ || tok.Literal != tt.lit {
+			t.Fatalf("tests[%d] got=(%q,%q) want=(%q,%q)", i, tok.Type, tok.Literal, tt.typ, tt.lit)
+		}
 	}
 }
 

@@ -735,7 +735,7 @@ func TestMethodCallErrorsEval(t *testing.T) {
 		input string
 		want  string
 	}{
-		{`let s = "abc"; s.length()`, "length is only supported on arrays/lists"},
+		{`let s = "abc"; s.length()`, "length is only supported on arrays/lists/maps"},
 		{`let arr = {1,2,3}; arr.length(1)`, "length expects 0 arguments, got=1"},
 		{`let arr = {1,2,3}; arr.missing()`, "unknown method: missing"},
 	}
@@ -782,6 +782,87 @@ func TestListEvalErrors(t *testing.T) {
 		{`let xs: List<int> = new List<int>(1, 2); xs.append("x"); xs.length()`, "cannot assign string to int"},
 	}
 
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		errObj, ok := evaluated.(*object.Error)
+		if !ok {
+			t.Fatalf("expected error object for %q, got=%T", tt.input, evaluated)
+		}
+		if errObj.Message != tt.want {
+			t.Fatalf("wrong error message for %q: got=%q want=%q", tt.input, errObj.Message, tt.want)
+		}
+	}
+}
+
+func TestMapEvalBasics(t *testing.T) {
+	evaluated := testEval(`let m: Map<string,int> = new Map<string,int>(("a", 1), ("b", 2)); m["c"] = 3; m["a"]`)
+	testIntegerObject(t, evaluated, 1)
+
+	evaluated = testEval(`let m: Map<string,int> = new Map<string,int>(("a", 1), ("b", 2)); m["b"] = 9; m["b"]`)
+	testIntegerObject(t, evaluated, 9)
+
+	evaluated = testEval(`let m: Map<string,int> = new Map<string,int>(("a", 1), ("b", 2)); m.length()`)
+	testIntegerObject(t, evaluated, 2)
+
+	evaluated = testEval(`let m: Map<string,int> = new Map<string,int>(("a", 1), ("b", 2)); m.has("a")`)
+	testBooleanObject(t, evaluated, true)
+
+	evaluated = testEval(`let m: Map<string,int> = new Map<string,int>(("a", 1), ("b", 2)); m.removeKey("a")`)
+	testIntegerObject(t, evaluated, 1)
+
+	evaluated = testEval(`let m: Map<string,int> = new Map<string,int>(("a", 1)); m.clear(); m.length`)
+	testIntegerObject(t, evaluated, 0)
+}
+
+func TestMapEvalErrors(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{`let m: Map<string,int> = new Map<string,int>(("a", 1)); m[1]`, "cannot use int as map key type string"},
+		{`let m: Map<string,int> = new Map<string,int>(("a", 1)); m[1] = 2; m["a"]`, "cannot assign key type int to string"},
+		{`let m: Map<string,int> = new Map<string,int>(("a", "x")); m["a"]`, "cannot assign string to int"},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		errObj, ok := evaluated.(*object.Error)
+		if !ok {
+			t.Fatalf("expected error object for %q, got=%T", tt.input, evaluated)
+		}
+		if errObj.Message != tt.want {
+			t.Fatalf("wrong error message for %q: got=%q want=%q", tt.input, errObj.Message, tt.want)
+		}
+	}
+}
+
+func TestStructEvalBasics(t *testing.T) {
+	src := `
+struct Point { x: int, y?: int, z: int = 7 }
+let p = new Point(1);
+p.y = 4;
+p.x + p.y + p.z
+`
+	evaluated := testEval(src)
+	testIntegerObject(t, evaluated, 12)
+
+	evaluated = testEval(`
+struct Point { x: int, y?: int, z: int = 7 }
+let p: Point = new Point(x = 2, y = 3);
+p.z
+`)
+	testIntegerObject(t, evaluated, 7)
+}
+
+func TestStructEvalErrors(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{`struct Point { x: int }; let p = new Point();`, "missing required field x in Point constructor"},
+		{`struct Point { x: int }; let p = new Point(1); p.y`, "unknown member: y"},
+		{`struct Point { x: int }; let p = new Point(1); p.x = "s";`, "cannot assign string to int"},
+	}
 	for _, tt := range tests {
 		evaluated := testEval(tt.input)
 		errObj, ok := evaluated.(*object.Error)

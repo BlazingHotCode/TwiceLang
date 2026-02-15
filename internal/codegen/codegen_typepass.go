@@ -33,6 +33,19 @@ func (cg *CodeGen) annotateStatementTypes(stmt ast.Statement) {
 		if s.Value != nil {
 			cg.annotateExpressionTypes(s.Value)
 		}
+	case *ast.MemberAssignStatement:
+		if s.Left != nil {
+			cg.annotateExpressionTypes(s.Left)
+		}
+		if s.Value != nil {
+			cg.annotateExpressionTypes(s.Value)
+		}
+	case *ast.StructStatement:
+		for _, f := range s.Fields {
+			if f != nil && f.DefaultValue != nil {
+				cg.annotateExpressionTypes(f.DefaultValue)
+			}
+		}
 	case *ast.ReturnStatement:
 		if s.ReturnValue != nil {
 			cg.annotateExpressionTypes(s.ReturnValue)

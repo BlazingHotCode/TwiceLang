@@ -91,11 +91,27 @@ func (cg *CodeGen) symbolCheckStatement(stmt ast.Statement, scopes *[]symbolScop
 		if s != nil && s.Name != nil {
 			cg.declareType(s.Name.Value, s, scopes)
 		}
+	case *ast.StructStatement:
+		if s != nil && s.Name != nil {
+			cg.declareType(s.Name.Value, s, scopes)
+		}
+		for _, f := range s.Fields {
+			if f != nil && f.DefaultValue != nil {
+				cg.symbolCheckExpression(f.DefaultValue, scopes)
+			}
+		}
 	case *ast.AssignStatement:
 		if s != nil && s.Value != nil {
 			cg.symbolCheckExpression(s.Value, scopes)
 		}
 	case *ast.IndexAssignStatement:
+		if s != nil && s.Left != nil {
+			cg.symbolCheckExpression(s.Left, scopes)
+		}
+		if s != nil && s.Value != nil {
+			cg.symbolCheckExpression(s.Value, scopes)
+		}
+	case *ast.MemberAssignStatement:
 		if s != nil && s.Left != nil {
 			cg.symbolCheckExpression(s.Left, scopes)
 		}

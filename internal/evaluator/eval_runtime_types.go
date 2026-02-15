@@ -10,7 +10,24 @@ import (
 	"twice/internal/typesys"
 )
 
+func mapKeyEquals(a, b object.Object) bool {
+	eq := evalInfixExpression("==", a, b)
+	return eq == TRUE
+}
+
 func evalIndexExpression(left object.Object, index object.Object) object.Object {
+	if mp, ok := left.(*object.Map); ok {
+		keyType := runtimeTypeName(index)
+		if !typesys.IsAssignableTypeName(mp.KeyType, keyType, nil) {
+			return newError("cannot use %s as map key type %s", keyType, mp.KeyType)
+		}
+		for i := range mp.Keys {
+			if mapKeyEquals(mp.Keys[i], index) {
+				return mp.Values[i]
+			}
+		}
+		return NULL
+	}
 	idxObj, ok := index.(*object.Integer)
 	if !ok {
 		return newError("index must be int, got %s", runtimeTypeName(index))
@@ -56,6 +73,33 @@ func evalIndexAssignStatement(node *ast.IndexAssignStatement, env *object.Enviro
 	targetObj, exists := env.Get(ident.Value)
 	if !exists {
 		return newError("identifier not found: %s", ident.Value)
+	}
+	if mp, ok := targetObj.(*object.Map); ok {
+		key := Eval(node.Left.Index, env)
+		if isError(key) {
+			return key
+		}
+		keyType := runtimeTypeName(key)
+		if !isAssignableToType(mp.KeyType, keyType, env) {
+			return newError("cannot assign key type %s to %s", keyType, mp.KeyType)
+		}
+		val := Eval(node.Value, env)
+		if isError(val) {
+			return val
+		}
+		valType := runtimeTypeName(val)
+		if !isAssignableToType(mp.ValueType, valType, env) {
+			return newError("cannot assign %s to %s", valType, mp.ValueType)
+		}
+		for i := range mp.Keys {
+			if mapKeyEquals(mp.Keys[i], key) {
+				mp.Values[i] = val
+				return val
+			}
+		}
+		mp.Keys = append(mp.Keys, key)
+		mp.Values = append(mp.Values, val)
+		return val
 	}
 	arr, ok := targetObj.(*object.Array)
 	if !ok {
@@ -142,11 +186,14 @@ func evalMethodCallExpression(node *ast.MethodCallExpression, env *object.Enviro
 		if ok {
 			return &object.Integer{Value: int64(len(list.Elements))}
 		}
+		if mp, ok := obj.(*object.Map); ok {
+			return &object.Integer{Value: int64(len(mp.Keys))}
+		}
 		if !ok {
 			if node.NullSafe {
 				return NULL
 			}
-			return newError("length is only supported on arrays/lists")
+			return newError("length is only supported on arrays/lists/maps")
 		}
 		return &object.Integer{Value: int64(len(arr.Elements))}
 	case "append":
@@ -176,6 +223,65 @@ func evalMethodCallExpression(node *ast.MethodCallExpression, env *object.Enviro
 		}
 		list.Elements = append(list.Elements, val)
 		return NULL
+	case "has":
+		mp, ok := obj.(*object.Map)
+		if !ok {
+			if node.NullSafe {
+				return NULL
+			}
+			return newError("has is only supported on maps")
+		}
+		if len(node.Arguments) != 1 {
+			if node.NullSafe {
+				return NULL
+			}
+			return newError("has expects 1 argument, got=%d", len(node.Arguments))
+		}
+		key := Eval(node.Arguments[0], env)
+		if isError(key) {
+			return key
+		}
+		keyType := runtimeTypeName(key)
+		if !isAssignableToType(mp.KeyType, keyType, env) {
+			return FALSE
+		}
+		for i := range mp.Keys {
+			if mapKeyEquals(mp.Keys[i], key) {
+				return TRUE
+			}
+		}
+		return FALSE
+	case "removeKey":
+		mp, ok := obj.(*object.Map)
+		if !ok {
+			if node.NullSafe {
+				return NULL
+			}
+			return newError("removeKey is only supported on maps")
+		}
+		if len(node.Arguments) != 1 {
+			if node.NullSafe {
+				return NULL
+			}
+			return newError("removeKey expects 1 argument, got=%d", len(node.Arguments))
+		}
+		key := Eval(node.Arguments[0], env)
+		if isError(key) {
+			return key
+		}
+		keyType := runtimeTypeName(key)
+		if !isAssignableToType(mp.KeyType, keyType, env) {
+			return NULL
+		}
+		for i := range mp.Keys {
+			if mapKeyEquals(mp.Keys[i], key) {
+				removed := mp.Values[i]
+				mp.Keys = append(mp.Keys[:i], mp.Keys[i+1:]...)
+				mp.Values = append(mp.Values[:i], mp.Values[i+1:]...)
+				return removed
+			}
+		}
+		return NULL
 	case "pop":
 		list, ok := obj.(*object.List)
 		if !ok {
@@ -197,6 +303,18 @@ func evalMethodCallExpression(node *ast.MethodCallExpression, env *object.Enviro
 		list.Elements = list.Elements[:len(list.Elements)-1]
 		return last
 	case "clear":
+		mp, ok := obj.(*object.Map)
+		if ok {
+			if len(node.Arguments) != 0 {
+				if node.NullSafe {
+					return NULL
+				}
+				return newError("clear expects 0 arguments, got=%d", len(node.Arguments))
+			}
+			mp.Keys = nil
+			mp.Values = nil
+			return NULL
+		}
 		list, ok := obj.(*object.List)
 		if !ok {
 			if node.NullSafe {
@@ -338,11 +456,19 @@ func evalMemberAccess(obj object.Object, property *ast.Identifier, nullSafe bool
 		if ok {
 			return &object.Integer{Value: int64(len(list.Elements))}
 		}
+		if mp, ok := obj.(*object.Map); ok {
+			return &object.Integer{Value: int64(len(mp.Keys))}
+		}
 		if nullSafe {
 			return NULL
 		}
-		return newError("length is only supported on arrays/lists")
+		return newError("length is only supported on arrays/lists/maps")
 	default:
+		if st, ok := obj.(*object.Struct); ok {
+			if v, exists := st.Fields[property.Value]; exists {
+				return v
+			}
+		}
 		if nullSafe {
 			return NULL
 		}
@@ -360,32 +486,167 @@ func evalNewExpression(node *ast.NewExpression, env *object.Environment) object.
 		return newError("invalid type in new expression: %s", node.TypeName)
 	}
 	gbase, gargs, isGeneric := typesys.SplitGenericType(base)
-	if !isGeneric || gbase != "List" {
-		return newError("new is only supported for List<T>")
-	}
-	if len(gargs) != 1 {
-		return newError("wrong number of generic type arguments for List: expected 1, got %d", len(gargs))
-	}
-	elemType := gargs[0]
-	elems := make([]object.Object, 0, len(node.Arguments))
-	for _, arg := range node.Arguments {
-		val := Eval(arg, env)
-		if isError(val) {
-			return val
+	if !isGeneric {
+		if st, ok := env.Struct(base); ok && st != nil {
+			fields := map[string]object.Object{}
+			fieldTypes := map[string]string{}
+			for _, f := range st.Fields {
+				if f == nil || f.Name == nil {
+					return newError("invalid struct field in %s", st.Name.Value)
+				}
+				fieldTypes[f.Name.Value] = f.TypeName
+				if f.DefaultValue != nil {
+					dv := Eval(f.DefaultValue, env)
+					if isError(dv) {
+						return dv
+					}
+					dt := runtimeTypeName(dv)
+					if !isAssignableToType(f.TypeName, dt, env) {
+						return newError("cannot assign %s to %s", dt, f.TypeName)
+					}
+					fields[f.Name.Value] = dv
+				} else {
+					fields[f.Name.Value] = NULL
+				}
+			}
+			if len(node.Arguments) > len(st.Fields) {
+				return newError("too many constructor arguments for %s", base)
+			}
+			used := map[string]struct{}{}
+			named := false
+			for _, arg := range node.Arguments {
+				if _, ok := arg.(*ast.NamedArgument); ok {
+					named = true
+					break
+				}
+			}
+			if named {
+				for _, arg := range node.Arguments {
+					na, ok := arg.(*ast.NamedArgument)
+					if !ok {
+						return newError("cannot mix named and positional constructor arguments")
+					}
+					ft, ok := fieldTypes[na.Name]
+					if !ok {
+						return newError("unknown field %s in %s", na.Name, base)
+					}
+					v := Eval(na.Value, env)
+					if isError(v) {
+						return v
+					}
+					vt := runtimeTypeName(v)
+					if !isAssignableToType(ft, vt, env) {
+						return newError("cannot assign %s to %s", vt, ft)
+					}
+					fields[na.Name] = v
+					used[na.Name] = struct{}{}
+				}
+			} else {
+				for i, arg := range node.Arguments {
+					f := st.Fields[i]
+					v := Eval(arg, env)
+					if isError(v) {
+						return v
+					}
+					vt := runtimeTypeName(v)
+					if !isAssignableToType(f.TypeName, vt, env) {
+						return newError("cannot assign %s to %s", vt, f.TypeName)
+					}
+					fields[f.Name.Value] = v
+					used[f.Name.Value] = struct{}{}
+				}
+			}
+			for _, f := range st.Fields {
+				if f == nil || f.Name == nil {
+					continue
+				}
+				if _, ok := used[f.Name.Value]; ok {
+					continue
+				}
+				if f.DefaultValue != nil || f.Optional {
+					continue
+				}
+				return newError("missing required field %s in %s constructor", f.Name.Value, base)
+			}
+			return &object.Struct{TypeName: base, Fields: fields}
 		}
-		valType := runtimeTypeName(val)
-		if valType == "null" && !typeAllowsNull(elemType, env) {
-			return newError("cannot add null to %s", elemType)
-		}
-		if !isAssignableToType(elemType, valType, env) {
-			return newError("cannot assign %s to %s", valType, elemType)
-		}
-		elems = append(elems, val)
+		return newError("new is only supported for List<T>, Map<K,V>, and structs")
 	}
-	return &object.List{
-		ElementType: elemType,
-		Elements:    elems,
+	if gbase == "List" {
+		if len(gargs) != 1 {
+			return newError("wrong number of generic type arguments for List: expected 1, got %d", len(gargs))
+		}
+		elemType := gargs[0]
+		elems := make([]object.Object, 0, len(node.Arguments))
+		for _, arg := range node.Arguments {
+			val := Eval(arg, env)
+			if isError(val) {
+				return val
+			}
+			valType := runtimeTypeName(val)
+			if valType == "null" && !typeAllowsNull(elemType, env) {
+				return newError("cannot add null to %s", elemType)
+			}
+			if !isAssignableToType(elemType, valType, env) {
+				return newError("cannot assign %s to %s", valType, elemType)
+			}
+			elems = append(elems, val)
+		}
+		return &object.List{
+			ElementType: elemType,
+			Elements:    elems,
+		}
 	}
+	if gbase == "Map" {
+		if len(gargs) != 2 {
+			return newError("wrong number of generic type arguments for Map: expected 2, got %d", len(gargs))
+		}
+		keyType := gargs[0]
+		valType := gargs[1]
+		keys := make([]object.Object, 0, len(node.Arguments))
+		vals := make([]object.Object, 0, len(node.Arguments))
+		for _, arg := range node.Arguments {
+			pair, ok := arg.(*ast.TupleLiteral)
+			if !ok || len(pair.Elements) != 2 {
+				return newError("map constructor arguments must be tuple pairs: (key, value)")
+			}
+			key := Eval(pair.Elements[0], env)
+			if isError(key) {
+				return key
+			}
+			value := Eval(pair.Elements[1], env)
+			if isError(value) {
+				return value
+			}
+			gotKeyType := runtimeTypeName(key)
+			gotValType := runtimeTypeName(value)
+			if !isAssignableToType(keyType, gotKeyType, env) {
+				return newError("cannot assign key type %s to %s", gotKeyType, keyType)
+			}
+			if !isAssignableToType(valType, gotValType, env) {
+				return newError("cannot assign %s to %s", gotValType, valType)
+			}
+			replaced := false
+			for i := range keys {
+				if mapKeyEquals(keys[i], key) {
+					vals[i] = value
+					replaced = true
+					break
+				}
+			}
+			if !replaced {
+				keys = append(keys, key)
+				vals = append(vals, value)
+			}
+		}
+		return &object.Map{
+			KeyType:   keyType,
+			ValueType: valType,
+			Keys:      keys,
+			Values:    vals,
+		}
+	}
+	return newError("new is only supported for List<T>, Map<K,V>, and structs")
 }
 
 func evalArrayLiteral(lit *ast.ArrayLiteral, env *object.Environment) object.Object {
@@ -571,6 +832,7 @@ const (
 	rtBool
 	rtArray
 	rtList
+	rtMap
 	rtTuple
 	rtNull
 	rtType
@@ -592,8 +854,12 @@ func runtimeTypeKindOf(obj object.Object) runtimeTypeKind {
 		return rtArray
 	case *object.List:
 		return rtList
+	case *object.Map:
+		return rtMap
 	case *object.Tuple:
 		return rtTuple
+	case *object.Struct:
+		return rtUnknown
 	case *object.Null:
 		return rtNull
 	case *object.TypeValue:
@@ -621,9 +887,17 @@ func runtimeTypeName(obj object.Object) string {
 	case rtList:
 		v := obj.(*object.List)
 		return "List<" + v.ElementType + ">"
+	case rtMap:
+		v := obj.(*object.Map)
+		return "Map<" + v.KeyType + "," + v.ValueType + ">"
 	case rtTuple:
 		v := obj.(*object.Tuple)
 		return "(" + strings.Join(v.ElementTypes, ",") + ")"
+	case rtUnknown:
+		if v, ok := obj.(*object.Struct); ok {
+			return v.TypeName
+		}
+		return "unknown"
 	case rtNull:
 		return "null"
 	case rtType:
@@ -687,6 +961,12 @@ func isKnownTypeNameWithParams(t string, env *object.Environment, typeParams map
 			}
 			return isKnownTypeNameWithParams(gargs[0], env, typeParams)
 		}
+		if gbase == "Map" {
+			if len(gargs) != 2 {
+				return false
+			}
+			return isKnownTypeNameWithParams(gargs[0], env, typeParams) && isKnownTypeNameWithParams(gargs[1], env, typeParams)
+		}
 		if _, ok := env.GenericTypeAlias(gbase); ok {
 			for _, a := range gargs {
 				if !isKnownTypeNameWithParams(a, env, typeParams) {
@@ -699,6 +979,11 @@ func isKnownTypeNameWithParams(t string, env *object.Environment, typeParams map
 	}
 	if typeParams != nil {
 		if _, ok := typeParams[base]; ok {
+			return true
+		}
+	}
+	if env != nil {
+		if _, ok := env.Struct(base); ok {
 			return true
 		}
 	}
@@ -854,6 +1139,11 @@ func genericTypeArityError(typeName string, env *object.Environment, typeParams 
 				return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", gb, 1, len(args)), true
 			}
 		}
+		if gb == "Map" {
+			if len(args) != 2 {
+				return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", gb, 2, len(args)), true
+			}
+		}
 		if _, exists := env.TypeAlias(gb); exists {
 			return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", gb, 0, len(args)), true
 		} else if alias, exists := env.GenericTypeAlias(gb); exists {
@@ -878,6 +1168,9 @@ func genericTypeArityError(typeName string, env *object.Environment, typeParams 
 	}
 	if base == "List" {
 		return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", base, 1, 0), true
+	}
+	if base == "Map" {
+		return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", base, 2, 0), true
 	}
 	if alias, exists := env.GenericTypeAlias(base); exists && len(alias.TypeParams) > 0 {
 		return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", base, len(alias.TypeParams), 0), true

@@ -112,6 +112,12 @@ func (p *Parser) parseStatement() ast.Statement {
 			return nil
 		}
 		return stmt
+	case token.STRUCT:
+		stmt := p.parseStructStatement()
+		if stmt == nil {
+			return nil
+		}
+		return stmt
 	case token.BREAK:
 		stmt := p.parseBreakStatement()
 		if stmt == nil {
@@ -218,6 +224,68 @@ func (p *Parser) parseFunctionStatement() *ast.FunctionStatement {
 
 	stmt.Name = name
 	stmt.Function = lit
+	return stmt
+}
+
+func (p *Parser) parseStructStatement() *ast.StructStatement {
+	stmt := &ast.StructStatement{Token: p.curToken, Fields: []*ast.StructField{}}
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	if !p.expectPeek(token.LBRACE) {
+		return nil
+	}
+	if p.peekTokenIs(token.RBRACE) {
+		p.nextToken()
+		return stmt
+	}
+	p.nextToken()
+	for !p.curTokenIs(token.RBRACE) && !p.curTokenIs(token.EOF) {
+		if !p.curTokenIs(token.IDENT) {
+			p.addErrorCurrent("struct field name must be an identifier", p.curToken.Literal)
+			return nil
+		}
+		field := &ast.StructField{
+			Token: p.curToken,
+			Name:  &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal},
+		}
+		if p.peekTokenIs(token.QUESTION) {
+			p.nextToken()
+			field.Optional = true
+		}
+		if !p.expectPeek(token.COLON) {
+			return nil
+		}
+		typeName, ok := p.parseTypeAnnotation()
+		if !ok {
+			return nil
+		}
+		field.TypeName = typeName
+		if p.peekTokenIs(token.ASSIGN) {
+			p.nextToken()
+			p.nextToken()
+			field.DefaultValue = p.parseExpression(LOWEST)
+			field.Optional = true
+		}
+		stmt.Fields = append(stmt.Fields, field)
+		if p.peekTokenIs(token.COMMA) {
+			p.nextToken()
+			if p.peekTokenIs(token.RBRACE) {
+				p.nextToken()
+				break
+			}
+			p.nextToken()
+			continue
+		}
+		if !p.expectPeek(token.RBRACE) {
+			return nil
+		}
+		break
+	}
+	if p.peekTokenIs(token.SEMICOLON) {
+		p.nextToken()
+	}
 	return stmt
 }
 
@@ -494,6 +562,20 @@ func (p *Parser) parseExpressionStatement() ast.Statement {
 				return nil
 			}
 			return &ast.IndexAssignStatement{
+				Token: assignTok,
+				Left:  left,
+				Value: value,
+			}
+		}
+		if left, ok := stmt.Expression.(*ast.MemberAccessExpression); ok {
+			p.nextToken() // '='
+			assignTok := p.curToken
+			p.nextToken() // value expression start
+			value := p.parseExpression(LOWEST)
+			if !p.expectPeek(token.SEMICOLON) {
+				return nil
+			}
+			return &ast.MemberAssignStatement{
 				Token: assignTok,
 				Left:  left,
 				Value: value,

@@ -19,6 +19,8 @@ func TestLookupIdent(t *testing.T) {
 		"continue": CONTINUE,
 		"return": RETURN,
 		"null": NULL,
+		"new": NEW,
+		"struct": STRUCT,
 		"x": IDENT,
 	}
 

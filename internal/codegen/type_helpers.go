@@ -87,6 +87,18 @@ func withListElement(elem string) string {
 	return "List<" + elem + ">"
 }
 
+func peelMapType(t string) (string, string, bool) {
+	base, dims, ok := typesys.ParseTypeDescriptor(t)
+	if !ok || len(dims) != 0 {
+		return "", "", false
+	}
+	gbase, gargs, ok := typesys.SplitGenericType(base)
+	if !ok || gbase != "Map" || len(gargs) != 2 {
+		return "", "", false
+	}
+	return gargs[0], gargs[1], true
+}
+
 func mergeUnionBases(a, b string) (string, bool) {
 	if merged, ok := typesys.MergeTypeNames(a, b, nil); ok {
 		base, dims, ok := typesys.ParseTypeDescriptor(merged)

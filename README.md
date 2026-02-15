@@ -54,6 +54,8 @@ Notes:
 - Function calls before declaration (resolved by codegen)
 - Arrays with typed declarations, literals, indexing, mutation, `length()`, and `.length`
 - Generic lists (`List<T>`) with constructor syntax, indexing/mutation, `length`/`length()`, and list methods
+- Generic maps (`Map<K,V>`) with constructor syntax, bracket get/set, `length`/`length()`, and map methods
+- Struct declarations with typed fields, defaults/optional fields, constructor calls, and field access/update
 - Null-safe access/coalescing with `?.` and `??`
 - Union types (`type1||type2`) including array forms like `(int||string)[3]`
 - Tuple types and values: `(type1, type2, ...)` with tuple access `value.0`, `value.1`, ...
@@ -505,6 +507,73 @@ Notes:
 
 - `List<T>` enforces element typing.
 - Out-of-range list indexing/get/set/remove/insert raises runtime error.
+
+### Maps
+
+Maps use generic key/value syntax:
+
+```tw
+let m: Map<string, int> = new Map<string, int>(("a", 1), ("b", 2));
+let empty: Map<string, int> = new Map<string, int>();
+```
+
+Bracket access and update:
+
+```tw
+println(m["a"]); // 1
+println(m["z"] ?? 0); // coalesce missing/null value
+m["c"] = 3;
+m["a"] = 9;
+```
+
+Map methods:
+
+```tw
+println(m.length);    // property
+println(m.length());  // method
+println(m.has("a"));  // bool
+println(m.removeKey("b")); // V||null
+m.clear();            // null
+```
+
+Notes:
+
+- `Map<K,V>` enforces key and value typing.
+- `new Map<K,V>(...)` arguments are tuple pairs: `(key, value)`.
+
+### Structs
+
+Declare structs with typed fields:
+
+```tw
+struct Point {
+  x: int,
+  y?: int,
+  z: int = 7
+}
+```
+
+Constructor calls:
+
+```tw
+let p: Point = new Point(1);              // positional
+let q = new Point(x = 2, y = 3);          // named
+```
+
+Field access and updates:
+
+```tw
+println(p.x);
+p.y = 9;
+println(p.z);              // default field value
+println(hasField(p, "x")); // true
+```
+
+Notes:
+
+- Fields marked `?:` are optional and default to `null` when omitted.
+- Fields with `= value` have constructor defaults.
+- Required fields (no `?:` and no default) must be provided.
 
 ### Tuples
 

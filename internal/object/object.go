@@ -18,6 +18,8 @@ const (
 	BOOLEAN_OBJ      ObjectType = "BOOLEAN"
 	ARRAY_OBJ        ObjectType = "ARRAY"
 	LIST_OBJ         ObjectType = "LIST"
+	MAP_OBJ          ObjectType = "MAP"
+	STRUCT_OBJ       ObjectType = "STRUCT"
 	TUPLE_OBJ        ObjectType = "TUPLE"
 	TYPE_OBJ         ObjectType = "TYPE"
 	NULL_OBJ         ObjectType = "NULL"
@@ -102,6 +104,37 @@ type List struct {
 }
 
 func (l *List) Type() ObjectType { return LIST_OBJ }
+
+type Map struct {
+	KeyType   string
+	ValueType string
+	Keys      []Object
+	Values    []Object
+}
+
+func (m *Map) Type() ObjectType { return MAP_OBJ }
+func (m *Map) Inspect() string {
+	parts := make([]string, 0, len(m.Keys))
+	for i := 0; i < len(m.Keys) && i < len(m.Values); i++ {
+		parts = append(parts, m.Keys[i].Inspect()+":"+m.Values[i].Inspect())
+	}
+	return "Map(" + strings.Join(parts, ", ") + ")"
+}
+
+type Struct struct {
+	TypeName string
+	Fields   map[string]Object
+}
+
+func (s *Struct) Type() ObjectType { return STRUCT_OBJ }
+func (s *Struct) Inspect() string {
+	parts := make([]string, 0, len(s.Fields))
+	for k, v := range s.Fields {
+		parts = append(parts, k+":"+v.Inspect())
+	}
+	return s.TypeName + "{" + strings.Join(parts, ", ") + "}"
+}
+
 func (l *List) Inspect() string {
 	var out bytes.Buffer
 	parts := make([]string, 0, len(l.Elements))

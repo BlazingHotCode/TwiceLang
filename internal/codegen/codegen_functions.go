@@ -36,6 +36,7 @@ func (cg *CodeGen) reset() {
 	cg.varFuncs = make(map[string]string)
 	cg.typeAliases = make(map[string]string)
 	cg.genericTypeAliases = make(map[string]genericTypeAlias)
+	cg.structDecls = make(map[string]*ast.StructStatement)
 	cg.stackOffset = 0
 	cg.maxStackOffset = 0
 	cg.currentFn = ""
@@ -130,6 +131,13 @@ func (cg *CodeGen) collectFunctionsInStatement(stmt ast.Statement, scope map[str
 		}
 	case *ast.TypeDeclStatement:
 		return
+	case *ast.StructStatement:
+		for _, f := range s.Fields {
+			if f != nil && f.DefaultValue != nil {
+				cg.collectFunctionsInExpression(f.DefaultValue, scope)
+			}
+		}
+		return
 	case *ast.AssignStatement:
 		if s != nil && s.Value != nil {
 			cg.collectFunctionsInExpression(s.Value, scope)
@@ -138,6 +146,13 @@ func (cg *CodeGen) collectFunctionsInStatement(stmt ast.Statement, scope map[str
 		if s != nil && s.Left != nil {
 			cg.collectFunctionsInExpression(s.Left.Left, scope)
 			cg.collectFunctionsInExpression(s.Left.Index, scope)
+		}
+		if s != nil && s.Value != nil {
+			cg.collectFunctionsInExpression(s.Value, scope)
+		}
+	case *ast.MemberAssignStatement:
+		if s != nil && s.Left != nil {
+			cg.collectFunctionsInExpression(s.Left, scope)
 		}
 		if s != nil && s.Value != nil {
 			cg.collectFunctionsInExpression(s.Value, scope)
@@ -943,6 +958,13 @@ func collectUsedNamesInStatement(stmt ast.Statement, used map[string]struct{}) {
 		if s != nil && s.Left != nil {
 			collectUsedNamesInExpression(s.Left.Left, used)
 			collectUsedNamesInExpression(s.Left.Index, used)
+		}
+		if s != nil && s.Value != nil {
+			collectUsedNamesInExpression(s.Value, used)
+		}
+	case *ast.MemberAssignStatement:
+		if s != nil && s.Left != nil {
+			collectUsedNamesInExpression(s.Left, used)
 		}
 		if s != nil && s.Value != nil {
 			collectUsedNamesInExpression(s.Value, used)

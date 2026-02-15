@@ -770,7 +770,7 @@ func TestCodegenMethodCallErrors(t *testing.T) {
 	if len(cg.Errors()) == 0 {
 		t.Fatalf("expected codegen error for length() on non-array")
 	}
-	if !strings.Contains(cg.Errors()[0], "length is only supported on arrays/lists") {
+	if !strings.Contains(cg.Errors()[0], "length is only supported on arrays/lists/maps") {
 		t.Fatalf("expected non-array length error, got: %v", cg.Errors())
 	}
 
@@ -788,6 +788,67 @@ func TestCodegenMethodCallErrors(t *testing.T) {
 	}
 	if !strings.Contains(cg.Errors()[0], "unknown method: missing") {
 		t.Fatalf("expected unknown method error, got: %v", cg.Errors())
+	}
+}
+
+func TestCodegenMapConstructorIndexAndMethods(t *testing.T) {
+	asm, cg := generateAssembly(t, `let m: Map<string,int> = new Map<string,int>(("a",1),("b",2)); m["c"] = 3; print(m["a"]); print(m["z"] ?? 0); print(m.length()); print(m.has("a")); print(m.removeKey("b")); m.clear(); print(m.length);`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	for _, want := range []string{
+		"call map_new",
+		"call map_set",
+		"call map_get",
+		"call map_has",
+		"call map_remove",
+		"call map_clear",
+	} {
+		if !strings.Contains(asm, want) {
+			t.Fatalf("expected %q in assembly, got:\n%s", want, asm)
+		}
+	}
+}
+
+func TestCodegenMapTypeValidation(t *testing.T) {
+	_, cg := generateAssembly(t, `let m: Map<string,int> = new Map<string,int>(("a","x"));`)
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen errors for map value type mismatch")
+	}
+
+	_, cg = generateAssembly(t, `let m: Map<string,int> = new Map<string,int>(("a",1)); m[1] = 2;`)
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen errors for map key type mismatch")
+	}
+}
+
+func TestCodegenStructConstructorAndMemberAccess(t *testing.T) {
+	asm, cg := generateAssembly(t, `
+struct Point { x: int, y?: int, z: int = 7 }
+let p: Point = new Point(x = 1, y = 2);
+print(p.x);
+p.y = 9;
+print(p.y);
+print(hasField(p, "x"));
+`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	for _, want := range []string{"call map_new", "call map_set", "call map_get", "call map_has"} {
+		if !strings.Contains(asm, want) {
+			t.Fatalf("expected %q in assembly, got:\n%s", want, asm)
+		}
+	}
+}
+
+func TestCodegenStructValidation(t *testing.T) {
+	_, cg := generateAssembly(t, `struct Point { x: int }; let p: Point = new Point();`)
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen errors for missing required struct field")
+	}
+	_, cg = generateAssembly(t, `struct Point { x: int }; let p: Point = new Point(1); p.x = "s";`)
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen errors for member assignment type mismatch")
 	}
 }
 

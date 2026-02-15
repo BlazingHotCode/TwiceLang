@@ -18,8 +18,50 @@ func (cg *CodeGen) semanticCheck(program *ast.Program) {
 	collectTypeAliases(program, aliases)
 	collectGenericAliasArities(program, genericArities)
 	collectNonGenericAliasNames(program, nonGenericAliases)
+	collectStructDecls(program, cg.structDecls)
 	for _, st := range program.Statements {
 		cg.semanticCheckStatement(st, aliases, genericArities, nonGenericAliases)
+	}
+}
+
+func collectStructDecls(node ast.Node, out map[string]*ast.StructStatement) {
+	switch n := node.(type) {
+	case *ast.Program:
+		for _, st := range n.Statements {
+			collectStructDecls(st, out)
+		}
+	case *ast.StructStatement:
+		if n != nil && n.Name != nil && n.Name.Value != "" {
+			if _, exists := out[n.Name.Value]; !exists {
+				out[n.Name.Value] = n
+			}
+		}
+	case *ast.BlockStatement:
+		for _, st := range n.Statements {
+			collectStructDecls(st, out)
+		}
+	case *ast.FunctionStatement:
+		if n.Function != nil && n.Function.Body != nil {
+			collectStructDecls(n.Function.Body, out)
+		}
+	case *ast.WhileStatement:
+		if n.Body != nil {
+			collectStructDecls(n.Body, out)
+		}
+	case *ast.LoopStatement:
+		if n.Body != nil {
+			collectStructDecls(n.Body, out)
+		}
+	case *ast.ForStatement:
+		if n.Init != nil {
+			collectStructDecls(n.Init, out)
+		}
+		if n.Periodic != nil {
+			collectStructDecls(n.Periodic, out)
+		}
+		if n.Body != nil {
+			collectStructDecls(n.Body, out)
+		}
 	}
 }
 
@@ -191,6 +233,13 @@ func (cg *CodeGen) semanticKnownTypeWithParams(typeName string, aliases map[stri
 			}
 			return cg.semanticKnownTypeWithParams(gargs[0], aliases, typeParams)
 		}
+		if gbase == "Map" {
+			if len(gargs) != 2 {
+				return false
+			}
+			return cg.semanticKnownTypeWithParams(gargs[0], aliases, typeParams) &&
+				cg.semanticKnownTypeWithParams(gargs[1], aliases, typeParams)
+		}
 		if _, exists := aliases[gbase]; !exists {
 			return false
 		}
@@ -202,6 +251,9 @@ func (cg *CodeGen) semanticKnownTypeWithParams(typeName string, aliases map[stri
 		return true
 	}
 	if _, exists := aliases[base]; exists {
+		return true
+	}
+	if _, exists := cg.structDecls[base]; exists {
 		return true
 	}
 	return typesys.IsBuiltinTypeName(base)
@@ -240,11 +292,47 @@ func (cg *CodeGen) semanticCheckStatement(stmt ast.Statement, aliases map[string
 				cg.addNodeError("unknown type: "+s.TypeName, s)
 			}
 		}
+	case *ast.StructStatement:
+		if s.Name == nil || s.Name.Value == "" {
+			cg.addNodeError("invalid struct declaration", s)
+			return
+		}
+		if existing, ok := cg.structDecls[s.Name.Value]; ok && existing != s {
+			cg.addNodeError("type already declared: "+s.Name.Value, s)
+			return
+		}
+		seen := map[string]struct{}{}
+		for _, f := range s.Fields {
+			if f == nil || f.Name == nil {
+				cg.addNodeError("invalid struct field", s)
+				continue
+			}
+			if _, ok := seen[f.Name.Value]; ok {
+				cg.addNodeError("duplicate struct field: "+f.Name.Value, s)
+				continue
+			}
+			seen[f.Name.Value] = struct{}{}
+			if msg, ok := semanticGenericTypeArityError(f.TypeName, genericArities, nonGenericAliases, nil); ok {
+				cg.addNodeError(msg, s)
+			} else if !cg.semanticKnownType(f.TypeName, aliases) {
+				cg.addNodeError("unknown type: "+f.TypeName, s)
+			}
+			if f.DefaultValue != nil {
+				cg.semanticCheckExpression(f.DefaultValue, aliases, genericArities, nonGenericAliases)
+			}
+		}
 	case *ast.AssignStatement:
 		if s.Value != nil {
 			cg.semanticCheckExpression(s.Value, aliases, genericArities, nonGenericAliases)
 		}
 	case *ast.IndexAssignStatement:
+		if s.Left != nil {
+			cg.semanticCheckExpression(s.Left, aliases, genericArities, nonGenericAliases)
+		}
+		if s.Value != nil {
+			cg.semanticCheckExpression(s.Value, aliases, genericArities, nonGenericAliases)
+		}
+	case *ast.MemberAssignStatement:
 		if s.Left != nil {
 			cg.semanticCheckExpression(s.Left, aliases, genericArities, nonGenericAliases)
 		}
@@ -435,6 +523,17 @@ func semanticGenericTypeArityError(typeName string, genericArities map[string]in
 			}
 			return "", false
 		}
+		if gb == "Map" {
+			if len(args) != 2 {
+				return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", gb, 2, len(args)), true
+			}
+			for _, a := range args {
+				if msg, ok := semanticGenericTypeArityError(a, genericArities, nonGenericAliases, typeParams); ok {
+					return msg, true
+				}
+			}
+			return "", false
+		}
 		if expected, exists := genericArities[gb]; exists {
 			if expected != len(args) {
 				return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", gb, expected, len(args)), true
@@ -462,6 +561,9 @@ func semanticGenericTypeArityError(typeName string, genericArities map[string]in
 	}
 	if base == "List" {
 		return "wrong number of generic type arguments for List: expected 1, got 0", true
+	}
+	if base == "Map" {
+		return "wrong number of generic type arguments for Map: expected 2, got 0", true
 	}
 	return "", false
 }

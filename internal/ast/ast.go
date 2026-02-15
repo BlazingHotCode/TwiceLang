@@ -231,6 +231,56 @@ func (ts *TypeDeclStatement) String() string {
 	return out.String()
 }
 
+type StructField struct {
+	Token        token.Token
+	Name         *Identifier
+	TypeName     string
+	Optional     bool
+	DefaultValue Expression
+}
+
+func (sf *StructField) String() string {
+	var out bytes.Buffer
+	if sf.Name != nil {
+		out.WriteString(sf.Name.String())
+	}
+	if sf.Optional {
+		out.WriteString("?")
+	}
+	out.WriteString(": ")
+	out.WriteString(sf.TypeName)
+	if sf.DefaultValue != nil {
+		out.WriteString(" = ")
+		out.WriteString(sf.DefaultValue.String())
+	}
+	return out.String()
+}
+
+// StructStatement represents: struct Name { field: type, ... }
+type StructStatement struct {
+	Token  token.Token
+	Name   *Identifier
+	Fields []*StructField
+}
+
+func (ss *StructStatement) statementNode()       {}
+func (ss *StructStatement) TokenLiteral() string { return ss.Token.Literal }
+func (ss *StructStatement) String() string {
+	var out bytes.Buffer
+	out.WriteString("struct ")
+	if ss.Name != nil {
+		out.WriteString(ss.Name.String())
+	}
+	out.WriteString(" { ")
+	parts := make([]string, 0, len(ss.Fields))
+	for _, f := range ss.Fields {
+		parts = append(parts, f.String())
+	}
+	out.WriteString(strings.Join(parts, ", "))
+	out.WriteString(" }")
+	return out.String()
+}
+
 // AssignStatement represents: <name> = <value>;
 type AssignStatement struct {
 	Token token.Token // The IDENT token
@@ -247,6 +297,28 @@ func (as *AssignStatement) String() string {
 	out.WriteString(" = ")
 	if as.Value != nil {
 		out.WriteString(as.Value.String())
+	}
+	out.WriteString(";")
+	return out.String()
+}
+
+// MemberAssignStatement represents: <obj>.<field> = <value>;
+type MemberAssignStatement struct {
+	Token token.Token
+	Left  *MemberAccessExpression
+	Value Expression
+}
+
+func (mas *MemberAssignStatement) statementNode()       {}
+func (mas *MemberAssignStatement) TokenLiteral() string { return mas.Token.Literal }
+func (mas *MemberAssignStatement) String() string {
+	var out bytes.Buffer
+	if mas.Left != nil {
+		out.WriteString(mas.Left.String())
+	}
+	out.WriteString(" = ")
+	if mas.Value != nil {
+		out.WriteString(mas.Value.String())
 	}
 	out.WriteString(";")
 	return out.String()

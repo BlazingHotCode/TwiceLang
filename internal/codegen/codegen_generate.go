@@ -18,8 +18,12 @@ func (cg *CodeGen) generateStatement(stmt ast.Statement) {
 		cg.generateConst(s)
 	case *ast.TypeDeclStatement:
 		cg.generateTypeDecl(s)
+	case *ast.StructStatement:
+		cg.generateStructDecl(s)
 	case *ast.AssignStatement:
 		cg.generateAssign(s)
+	case *ast.MemberAssignStatement:
+		cg.generateMemberAssign(s)
 	case *ast.IndexAssignStatement:
 		cg.generateIndexAssign(s)
 	case *ast.ReturnStatement:
@@ -209,27 +213,173 @@ func (cg *CodeGen) generateNewExpression(ne *ast.NewExpression) {
 	if resolved, ok := cg.normalizeTypeName(typeName); ok {
 		typeName = resolved
 	}
-	elemType, ok := peelListType(typeName)
+	if st, ok := cg.structDecls[typeName]; ok && st != nil {
+		cg.generateStructNewExpression(ne, st, typeName)
+		return
+	}
+	if elemType, ok := peelListType(typeName); ok {
+		cg.emit("    mov $%d, %%rdi", len(ne.Arguments))
+		cg.emit("    call list_new")
+		cg.emit("    mov %%rax, %%rbx")
+		for _, arg := range ne.Arguments {
+			argType := cg.inferExpressionTypeName(arg)
+			if argType != "unknown" && !cg.isAssignableTypeName(elemType, argType) {
+				cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", argType, elemType), arg)
+				cg.emit("    mov $0, %%rax")
+				return
+			}
+			cg.generateExpression(arg)
+			cg.emit("    mov %%rbx, %%rdi")
+			cg.emit("    mov %%rax, %%rsi")
+			cg.emit("    call list_append")
+		}
+		cg.emit("    mov %%rbx, %%rax")
+		return
+	}
+	keyType, valueType, ok := peelMapType(typeName)
 	if !ok {
-		cg.addNodeError("new is only supported for List<T>", ne)
+		cg.addNodeError("new is only supported for List<T>, Map<K,V>, and structs", ne)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
-
+	keyKind := 0
+	if keyType == "string" {
+		keyKind = 1
+	}
 	cg.emit("    mov $%d, %%rdi", len(ne.Arguments))
-	cg.emit("    call list_new")
+	cg.emit("    mov $%d, %%rsi", keyKind)
+	cg.emit("    call map_new")
 	cg.emit("    mov %%rax, %%rbx")
 	for _, arg := range ne.Arguments {
-		argType := cg.inferExpressionTypeName(arg)
-		if argType != "unknown" && !cg.isAssignableTypeName(elemType, argType) {
-			cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", argType, elemType), arg)
+		tup, ok := arg.(*ast.TupleLiteral)
+		if !ok || len(tup.Elements) != 2 {
+			cg.addNodeError("map constructor arguments must be tuple pairs: (key, value)", arg)
 			cg.emit("    mov $0, %%rax")
 			return
 		}
-		cg.generateExpression(arg)
+		keyExpr := tup.Elements[0]
+		valExpr := tup.Elements[1]
+		gotKey := cg.inferExpressionTypeName(keyExpr)
+		gotVal := cg.inferExpressionTypeName(valExpr)
+		if gotKey != "unknown" && !cg.isAssignableTypeName(keyType, gotKey) {
+			cg.addNodeError(fmt.Sprintf("cannot assign key type %s to %s", gotKey, keyType), keyExpr)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		if gotVal != "unknown" && !cg.isAssignableTypeName(valueType, gotVal) {
+			cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", gotVal, valueType), valExpr)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		cg.generateExpression(keyExpr)
+		cg.emit("    push %%rax")
+		cg.generateExpression(valExpr)
+		cg.emit("    mov %%rax, %%rdx")
+		cg.emit("    pop %%rsi")
 		cg.emit("    mov %%rbx, %%rdi")
-		cg.emit("    mov %%rax, %%rsi")
-		cg.emit("    call list_append")
+		cg.emit("    call map_set")
+	}
+	cg.emit("    mov %%rbx, %%rax")
+}
+
+func (cg *CodeGen) generateStructNewExpression(ne *ast.NewExpression, st *ast.StructStatement, typeName string) {
+	if st == nil {
+		cg.addNodeError("unknown struct type: "+typeName, ne)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if len(ne.Arguments) > len(st.Fields) {
+		cg.addNodeError(fmt.Sprintf("too many constructor arguments for %s", typeName), ne)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	values := map[string]ast.Expression{}
+	used := map[string]struct{}{}
+	named := false
+	for _, arg := range ne.Arguments {
+		if _, ok := arg.(*ast.NamedArgument); ok {
+			named = true
+			break
+		}
+	}
+	if named {
+		for _, arg := range ne.Arguments {
+			na, ok := arg.(*ast.NamedArgument)
+			if !ok {
+				cg.addNodeError("cannot mix named and positional constructor arguments", arg)
+				cg.emit("    mov $0, %%rax")
+				return
+			}
+			if _, exists := used[na.Name]; exists {
+				cg.addNodeError("duplicate constructor argument: "+na.Name, arg)
+				cg.emit("    mov $0, %%rax")
+				return
+			}
+			fieldType, ok := structFieldType(st, na.Name)
+			if !ok {
+				cg.addNodeError(fmt.Sprintf("unknown field %s in %s", na.Name, typeName), arg)
+				cg.emit("    mov $0, %%rax")
+				return
+			}
+			got := cg.inferExpressionTypeName(na.Value)
+			if got != "unknown" && !cg.isAssignableTypeName(fieldType, got) {
+				cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", got, fieldType), na.Value)
+				cg.emit("    mov $0, %%rax")
+				return
+			}
+			values[na.Name] = na.Value
+			used[na.Name] = struct{}{}
+		}
+	} else {
+		for i, arg := range ne.Arguments {
+			f := st.Fields[i]
+			if f == nil || f.Name == nil {
+				cg.addNodeError("invalid struct field", ne)
+				cg.emit("    mov $0, %%rax")
+				return
+			}
+			got := cg.inferExpressionTypeName(arg)
+			if got != "unknown" && !cg.isAssignableTypeName(f.TypeName, got) {
+				cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", got, f.TypeName), arg)
+				cg.emit("    mov $0, %%rax")
+				return
+			}
+			values[f.Name.Value] = arg
+			used[f.Name.Value] = struct{}{}
+		}
+	}
+
+	cg.emit("    mov $%d, %%rdi", len(st.Fields))
+	cg.emit("    mov $1, %%rsi")
+	cg.emit("    call map_new")
+	cg.emit("    mov %%rax, %%rbx")
+	for _, f := range st.Fields {
+		if f == nil || f.Name == nil {
+			continue
+		}
+		expr, ok := values[f.Name.Value]
+		if !ok {
+			if f.DefaultValue != nil {
+				expr = f.DefaultValue
+			} else if f.Optional {
+				expr = &ast.NullLiteral{}
+			} else {
+				cg.addNodeError(fmt.Sprintf("missing required field %s in %s constructor", f.Name.Value, typeName), ne)
+				cg.emit("    mov $0, %%rax")
+				return
+			}
+		}
+		got := cg.inferExpressionTypeName(expr)
+		if got != "unknown" && !cg.isAssignableTypeName(f.TypeName, got) {
+			cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", got, f.TypeName), expr)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		cg.emit("    lea %s(%%rip), %%rsi", cg.stringLabel(f.Name.Value))
+		cg.generateExpression(expr)
+		cg.emit("    mov %%rax, %%rdx")
+		cg.emit("    mov %%rbx, %%rdi")
+		cg.emit("    call map_set")
 	}
 	cg.emit("    mov %%rbx, %%rax")
 }
@@ -342,13 +492,13 @@ func (cg *CodeGen) generateIndexExpression(ie *ast.IndexExpression) {
 		cg.emit("    mov $0, %%rax")
 		return
 	}
-	if cg.inferExpressionType(ie.Index) != typeInt {
-		cg.addNodeError("index must be int", ie.Index)
-		cg.emit("    mov $0, %%rax")
-		return
-	}
 
 	if leftTypeName == "string" {
+		if cg.inferExpressionType(ie.Index) != typeInt {
+			cg.addNodeError("index must be int", ie.Index)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
 		if idx, ok := cg.constIntValue(ie.Index); ok {
 			if s, ok := cg.constStringValue(ie.Left); ok {
 				if idx < 0 || int(idx) >= len(s) {
@@ -388,7 +538,27 @@ func (cg *CodeGen) generateIndexExpression(ie *ast.IndexExpression) {
 	if normalized, ok := cg.normalizeTypeName(leftTypeName); ok {
 		resolvedLeftTypeName = normalized
 	}
+	if keyType, _, ok := peelMapType(resolvedLeftTypeName); ok {
+		gotKeyType := cg.inferExpressionTypeName(ie.Index)
+		if gotKeyType != "unknown" && !cg.isAssignableTypeName(keyType, gotKeyType) {
+			cg.addNodeError(fmt.Sprintf("cannot use %s as map key type %s", gotKeyType, keyType), ie.Index)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		cg.generateExpression(ie.Left)
+		cg.emit("    push %%rax")
+		cg.generateExpression(ie.Index)
+		cg.emit("    pop %%rdi")
+		cg.emit("    mov %%rax, %%rsi")
+		cg.emit("    call map_get")
+		return
+	}
 	if _, ok := peelListType(resolvedLeftTypeName); ok {
+		if cg.inferExpressionType(ie.Index) != typeInt {
+			cg.addNodeError("index must be int", ie.Index)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
 		cg.generateExpression(ie.Left) // list pointer
 		cg.emit("    push %%rax")
 		cg.generateExpression(ie.Index)
@@ -399,7 +569,12 @@ func (cg *CodeGen) generateIndexExpression(ie *ast.IndexExpression) {
 	}
 	elemTypeName, arrLen, ok := peelArrayType(resolvedLeftTypeName)
 	if !ok {
-		cg.addNodeError("index operator not supported for non-array/string/list type", ie)
+		cg.addNodeError("index operator not supported for non-array/string/list/map type", ie)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if cg.inferExpressionType(ie.Index) != typeInt {
+		cg.addNodeError("index must be int", ie.Index)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
@@ -463,6 +638,10 @@ func (cg *CodeGen) generateMethodByName(mce *ast.MethodCallExpression, nullSafe 
 		cg.generateListContainsMethod(mce, nullSafe)
 	case "clear":
 		cg.generateListClearMethod(mce, nullSafe)
+	case "has":
+		cg.generateMapHasMethod(mce, nullSafe)
+	case "removeKey":
+		cg.generateMapRemoveKeyMethod(mce, nullSafe)
 	default:
 		cg.generateUnknownMethodError(mce, nullSafe)
 	}
@@ -491,6 +670,19 @@ func (cg *CodeGen) generateMemberByName(object ast.Expression, property *ast.Ide
 	case "length":
 		cg.generateArrayLengthProperty(object, node, nullSafe)
 	default:
+		if id, ok := object.(*ast.Identifier); ok && cg.varIsNull[id.Value] && !nullSafe {
+			cg.addNodeError("cannot access member on null value", node)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		if _, ok := cg.structFieldTypeForExpression(object, property); ok {
+			cg.generateExpression(object)
+			cg.emit("    push %%rax")
+			cg.emit("    lea %s(%%rip), %%rsi", cg.stringLabel(property.Value))
+			cg.emit("    pop %%rdi")
+			cg.emit("    call map_get")
+			return
+		}
 		if nullSafe {
 			cg.emit("    lea null_lit(%%rip), %%rax")
 			return
@@ -515,13 +707,18 @@ func (cg *CodeGen) generateArrayLengthMethod(mce *ast.MethodCallExpression, null
 		cg.emit("    mov (%%rax), %%rax")
 		return
 	}
+	if _, _, ok := cg.resolveMapTypesForAccess(mce.Object, mce.NullSafe); ok {
+		cg.generateExpression(mce.Object)
+		cg.emit("    mov (%%rax), %%rax")
+		return
+	}
 	n, ok := cg.resolveLengthForAccess(mce.Object, mce.NullSafe)
 	if !ok {
 		if nullSafe {
 			cg.emit("    lea null_lit(%%rip), %%rax")
 			return
 		}
-		cg.addNodeError("length is only supported on arrays/lists", mce)
+		cg.addNodeError("length is only supported on arrays/lists/maps", mce)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
@@ -540,13 +737,18 @@ func (cg *CodeGen) generateArrayLengthProperty(object ast.Expression, node ast.N
 		cg.emit("    mov (%%rax), %%rax")
 		return
 	}
+	if _, _, ok := cg.resolveMapTypesForAccess(object, allowNullable); ok {
+		cg.generateExpression(object)
+		cg.emit("    mov (%%rax), %%rax")
+		return
+	}
 	n, ok := cg.resolveLengthForAccess(object, allowNullable)
 	if !ok {
 		if nullSafe {
 			cg.emit("    lea null_lit(%%rip), %%rax")
 			return
 		}
-		cg.addNodeError("length is only supported on arrays/lists", node)
+		cg.addNodeError("length is only supported on arrays/lists/maps", node)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
@@ -597,6 +799,49 @@ func (cg *CodeGen) resolveListElementTypeForAccess(object ast.Expression, allowN
 		return "", false
 	}
 	return elemType, true
+}
+
+func (cg *CodeGen) resolveMapTypesForAccess(object ast.Expression, allowNullable bool) (string, string, bool) {
+	typeName := cg.inferExpressionTypeName(object)
+	if resolved, ok := cg.normalizeTypeName(typeName); ok {
+		typeName = resolved
+	}
+	if k, v, ok := peelMapType(typeName); ok {
+		return k, v, true
+	}
+	if !allowNullable {
+		return "", "", false
+	}
+	parts, isUnion := splitTopLevelUnion(typeName)
+	if !isUnion {
+		return "", "", false
+	}
+	found := false
+	keyType := ""
+	valType := ""
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" || part == "null" {
+			continue
+		}
+		k, v, ok := peelMapType(part)
+		if !ok {
+			return "", "", false
+		}
+		if !found {
+			found = true
+			keyType = k
+			valType = v
+			continue
+		}
+		if keyType != k || valType != v {
+			return "", "", false
+		}
+	}
+	if !found {
+		return "", "", false
+	}
+	return keyType, valType, true
 }
 
 func (cg *CodeGen) resolveLengthForAccess(object ast.Expression, allowNullable bool) (int, bool) {
@@ -653,6 +898,9 @@ func (cg *CodeGen) typeSupportsLengthField(typeName string) (supports bool, null
 	if _, ok := peelListType(typeName); ok {
 		return true, false
 	}
+	if _, _, ok := peelMapType(typeName); ok {
+		return true, false
+	}
 	if typeName == "string" {
 		return true, false
 	}
@@ -676,6 +924,10 @@ func (cg *CodeGen) typeSupportsLengthField(typeName string) (supports bool, null
 			sawSupported = true
 			continue
 		}
+		if _, _, ok := peelMapType(part); ok {
+			sawSupported = true
+			continue
+		}
 		if part == "string" {
 			sawSupported = true
 			continue
@@ -683,6 +935,33 @@ func (cg *CodeGen) typeSupportsLengthField(typeName string) (supports bool, null
 		return false, nullable
 	}
 	return sawSupported, nullable
+}
+
+func (cg *CodeGen) typeSupportsStructFieldLookup(typeName string) (supports bool, nullable bool) {
+	if resolved, ok := cg.normalizeTypeName(typeName); ok {
+		typeName = resolved
+	}
+	if _, ok := cg.structDecls[typeName]; ok {
+		return true, false
+	}
+	parts, isUnion := splitTopLevelUnion(typeName)
+	if !isUnion {
+		return false, false
+	}
+	sawStruct := false
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "null" {
+			nullable = true
+			continue
+		}
+		if _, ok := cg.structDecls[part]; ok {
+			sawStruct = true
+			continue
+		}
+		return false, nullable
+	}
+	return sawStruct, nullable
 }
 
 func (cg *CodeGen) generateUnknownMethodError(mce *ast.MethodCallExpression, nullSafe bool) {
@@ -761,6 +1040,13 @@ func (cg *CodeGen) generateListClearMethod(mce *ast.MethodCallExpression, nullSa
 		}
 		cg.addNodeError(fmt.Sprintf("clear expects 0 arguments, got=%d", len(mce.Arguments)), mce)
 		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if _, _, ok := cg.resolveMapTypesForAccess(mce.Object, mce.NullSafe); ok {
+		cg.generateExpression(mce.Object)
+		cg.emit("    mov %%rax, %%rdi")
+		cg.emit("    call map_clear")
+		cg.emit("    lea null_lit(%%rip), %%rax")
 		return
 	}
 	if _, ok := cg.resolveListElementTypeForAccess(mce.Object, mce.NullSafe); !ok {
@@ -890,6 +1176,72 @@ func (cg *CodeGen) generateListContainsMethod(mce *ast.MethodCallExpression, nul
 		cg.emit("    xor %%rdx, %%rdx")
 	}
 	cg.emit("    call list_contains")
+}
+
+func (cg *CodeGen) generateMapHasMethod(mce *ast.MethodCallExpression, nullSafe bool) {
+	if len(mce.Arguments) != 1 {
+		if nullSafe {
+			cg.emit("    lea null_lit(%%rip), %%rax")
+			return
+		}
+		cg.addNodeError(fmt.Sprintf("has expects 1 argument, got=%d", len(mce.Arguments)), mce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	keyType, _, ok := cg.resolveMapTypesForAccess(mce.Object, mce.NullSafe)
+	if !ok {
+		if nullSafe {
+			cg.emit("    lea null_lit(%%rip), %%rax")
+			return
+		}
+		cg.addNodeError("has is only supported on maps", mce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	gotKeyType := cg.inferExpressionTypeName(mce.Arguments[0])
+	if gotKeyType != "unknown" && !cg.isAssignableTypeName(keyType, gotKeyType) {
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	cg.generateExpression(mce.Object)
+	cg.emit("    push %%rax")
+	cg.generateExpression(mce.Arguments[0])
+	cg.emit("    mov %%rax, %%rsi")
+	cg.emit("    pop %%rdi")
+	cg.emit("    call map_has")
+}
+
+func (cg *CodeGen) generateMapRemoveKeyMethod(mce *ast.MethodCallExpression, nullSafe bool) {
+	if len(mce.Arguments) != 1 {
+		if nullSafe {
+			cg.emit("    lea null_lit(%%rip), %%rax")
+			return
+		}
+		cg.addNodeError(fmt.Sprintf("removeKey expects 1 argument, got=%d", len(mce.Arguments)), mce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	keyType, _, ok := cg.resolveMapTypesForAccess(mce.Object, mce.NullSafe)
+	if !ok {
+		if nullSafe {
+			cg.emit("    lea null_lit(%%rip), %%rax")
+			return
+		}
+		cg.addNodeError("removeKey is only supported on maps", mce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	gotKeyType := cg.inferExpressionTypeName(mce.Arguments[0])
+	if gotKeyType != "unknown" && !cg.isAssignableTypeName(keyType, gotKeyType) {
+		cg.emit("    lea null_lit(%%rip), %%rax")
+		return
+	}
+	cg.generateExpression(mce.Object)
+	cg.emit("    push %%rax")
+	cg.generateExpression(mce.Arguments[0])
+	cg.emit("    mov %%rax, %%rsi")
+	cg.emit("    pop %%rdi")
+	cg.emit("    call map_remove")
 }
 
 func (cg *CodeGen) emitNullSafeObjectGuard(object ast.Expression) string {
@@ -1447,6 +1799,17 @@ func (cg *CodeGen) generateTypeDecl(ts *ast.TypeDeclStatement) {
 	cg.markTypeAliasDeclaredInCurrentScope(name)
 }
 
+func (cg *CodeGen) generateStructDecl(ss *ast.StructStatement) {
+	if ss == nil || ss.Name == nil {
+		cg.addNodeError("invalid struct declaration", ss)
+		return
+	}
+	name := ss.Name.Value
+	if _, exists := cg.structDecls[name]; !exists {
+		cg.structDecls[name] = ss
+	}
+}
+
 // generateAssign handles variable reassignment.
 func (cg *CodeGen) generateAssign(as *ast.AssignStatement) {
 	offset, exists := cg.variables[as.Name.Value]
@@ -1569,6 +1932,54 @@ func (cg *CodeGen) generateAssign(as *ast.AssignStatement) {
 	}
 }
 
+func (cg *CodeGen) generateMemberAssign(mas *ast.MemberAssignStatement) {
+	if mas == nil || mas.Left == nil || mas.Left.Object == nil || mas.Left.Property == nil {
+		cg.addNodeError("invalid member assignment", mas)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	id, ok := mas.Left.Object.(*ast.Identifier)
+	if !ok {
+		cg.addNodeError("member assignment target must be an identifier", mas)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	offset, exists := cg.variables[id.Value]
+	if !exists {
+		cg.addNodeError("identifier not found: "+id.Value, mas)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if cg.constVars[id.Value] {
+		cg.addNodeError("cannot reassign const: "+id.Value, mas)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if cg.varIsNull[id.Value] {
+		cg.addNodeError("cannot assign member on null value", mas)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	fieldType, ok := cg.structFieldTypeForExpression(mas.Left.Object, mas.Left.Property)
+	if !ok {
+		cg.addNodeError("unknown member: "+mas.Left.Property.Value, mas)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	gotType := cg.inferExpressionTypeName(mas.Value)
+	if gotType != "unknown" && !cg.isAssignableTypeName(fieldType, gotType) {
+		cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", gotType, fieldType), mas.Value)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	cg.generateExpression(mas.Value)
+	cg.emit("    mov %%rax, %%rdx")
+	cg.emit("    lea %s(%%rip), %%rsi", cg.stringLabel(mas.Left.Property.Value))
+	cg.emit("    mov -%d(%%rbp), %%rdi", offset)
+	cg.emit("    call map_set")
+	cg.emit("    mov %%rdx, %%rax")
+}
+
 func (cg *CodeGen) generateIndexAssign(ias *ast.IndexAssignStatement) {
 	if ias == nil || ias.Left == nil {
 		cg.addNodeError("invalid indexed assignment", ias)
@@ -1603,6 +2014,32 @@ func (cg *CodeGen) generateIndexAssign(ias *ast.IndexAssignStatement) {
 	if normalized, ok := cg.normalizeTypeName(arrTypeName); ok {
 		arrTypeName = normalized
 	}
+	if keyTypeName, valueTypeName, ok := peelMapType(arrTypeName); ok {
+		gotKeyType := cg.inferExpressionTypeName(ias.Left.Index)
+		if gotKeyType != "unknown" && !cg.isAssignableTypeName(keyTypeName, gotKeyType) {
+			cg.addNodeError(fmt.Sprintf("cannot assign key type %s to %s", gotKeyType, keyTypeName), ias.Left.Index)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		gotValueType := cg.inferExpressionTypeName(ias.Value)
+		if gotValueType != "unknown" && !cg.isAssignableTypeName(valueTypeName, gotValueType) {
+			cg.addNodeError(fmt.Sprintf("cannot assign %s to %s", gotValueType, valueTypeName), ias)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		cg.generateExpression(ias.Left.Index)
+		cg.emit("    push %%rax")
+		cg.generateExpression(ias.Value)
+		cg.emit("    mov %%rax, %%rdx")
+		cg.emit("    pop %%rsi")
+		cg.emit("    mov -%d(%%rbp), %%rdi", offset)
+		cg.emit("    call map_set")
+		cg.emit("    mov %%rdx, %%rax")
+		cg.varValueTypeName[name] = arrTypeName
+		cg.varIsNull[name] = false
+		delete(cg.varFuncs, name)
+		return
+	}
 	if elemTypeName, ok := peelListType(arrTypeName); ok {
 		if cg.inferExpressionType(ias.Left.Index) != typeInt {
 			cg.addNodeError("list index must be int", ias.Left.Index)
@@ -1630,7 +2067,7 @@ func (cg *CodeGen) generateIndexAssign(ias *ast.IndexAssignStatement) {
 	}
 	elemTypeName, arrLen, ok := peelArrayType(arrTypeName)
 	if !ok {
-		cg.addNodeError("indexed assignment target is not an array", ias)
+		cg.addNodeError("indexed assignment target is not an array/list/map", ias)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
@@ -1992,6 +2429,25 @@ func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 		}
 
 		objTypeName := cg.inferExpressionTypeName(ce.Arguments[0])
+		if supportsStruct, nullableStruct := cg.typeSupportsStructFieldLookup(objTypeName); supportsStruct {
+			cg.emit("    mov %%rax, %%rsi")
+			cg.emit("    pop %%rdi")
+			if nullableStruct {
+				nonNullLabel := cg.newLabel()
+				doneLabel := cg.newLabel()
+				cg.emit("    lea null_lit(%%rip), %%rdx")
+				cg.emit("    cmp %%rdx, %%rdi")
+				cg.emit("    jne %s", nonNullLabel)
+				cg.emit("    mov $0, %%rax")
+				cg.emit("    jmp %s", doneLabel)
+				cg.emit("%s:", nonNullLabel)
+				cg.emit("    call map_has")
+				cg.emit("%s:", doneLabel)
+				return
+			}
+			cg.emit("    call map_has")
+			return
+		}
 		supportsLength, nullable := cg.typeSupportsLengthField(objTypeName)
 		if !supportsLength {
 			cg.emit("    add $8, %%rsp")

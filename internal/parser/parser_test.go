@@ -415,6 +415,52 @@ func TestArrayIndexAssignmentParses(t *testing.T) {
 	}
 }
 
+func TestStructDeclarationParses(t *testing.T) {
+	src := `struct Point { x: int, y?: int, z: int = 7 }`
+	p := New(lexer.New(src))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	st, ok := program.Statements[0].(*ast.StructStatement)
+	if !ok {
+		t.Fatalf("expected struct statement, got=%T", program.Statements[0])
+	}
+	if st.Name == nil || st.Name.Value != "Point" {
+		t.Fatalf("wrong struct name: %+v", st.Name)
+	}
+	if len(st.Fields) != 3 {
+		t.Fatalf("expected 3 fields, got=%d", len(st.Fields))
+	}
+	if st.Fields[1] == nil || !st.Fields[1].Optional || st.Fields[1].Name.Value != "y" {
+		t.Fatalf("expected y field to be optional")
+	}
+	if st.Fields[2] == nil || st.Fields[2].DefaultValue == nil {
+		t.Fatalf("expected z field default value")
+	}
+}
+
+func TestMemberAssignmentParses(t *testing.T) {
+	p := New(lexer.New("p.x = 3;"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	st, ok := program.Statements[0].(*ast.MemberAssignStatement)
+	if !ok {
+		t.Fatalf("expected member assignment, got=%T", program.Statements[0])
+	}
+	if st.Left == nil || st.Left.Property == nil || st.Left.Property.Value != "x" {
+		t.Fatalf("expected property x, got=%+v", st.Left)
+	}
+	if st.Value == nil || st.Value.String() != "3" {
+		t.Fatalf("expected value 3, got=%v", st.Value)
+	}
+}
+
 func TestArrayLengthMethodCallParses(t *testing.T) {
 	p := New(lexer.New("arr.length();"))
 	program := p.ParseProgram()
@@ -699,6 +745,38 @@ func TestNewListExpressionParses(t *testing.T) {
 	}
 	if len(nx.Arguments) != 3 {
 		t.Fatalf("expected 3 constructor args, got=%d", len(nx.Arguments))
+	}
+}
+
+func TestNewMapExpressionParses(t *testing.T) {
+	p := New(lexer.New(`let m: Map<string,int> = new Map<string,int>(("a", 1), ("b", 2));`))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	ls, ok := program.Statements[0].(*ast.LetStatement)
+	if !ok {
+		t.Fatalf("expected let statement, got=%T", program.Statements[0])
+	}
+	if ls.TypeName != "Map<string,int>" {
+		t.Fatalf("expected Map<string,int> type annotation, got=%q", ls.TypeName)
+	}
+	nx, ok := ls.Value.(*ast.NewExpression)
+	if !ok {
+		t.Fatalf("expected new expression, got=%T", ls.Value)
+	}
+	if nx.TypeName != "Map<string,int>" {
+		t.Fatalf("expected new Map<string,int>, got=%q", nx.TypeName)
+	}
+	if len(nx.Arguments) != 2 {
+		t.Fatalf("expected 2 constructor args, got=%d", len(nx.Arguments))
+	}
+	for i, a := range nx.Arguments {
+		tup, ok := a.(*ast.TupleLiteral)
+		if !ok || len(tup.Elements) != 2 {
+			t.Fatalf("expected constructor arg %d to be tuple pair, got=%T", i, a)
+		}
 	}
 }
 

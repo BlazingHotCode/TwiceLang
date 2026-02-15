@@ -211,6 +211,9 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) (out valueType) {
 		if leftTypeName == "string" {
 			return typeChar
 		}
+		if _, valueType, ok := peelMapType(leftTypeName); ok {
+			return cg.parseTypeName(valueType)
+		}
 		if listElem, ok := peelListType(leftTypeName); ok {
 			return cg.parseTypeName(listElem)
 		}
@@ -222,6 +225,27 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) (out valueType) {
 	case *ast.MethodCallExpression:
 		if e.Method != nil && e.Method.Value == "length" {
 			return typeInt
+		}
+		if e.Method != nil && e.Method.Value == "has" {
+			return typeBool
+		}
+		if e.Method != nil && e.Method.Value == "removeKey" {
+			objTypeName := cg.inferExpressionTypeName(e.Object)
+			if resolved, ok := cg.normalizeTypeName(objTypeName); ok {
+				objTypeName = resolved
+			}
+			if _, valueType, ok := peelMapType(objTypeName); ok {
+				return cg.parseTypeName(valueType)
+			}
+		}
+		if e.Method != nil && e.Method.Value == "clear" {
+			objTypeName := cg.inferExpressionTypeName(e.Object)
+			if resolved, ok := cg.normalizeTypeName(objTypeName); ok {
+				objTypeName = resolved
+			}
+			if _, _, ok := peelMapType(objTypeName); ok {
+				return typeNull
+			}
 		}
 		if e.Method != nil && e.Method.Value == "contains" {
 			return typeBool
@@ -249,6 +273,9 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) (out valueType) {
 		if e.Property != nil && e.Property.Value == "length" {
 			return typeInt
 		}
+		if fieldType, ok := cg.structFieldTypeForExpression(e.Object, e.Property); ok {
+			return cg.parseTypeName(fieldType)
+		}
 		return typeUnknown
 	case *ast.NullSafeAccessExpression:
 		if e.Property != nil && e.Property.Value == "length" {
@@ -272,10 +299,7 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) (out valueType) {
 		if resolved, ok := cg.normalizeTypeName(typeName); ok {
 			typeName = resolved
 		}
-		if _, ok := peelListType(typeName); ok {
-			return typeArray
-		}
-		return typeUnknown
+		return cg.parseTypeName(typeName)
 	default:
 		return typeUnknown
 	}
@@ -320,6 +344,9 @@ func (cg *CodeGen) inferExpressionTypeName(expr ast.Expression) (out string) {
 		if leftTypeName == "string" {
 			return "char"
 		}
+		if _, valueType, ok := peelMapType(leftTypeName); ok {
+			return valueType
+		}
 		if elem, ok := peelListType(leftTypeName); ok {
 			return elem
 		}
@@ -331,6 +358,28 @@ func (cg *CodeGen) inferExpressionTypeName(expr ast.Expression) (out string) {
 	case *ast.MethodCallExpression:
 		if e.Method != nil && e.Method.Value == "length" {
 			return "int"
+		}
+		if e.Method != nil && e.Method.Value == "has" {
+			return "bool"
+		}
+		if e.Method != nil && e.Method.Value == "removeKey" {
+			objTypeName := cg.inferExpressionTypeName(e.Object)
+			if resolved, ok := cg.normalizeTypeName(objTypeName); ok {
+				objTypeName = resolved
+			}
+			if _, valueType, ok := peelMapType(objTypeName); ok {
+				return valueType
+			}
+			return "unknown"
+		}
+		if e.Method != nil && e.Method.Value == "clear" {
+			objTypeName := cg.inferExpressionTypeName(e.Object)
+			if resolved, ok := cg.normalizeTypeName(objTypeName); ok {
+				objTypeName = resolved
+			}
+			if _, _, ok := peelMapType(objTypeName); ok {
+				return "null"
+			}
 		}
 		if e.Method != nil && e.Method.Value == "contains" {
 			return "bool"
@@ -358,6 +407,9 @@ func (cg *CodeGen) inferExpressionTypeName(expr ast.Expression) (out string) {
 	case *ast.MemberAccessExpression:
 		if e.Property != nil && e.Property.Value == "length" {
 			return "int"
+		}
+		if fieldType, ok := cg.structFieldTypeForExpression(e.Object, e.Property); ok {
+			return fieldType
 		}
 		return "unknown"
 	case *ast.NullSafeAccessExpression:
@@ -739,6 +791,9 @@ func (cg *CodeGen) parseTypeName(s string) valueType {
 	if _, dims, ok := parseTypeDescriptor(s); ok && len(dims) > 0 {
 		return typeArray
 	}
+	if _, _, ok := peelMapType(s); ok {
+		return typeArray
+	}
 	if _, ok := peelListType(s); ok {
 		return typeArray
 	}
@@ -760,6 +815,9 @@ func (cg *CodeGen) parseTypeName(s string) valueType {
 	case "null":
 		return typeNull
 	default:
+		if _, ok := cg.structDecls[s]; ok {
+			return typeArray
+		}
 		return typeUnknown
 	}
 }
@@ -809,6 +867,12 @@ func (cg *CodeGen) isKnownTypeNameWithParams(t string, typeParams map[string]str
 			}
 			return cg.isKnownTypeNameWithParams(gargs[0], typeParams)
 		}
+		if gbase == "Map" {
+			if len(gargs) != 2 {
+				return false
+			}
+			return cg.isKnownTypeNameWithParams(gargs[0], typeParams) && cg.isKnownTypeNameWithParams(gargs[1], typeParams)
+		}
 		if _, ok := cg.genericTypeAliases[gbase]; ok {
 			for _, a := range gargs {
 				if !cg.isKnownTypeNameWithParams(a, typeParams) {
@@ -824,7 +888,66 @@ func (cg *CodeGen) isKnownTypeNameWithParams(t string, typeParams map[string]str
 			return true
 		}
 	}
+	if _, ok := cg.structDecls[base]; ok {
+		return true
+	}
 	return isBuiltinTypeName(base)
+}
+
+func (cg *CodeGen) structFieldTypeForExpression(object ast.Expression, property *ast.Identifier) (string, bool) {
+	if property == nil {
+		return "", false
+	}
+	objType := cg.inferCurrentValueTypeName(object)
+	if resolved, ok := cg.normalizeTypeName(objType); ok {
+		objType = resolved
+	}
+	if parts, isUnion := splitTopLevelUnion(objType); isUnion {
+		found := false
+		fieldType := ""
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p == "" || p == "null" {
+				continue
+			}
+			st, ok := cg.structDecls[p]
+			if !ok || st == nil {
+				return "", false
+			}
+			ft, ok := structFieldType(st, property.Value)
+			if !ok {
+				return "", false
+			}
+			if !found {
+				found = true
+				fieldType = ft
+				continue
+			}
+			if merged, ok := mergeTypeNames(fieldType, ft); ok {
+				fieldType = merged
+			} else {
+				return "", false
+			}
+		}
+		return fieldType, found
+	}
+	st, ok := cg.structDecls[objType]
+	if !ok || st == nil {
+		return "", false
+	}
+	return structFieldType(st, property.Value)
+}
+
+func structFieldType(st *ast.StructStatement, name string) (string, bool) {
+	if st == nil {
+		return "", false
+	}
+	for _, f := range st.Fields {
+		if f != nil && f.Name != nil && f.Name.Value == name {
+			return f.TypeName, true
+		}
+	}
+	return "", false
 }
 
 func (cg *CodeGen) typeAllowsNullTypeName(t string) bool {

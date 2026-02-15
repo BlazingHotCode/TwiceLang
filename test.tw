@@ -381,6 +381,53 @@ fn demo_lists() {
   return;
 }
 
+fn demo_maps() {
+  header("maps");
+
+  let m: Map<string, int> = new Map<string, int>(("a", 1), ("b", 2));
+  println(m["a"]);
+  println(m["z"] ?? 0);
+  m["c"] = 3;
+  m["a"] = 9;
+  println(m["a"]);
+  println(m["c"]);
+  println(m.length);
+  println(m.length());
+  println(m.has("a"));
+  println(m.has("x"));
+  println(m.removeKey("b"));
+  println(m.length());
+  m.clear();
+  println(m.length());
+  return;
+}
+
+fn demo_structs() {
+  header("structs");
+
+  struct Point {
+    x: int,
+    y?: int,
+    z: int = 7
+  }
+
+  let p: Point = new Point(x = 2, y = 3);
+  println(typeof(p));
+  println(p.x);
+  println(p.y);
+  println(p.z);
+  p.y = 9;
+  println(p.y);
+  println(hasField(p, "x"));
+  println(hasField(p, "missing"));
+
+  let q = new Point(1);
+  println(q.x);
+  println(q.y ?? 0);
+  println(q.z);
+  return;
+}
+
 fn demo_generics() {
   header("generics");
 
@@ -414,6 +461,8 @@ fn main() {
   demo_null_safe_and_coalesce();
   demo_any_type();
   demo_lists();
+  demo_maps();
+  demo_structs();
   demo_generics();
   return;
 }

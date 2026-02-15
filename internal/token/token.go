@@ -68,6 +68,7 @@ const (
 	RBRACKET  TokenType = "]"
 	QDOT      TokenType = "?."
 	QCOALESCE TokenType = "??"
+	QUESTION  TokenType = "?"
 
 	// Keywords
 	FUNCTION TokenType = "FUNCTION"
@@ -86,6 +87,7 @@ const (
 	RETURN   TokenType = "RETURN"
 	NULL     TokenType = "NULL"
 	NEW      TokenType = "NEW"
+	STRUCT   TokenType = "STRUCT"
 )
 
 // keywords maps string identifiers to their token type
@@ -107,6 +109,7 @@ var keywords = map[string]TokenType{
 	"return":   RETURN,
 	"null":     NULL,
 	"new":      NEW,
+	"struct":   STRUCT,
 }
 
 // LookupIdent checks if an identifier is a keyword

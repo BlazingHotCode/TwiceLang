@@ -1,5 +1,7 @@
 package object
 
+import "twice/internal/ast"
+
 // Environment stores variable bindings
 // It's a map with a link to an outer scope (for nested functions)
 type Environment struct {
@@ -8,6 +10,7 @@ type Environment struct {
 	typeStore        map[string]string
 	typeAlias        map[string]string
 	genericTypeAlias map[string]GenericTypeAlias
+	structDefs       map[string]*ast.StructStatement
 	outer            *Environment // Parent scope, nil for global scope
 }
 
@@ -25,6 +28,7 @@ func NewEnvironment() *Environment {
 		typeStore:        make(map[string]string),
 		typeAlias:        make(map[string]string),
 		genericTypeAlias: make(map[string]GenericTypeAlias),
+		structDefs:       make(map[string]*ast.StructStatement),
 		outer:            nil,
 	}
 }
@@ -158,5 +162,24 @@ func (e *Environment) GenericTypeAlias(name string) (GenericTypeAlias, bool) {
 
 func (e *Environment) HasGenericTypeAliasInCurrentScope(name string) bool {
 	_, ok := e.genericTypeAlias[name]
+	return ok
+}
+
+func (e *Environment) SetStruct(name string, st *ast.StructStatement) {
+	e.structDefs[name] = st
+}
+
+func (e *Environment) Struct(name string) (*ast.StructStatement, bool) {
+	if st, ok := e.structDefs[name]; ok {
+		return st, true
+	}
+	if e.outer != nil {
+		return e.outer.Struct(name)
+	}
+	return nil, false
+}
+
+func (e *Environment) HasStructInCurrentScope(name string) bool {
+	_, ok := e.structDefs[name]
 	return ok
 }

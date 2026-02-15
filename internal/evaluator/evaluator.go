@@ -89,6 +89,11 @@ var builtins = map[string]*object.Builtin{
 				return nativeBoolToBooleanObject(field.Value == "length" && obj != nil)
 			case *object.List:
 				return nativeBoolToBooleanObject(field.Value == "length" && obj != nil)
+			case *object.Map:
+				return nativeBoolToBooleanObject(field.Value == "length" && obj != nil)
+			case *object.Struct:
+				_, ok := obj.Fields[field.Value]
+				return nativeBoolToBooleanObject(ok)
 			case *object.String:
 				return nativeBoolToBooleanObject(field.Value == "length" && obj != nil)
 			default:
@@ -276,6 +281,33 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 				TypeName:   resolved,
 			})
 		}
+	case *ast.StructStatement:
+		if node.Name == nil {
+			return newError("invalid struct declaration")
+		}
+		if isBuiltinTypeName(node.Name.Value) || node.Name.Value == "type" {
+			return newError("cannot redefine builtin type: %s", node.Name.Value)
+		}
+		if env.HasStructInCurrentScope(node.Name.Value) || env.HasTypeAliasInCurrentScope(node.Name.Value) || env.HasGenericTypeAliasInCurrentScope(node.Name.Value) {
+			return newError("type already declared: %s", node.Name.Value)
+		}
+		seen := map[string]struct{}{}
+		for _, f := range node.Fields {
+			if f == nil || f.Name == nil {
+				return newError("invalid struct field")
+			}
+			if _, exists := seen[f.Name.Value]; exists {
+				return newError("duplicate struct field: %s", f.Name.Value)
+			}
+			seen[f.Name.Value] = struct{}{}
+			if msg, ok := genericTypeArityError(f.TypeName, env, nil); ok {
+				return newError(msg)
+			}
+			if !isKnownTypeName(f.TypeName, env) {
+				return newError("unknown type: %s", f.TypeName)
+			}
+		}
+		env.SetStruct(node.Name.Value, node)
 	case *ast.AssignStatement:
 		if !env.Has(node.Name.Value) {
 			return newError("identifier not found: " + node.Name.Value)
@@ -335,6 +367,52 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			return newError("cannot assign %s to %s", valType, targetType)
 		}
 		env.Assign(node.Name.Value, val)
+	case *ast.MemberAssignStatement:
+		left := node.Left
+		if left == nil || left.Object == nil || left.Property == nil {
+			return newError("invalid member assignment")
+		}
+		id, ok := left.Object.(*ast.Identifier)
+		if !ok {
+			return newError("member assignment target must be an identifier")
+		}
+		if env.IsConst(id.Value) {
+			return newError("cannot reassign const: %s", id.Value)
+		}
+		objVal, ok := env.Get(id.Value)
+		if !ok {
+			return newError("identifier not found: %s", id.Value)
+		}
+		st, ok := objVal.(*object.Struct)
+		if !ok {
+			return newError("member assignment is only supported on structs")
+		}
+		structDecl, ok := env.Struct(st.TypeName)
+		if !ok || structDecl == nil {
+			return newError("unknown struct type: %s", st.TypeName)
+		}
+		fieldType := ""
+		found := false
+		for _, f := range structDecl.Fields {
+			if f != nil && f.Name != nil && f.Name.Value == left.Property.Value {
+				fieldType = f.TypeName
+				found = true
+				break
+			}
+		}
+		if !found {
+			return newError("unknown member: %s", left.Property.Value)
+		}
+		val := Eval(node.Value, env)
+		if isError(val) {
+			return val
+		}
+		valType := runtimeTypeName(val)
+		if !isAssignableToType(fieldType, valType, env) {
+			return newError("cannot assign %s to %s", valType, fieldType)
+		}
+		st.Fields[left.Property.Value] = val
+		return val
 	case *ast.IndexAssignStatement:
 		return annotateErrorWithNode(evalIndexAssignStatement(node, env), node)
 	case *ast.FunctionStatement:
