@@ -24,6 +24,8 @@ func (cg *CodeGen) generateStatement(stmt ast.Statement) {
 		cg.generateAssign(s)
 	case *ast.MemberAssignStatement:
 		cg.generateMemberAssign(s)
+	case *ast.DerefAssignStatement:
+		cg.generateDerefAssign(s)
 	case *ast.IndexAssignStatement:
 		cg.generateIndexAssign(s)
 	case *ast.ReturnStatement:
@@ -212,6 +214,15 @@ func (cg *CodeGen) generateNewExpression(ne *ast.NewExpression) {
 	typeName := ne.TypeName
 	if resolved, ok := cg.normalizeTypeName(typeName); ok {
 		typeName = resolved
+	}
+	if inner, ok := peelPointerType(typeName); ok {
+		typeName = inner
+	}
+	if inner, ok := peelPointerType(typeName); ok {
+		typeName = inner
+	}
+	if inner, ok := peelPointerType(typeName); ok {
+		typeName = inner
 	}
 	if st, ok := cg.structDecls[typeName]; ok && st != nil {
 		cg.generateStructNewExpression(ne, st, typeName)
@@ -493,7 +504,15 @@ func (cg *CodeGen) generateIndexExpression(ie *ast.IndexExpression) {
 		return
 	}
 
-	if leftTypeName == "string" {
+	resolvedLeftTypeName := leftTypeName
+	if normalized, ok := cg.normalizeTypeName(leftTypeName); ok {
+		resolvedLeftTypeName = normalized
+	}
+	if inner, ok := peelPointerType(resolvedLeftTypeName); ok {
+		resolvedLeftTypeName = inner
+	}
+
+	if resolvedLeftTypeName == "string" {
 		if cg.inferExpressionType(ie.Index) != typeInt {
 			cg.addNodeError("index must be int", ie.Index)
 			cg.emit("    mov $0, %%rax")
@@ -508,7 +527,7 @@ func (cg *CodeGen) generateIndexExpression(ie *ast.IndexExpression) {
 				}
 			}
 		}
-		cg.generateExpression(ie.Left) // string pointer
+		cg.emitObjectValueForAccess(ie.Left) // string pointer
 		cg.emit("    push %%rax")
 		cg.generateExpression(ie.Index)
 		errLabel := cg.newLabel()
@@ -534,10 +553,6 @@ func (cg *CodeGen) generateIndexExpression(ie *ast.IndexExpression) {
 		return
 	}
 
-	resolvedLeftTypeName := leftTypeName
-	if normalized, ok := cg.normalizeTypeName(leftTypeName); ok {
-		resolvedLeftTypeName = normalized
-	}
 	if keyType, _, ok := peelMapType(resolvedLeftTypeName); ok {
 		gotKeyType := cg.inferExpressionTypeName(ie.Index)
 		if gotKeyType != "unknown" && !cg.isAssignableTypeName(keyType, gotKeyType) {
@@ -545,7 +560,7 @@ func (cg *CodeGen) generateIndexExpression(ie *ast.IndexExpression) {
 			cg.emit("    mov $0, %%rax")
 			return
 		}
-		cg.generateExpression(ie.Left)
+		cg.emitObjectValueForAccess(ie.Left)
 		cg.emit("    push %%rax")
 		cg.generateExpression(ie.Index)
 		cg.emit("    pop %%rdi")
@@ -559,7 +574,7 @@ func (cg *CodeGen) generateIndexExpression(ie *ast.IndexExpression) {
 			cg.emit("    mov $0, %%rax")
 			return
 		}
-		cg.generateExpression(ie.Left) // list pointer
+		cg.emitObjectValueForAccess(ie.Left) // list pointer
 		cg.emit("    push %%rax")
 		cg.generateExpression(ie.Index)
 		cg.emit("    pop %%rdi")
@@ -586,7 +601,7 @@ func (cg *CodeGen) generateIndexExpression(ie *ast.IndexExpression) {
 		}
 	}
 
-	cg.generateExpression(ie.Left) // array pointer
+	cg.emitObjectValueForAccess(ie.Left) // array pointer
 	cg.emit("    push %%rax")
 	cg.generateExpression(ie.Index)
 	if arrLen >= 0 {
@@ -676,7 +691,7 @@ func (cg *CodeGen) generateMemberByName(object ast.Expression, property *ast.Ide
 			return
 		}
 		if _, ok := cg.structFieldTypeForExpression(object, property); ok {
-			cg.generateExpression(object)
+			cg.emitObjectValueForAccess(object)
 			cg.emit("    push %%rax")
 			cg.emit("    lea %s(%%rip), %%rsi", cg.stringLabel(property.Value))
 			cg.emit("    pop %%rdi")
@@ -703,12 +718,12 @@ func (cg *CodeGen) generateArrayLengthMethod(mce *ast.MethodCallExpression, null
 		return
 	}
 	if _, ok := cg.resolveListElementTypeForAccess(mce.Object, mce.NullSafe); ok {
-		cg.generateExpression(mce.Object)
+		cg.emitObjectValueForAccess(mce.Object)
 		cg.emit("    mov (%%rax), %%rax")
 		return
 	}
 	if _, _, ok := cg.resolveMapTypesForAccess(mce.Object, mce.NullSafe); ok {
-		cg.generateExpression(mce.Object)
+		cg.emitObjectValueForAccess(mce.Object)
 		cg.emit("    mov (%%rax), %%rax")
 		return
 	}
@@ -733,12 +748,12 @@ func (cg *CodeGen) generateArrayLengthMethod(mce *ast.MethodCallExpression, null
 func (cg *CodeGen) generateArrayLengthProperty(object ast.Expression, node ast.Node, nullSafe bool) {
 	_, allowNullable := node.(*ast.NullSafeAccessExpression)
 	if _, ok := cg.resolveListElementTypeForAccess(object, allowNullable); ok {
-		cg.generateExpression(object)
+		cg.emitObjectValueForAccess(object)
 		cg.emit("    mov (%%rax), %%rax")
 		return
 	}
 	if _, _, ok := cg.resolveMapTypesForAccess(object, allowNullable); ok {
-		cg.generateExpression(object)
+		cg.emitObjectValueForAccess(object)
 		cg.emit("    mov (%%rax), %%rax")
 		return
 	}
@@ -782,6 +797,9 @@ func (cg *CodeGen) resolveListElementTypeForAccess(object ast.Expression, allowN
 		if part == "" || part == "null" {
 			continue
 		}
+		if inner, ok := peelPointerType(part); ok {
+			part = inner
+		}
 		elem, ok := peelListType(part)
 		if !ok {
 			return "", false
@@ -806,6 +824,9 @@ func (cg *CodeGen) resolveMapTypesForAccess(object ast.Expression, allowNullable
 	if resolved, ok := cg.normalizeTypeName(typeName); ok {
 		typeName = resolved
 	}
+	if inner, ok := peelPointerType(typeName); ok {
+		typeName = inner
+	}
 	if k, v, ok := peelMapType(typeName); ok {
 		return k, v, true
 	}
@@ -823,6 +844,9 @@ func (cg *CodeGen) resolveMapTypesForAccess(object ast.Expression, allowNullable
 		part = strings.TrimSpace(part)
 		if part == "" || part == "null" {
 			continue
+		}
+		if inner, ok := peelPointerType(part); ok {
+			part = inner
 		}
 		k, v, ok := peelMapType(part)
 		if !ok {
@@ -849,6 +873,9 @@ func (cg *CodeGen) resolveLengthForAccess(object ast.Expression, allowNullable b
 	if resolved, ok := cg.normalizeTypeName(typeName); ok {
 		typeName = resolved
 	}
+	if inner, ok := peelPointerType(typeName); ok {
+		typeName = inner
+	}
 	_, n, ok := peelArrayType(typeName)
 	if ok {
 		return n, true
@@ -867,6 +894,9 @@ func (cg *CodeGen) resolveLengthForAccess(object ast.Expression, allowNullable b
 		part = strings.TrimSpace(part)
 		if part == "null" {
 			continue
+		}
+		if inner, ok := peelPointerType(part); ok {
+			part = inner
 		}
 		_, n, ok := peelArrayType(part)
 		if !ok {
@@ -916,6 +946,9 @@ func (cg *CodeGen) typeSupportsLengthField(typeName string) (supports bool, null
 			nullable = true
 			continue
 		}
+		if inner, ok := peelPointerType(part); ok {
+			part = inner
+		}
 		if _, _, ok := peelArrayType(part); ok {
 			sawSupported = true
 			continue
@@ -954,6 +987,9 @@ func (cg *CodeGen) typeSupportsStructFieldLookup(typeName string) (supports bool
 		if part == "null" {
 			nullable = true
 			continue
+		}
+		if inner, ok := peelPointerType(part); ok {
+			part = inner
 		}
 		if _, ok := cg.structDecls[part]; ok {
 			sawStruct = true
@@ -999,7 +1035,7 @@ func (cg *CodeGen) generateListAppendMethod(mce *ast.MethodCallExpression, nullS
 		cg.emit("    mov $0, %%rax")
 		return
 	}
-	cg.generateExpression(mce.Object)
+	cg.emitObjectValueForAccess(mce.Object)
 	cg.emit("    push %%rax")
 	cg.generateExpression(mce.Arguments[0])
 	cg.emit("    mov %%rax, %%rsi")
@@ -1027,7 +1063,7 @@ func (cg *CodeGen) generateListPopMethod(mce *ast.MethodCallExpression, nullSafe
 		cg.emit("    mov $0, %%rax")
 		return
 	}
-	cg.generateExpression(mce.Object)
+	cg.emitObjectValueForAccess(mce.Object)
 	cg.emit("    mov %%rax, %%rdi")
 	cg.emit("    call list_pop")
 }
@@ -1043,7 +1079,7 @@ func (cg *CodeGen) generateListClearMethod(mce *ast.MethodCallExpression, nullSa
 		return
 	}
 	if _, _, ok := cg.resolveMapTypesForAccess(mce.Object, mce.NullSafe); ok {
-		cg.generateExpression(mce.Object)
+		cg.emitObjectValueForAccess(mce.Object)
 		cg.emit("    mov %%rax, %%rdi")
 		cg.emit("    call map_clear")
 		cg.emit("    lea null_lit(%%rip), %%rax")
@@ -1058,7 +1094,7 @@ func (cg *CodeGen) generateListClearMethod(mce *ast.MethodCallExpression, nullSa
 		cg.emit("    mov $0, %%rax")
 		return
 	}
-	cg.generateExpression(mce.Object)
+	cg.emitObjectValueForAccess(mce.Object)
 	cg.emit("    mov %%rax, %%rdi")
 	cg.emit("    call list_clear")
 	cg.emit("    lea null_lit(%%rip), %%rax")
@@ -1088,7 +1124,7 @@ func (cg *CodeGen) generateListRemoveMethod(mce *ast.MethodCallExpression, nullS
 		cg.emit("    mov $0, %%rax")
 		return
 	}
-	cg.generateExpression(mce.Object)
+	cg.emitObjectValueForAccess(mce.Object)
 	cg.emit("    push %%rax")
 	cg.generateExpression(mce.Arguments[0])
 	cg.emit("    mov %%rax, %%rsi")
@@ -1127,7 +1163,7 @@ func (cg *CodeGen) generateListInsertMethod(mce *ast.MethodCallExpression, nullS
 		cg.emit("    mov $0, %%rax")
 		return
 	}
-	cg.generateExpression(mce.Object)
+	cg.emitObjectValueForAccess(mce.Object)
 	cg.emit("    push %%rax")
 	cg.generateExpression(mce.Arguments[0])
 	cg.emit("    push %%rax")
@@ -1165,7 +1201,7 @@ func (cg *CodeGen) generateListContainsMethod(mce *ast.MethodCallExpression, nul
 		cg.emit("    lea null_lit(%%rip), %%rax")
 		return
 	}
-	cg.generateExpression(mce.Object)
+	cg.emitObjectValueForAccess(mce.Object)
 	cg.emit("    push %%rax")
 	cg.generateExpression(mce.Arguments[0])
 	cg.emit("    mov %%rax, %%rsi")
@@ -1203,7 +1239,7 @@ func (cg *CodeGen) generateMapHasMethod(mce *ast.MethodCallExpression, nullSafe 
 		cg.emit("    mov $0, %%rax")
 		return
 	}
-	cg.generateExpression(mce.Object)
+	cg.emitObjectValueForAccess(mce.Object)
 	cg.emit("    push %%rax")
 	cg.generateExpression(mce.Arguments[0])
 	cg.emit("    mov %%rax, %%rsi")
@@ -1236,12 +1272,30 @@ func (cg *CodeGen) generateMapRemoveKeyMethod(mce *ast.MethodCallExpression, nul
 		cg.emit("    lea null_lit(%%rip), %%rax")
 		return
 	}
-	cg.generateExpression(mce.Object)
+	cg.emitObjectValueForAccess(mce.Object)
 	cg.emit("    push %%rax")
 	cg.generateExpression(mce.Arguments[0])
 	cg.emit("    mov %%rax, %%rsi")
 	cg.emit("    pop %%rdi")
 	cg.emit("    call map_remove")
+}
+
+func (cg *CodeGen) emitObjectValueForAccess(object ast.Expression) {
+	cg.generateExpression(object)
+	typeName := cg.inferCurrentValueTypeName(object)
+	if resolved, ok := cg.normalizeTypeName(typeName); ok {
+		typeName = resolved
+	}
+	if _, ok := peelPointerType(typeName); ok {
+		cg.emit("    lea null_lit(%%rip), %%rcx")
+		cg.emit("    cmp %%rcx, %%rax")
+		okLabel := cg.newLabel()
+		cg.emit("    jne %s", okLabel)
+		cg.emit("    lea runtime_err_null_deref(%%rip), %%rax")
+		cg.emit("    call runtime_fail")
+		cg.emit("%s:", okLabel)
+		cg.emit("    mov (%%rax), %%rax")
+	}
 }
 
 func (cg *CodeGen) emitNullSafeObjectGuard(object ast.Expression) string {
@@ -1512,16 +1566,42 @@ func (cg *CodeGen) generateInfix(ie *ast.InfixExpression) {
 
 // generatePrefix handles unary operators
 func (cg *CodeGen) generatePrefix(pe *ast.PrefixExpression) {
-	cg.generateExpression(pe.Right)
-
 	switch pe.Operator {
 	case "-":
+		cg.generateExpression(pe.Right)
 		cg.emit("    neg %%rax")
 	case "!":
+		cg.generateExpression(pe.Right)
 		// !x is equivalent to x == 0
 		cg.emit("    test %%rax, %%rax")
 		cg.emit("    sete %%al")
 		cg.emit("    movzbq %%al, %%rax")
+	case "&":
+		id, ok := pe.Right.(*ast.Identifier)
+		if !ok {
+			cg.addNodeError("address-of operator requires identifier", pe)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		offset, exists := cg.variables[id.Value]
+		if !exists {
+			cg.addNodeError("identifier not found: "+id.Value, pe)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		cg.emit("    lea -%d(%%rbp), %%rax", offset)
+	case "*":
+		cg.generateExpression(pe.Right)
+		cg.emit("    lea null_lit(%%rip), %%rcx")
+		cg.emit("    cmp %%rcx, %%rax")
+		okLabel := cg.newLabel()
+		cg.emit("    jne %s", okLabel)
+		cg.emit("    lea runtime_err_null_deref(%%rip), %%rax")
+		cg.emit("    call runtime_fail")
+		cg.emit("%s:", okLabel)
+		cg.emit("    mov (%%rax), %%rax")
+	default:
+		cg.generateExpression(pe.Right)
 	}
 }
 
@@ -1571,6 +1651,17 @@ func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
 	inferredName := "null"
 	if ls.Value == nil {
 		targetName := ls.TypeName
+		if targetName != "" {
+			normalized := targetName
+			if resolved, ok := cg.normalizeTypeName(targetName); ok {
+				normalized = resolved
+			}
+			if _, ok := peelPointerType(normalized); ok && !cg.typeAllowsNullTypeName(normalized) {
+				cg.addNodeError("pointer variable "+ls.Name.Value+" requires initializer unless nullable", ls)
+				cg.emit("    mov $0, %%rax")
+				return
+			}
+		}
 		if targetName != "" {
 			if cg.generateTypedDefaultValue(targetName) {
 				if resolved, ok := cg.normalizeTypeName(targetName); ok {
@@ -1976,8 +2067,42 @@ func (cg *CodeGen) generateMemberAssign(mas *ast.MemberAssignStatement) {
 	cg.emit("    mov %%rax, %%rdx")
 	cg.emit("    lea %s(%%rip), %%rsi", cg.stringLabel(mas.Left.Property.Value))
 	cg.emit("    mov -%d(%%rbp), %%rdi", offset)
+	typeName := cg.inferCurrentValueTypeName(mas.Left.Object)
+	if resolved, ok := cg.normalizeTypeName(typeName); ok {
+		typeName = resolved
+	}
+	if _, ok := peelPointerType(typeName); ok {
+		okLabel := cg.newLabel()
+		cg.emit("    lea null_lit(%%rip), %%rcx")
+		cg.emit("    cmp %%rcx, %%rdi")
+		cg.emit("    jne %s", okLabel)
+		cg.emit("    lea runtime_err_null_deref(%%rip), %%rax")
+		cg.emit("    call runtime_fail")
+		cg.emit("%s:", okLabel)
+		cg.emit("    mov (%%rdi), %%rdi")
+	}
 	cg.emit("    call map_set")
 	cg.emit("    mov %%rdx, %%rax")
+}
+
+func (cg *CodeGen) generateDerefAssign(das *ast.DerefAssignStatement) {
+	if das == nil || das.Left == nil || das.Left.Operator != "*" {
+		cg.addNodeError("invalid dereference assignment", das)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	cg.generateExpression(das.Left.Right)
+	cg.emit("    lea null_lit(%%rip), %%rcx")
+	cg.emit("    cmp %%rcx, %%rax")
+	okLabel := cg.newLabel()
+	cg.emit("    jne %s", okLabel)
+	cg.emit("    lea runtime_err_null_deref(%%rip), %%rax")
+	cg.emit("    call runtime_fail")
+	cg.emit("%s:", okLabel)
+	cg.emit("    push %%rax")
+	cg.generateExpression(das.Value)
+	cg.emit("    pop %%rcx")
+	cg.emit("    mov %%rax, (%%rcx)")
 }
 
 func (cg *CodeGen) generateIndexAssign(ias *ast.IndexAssignStatement) {
@@ -2014,6 +2139,24 @@ func (cg *CodeGen) generateIndexAssign(ias *ast.IndexAssignStatement) {
 	if normalized, ok := cg.normalizeTypeName(arrTypeName); ok {
 		arrTypeName = normalized
 	}
+	isPointerTarget := false
+	if inner, ok := peelPointerType(arrTypeName); ok {
+		isPointerTarget = true
+		arrTypeName = inner
+	}
+	emitLoadTarget := func(reg string) {
+		cg.emit("    mov -%d(%%rbp), %s  # load %s", offset, reg, name)
+		if isPointerTarget {
+			okLabel := cg.newLabel()
+			cg.emit("    lea null_lit(%%rip), %%r8")
+			cg.emit("    cmp %%r8, %s", reg)
+			cg.emit("    jne %s", okLabel)
+			cg.emit("    lea runtime_err_null_deref(%%rip), %%rax")
+			cg.emit("    call runtime_fail")
+			cg.emit("%s:", okLabel)
+			cg.emit("    mov (%s), %s", reg, reg)
+		}
+	}
 	if keyTypeName, valueTypeName, ok := peelMapType(arrTypeName); ok {
 		gotKeyType := cg.inferExpressionTypeName(ias.Left.Index)
 		if gotKeyType != "unknown" && !cg.isAssignableTypeName(keyTypeName, gotKeyType) {
@@ -2032,7 +2175,7 @@ func (cg *CodeGen) generateIndexAssign(ias *ast.IndexAssignStatement) {
 		cg.generateExpression(ias.Value)
 		cg.emit("    mov %%rax, %%rdx")
 		cg.emit("    pop %%rsi")
-		cg.emit("    mov -%d(%%rbp), %%rdi", offset)
+		emitLoadTarget("%rdi")
 		cg.emit("    call map_set")
 		cg.emit("    mov %%rdx, %%rax")
 		cg.varValueTypeName[name] = arrTypeName
@@ -2057,7 +2200,7 @@ func (cg *CodeGen) generateIndexAssign(ias *ast.IndexAssignStatement) {
 		cg.generateExpression(ias.Left.Index)
 		cg.emit("    mov %%rax, %%rsi")
 		cg.emit("    pop %%rdx")
-		cg.emit("    mov -%d(%%rbp), %%rdi", offset)
+		emitLoadTarget("%rdi")
 		cg.emit("    call list_set")
 		cg.emit("    mov %%rdx, %%rax")
 		cg.varValueTypeName[name] = arrTypeName
@@ -2106,7 +2249,7 @@ func (cg *CodeGen) generateIndexAssign(ias *ast.IndexAssignStatement) {
 		cg.emit("%s:", okLabel)
 	}
 	cg.emit("    imul $8, %%rax, %%rax")
-	cg.emit("    mov -%d(%%rbp), %%rcx  # load %s", offset, name)
+	emitLoadTarget("%rcx")
 	cg.emit("    pop %%rdx")
 	cg.emit("    mov %%rdx, (%%rcx,%%rax)")
 	cg.emit("    mov %%rdx, %%rax")
@@ -2432,6 +2575,20 @@ func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 		if supportsStruct, nullableStruct := cg.typeSupportsStructFieldLookup(objTypeName); supportsStruct {
 			cg.emit("    mov %%rax, %%rsi")
 			cg.emit("    pop %%rdi")
+			normalizedObj := objTypeName
+			if resolved, ok := cg.normalizeTypeName(objTypeName); ok {
+				normalizedObj = resolved
+			}
+			if _, ok := peelPointerType(normalizedObj); ok {
+				okLabel := cg.newLabel()
+				cg.emit("    lea null_lit(%%rip), %%rdx")
+				cg.emit("    cmp %%rdx, %%rdi")
+				cg.emit("    jne %s", okLabel)
+				cg.emit("    lea runtime_err_null_deref(%%rip), %%rax")
+				cg.emit("    call runtime_fail")
+				cg.emit("%s:", okLabel)
+				cg.emit("    mov (%%rdi), %%rdi")
+			}
 			if nullableStruct {
 				nonNullLabel := cg.newLabel()
 				doneLabel := cg.newLabel()

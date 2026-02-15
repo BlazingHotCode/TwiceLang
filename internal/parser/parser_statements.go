@@ -581,6 +581,20 @@ func (p *Parser) parseExpressionStatement() ast.Statement {
 				Value: value,
 			}
 		}
+		if left, ok := stmt.Expression.(*ast.PrefixExpression); ok && left.Operator == "*" {
+			p.nextToken() // '='
+			assignTok := p.curToken
+			p.nextToken() // value expression start
+			value := p.parseExpression(LOWEST)
+			if !p.expectPeek(token.SEMICOLON) {
+				return nil
+			}
+			return &ast.DerefAssignStatement{
+				Token: assignTok,
+				Left:  left,
+				Value: value,
+			}
+		}
 	}
 
 	if p.peekTokenIs(token.SEMICOLON) {

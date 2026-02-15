@@ -20,6 +20,7 @@ const (
 	LIST_OBJ         ObjectType = "LIST"
 	MAP_OBJ          ObjectType = "MAP"
 	STRUCT_OBJ       ObjectType = "STRUCT"
+	POINTER_OBJ      ObjectType = "POINTER"
 	TUPLE_OBJ        ObjectType = "TUPLE"
 	TYPE_OBJ         ObjectType = "TYPE"
 	NULL_OBJ         ObjectType = "NULL"
@@ -134,6 +135,15 @@ func (s *Struct) Inspect() string {
 	}
 	return s.TypeName + "{" + strings.Join(parts, ", ") + "}"
 }
+
+type Pointer struct {
+	Name       string
+	Env        *Environment
+	TargetType string
+}
+
+func (p *Pointer) Type() ObjectType { return POINTER_OBJ }
+func (p *Pointer) Inspect() string  { return "&" + p.Name }
 
 func (l *List) Inspect() string {
 	var out bytes.Buffer

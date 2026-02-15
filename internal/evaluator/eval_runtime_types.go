@@ -15,7 +15,27 @@ func mapKeyEquals(a, b object.Object) bool {
 	return eq == TRUE
 }
 
+func derefPointerObject(obj object.Object) (object.Object, *object.Error) {
+	ptr, ok := obj.(*object.Pointer)
+	if !ok {
+		return obj, nil
+	}
+	if ptr == nil || ptr.Env == nil {
+		return nil, newError("invalid pointer")
+	}
+	val, ok := ptr.Env.Get(ptr.Name)
+	if !ok {
+		return nil, newError("pointer target not found: %s", ptr.Name)
+	}
+	return val, nil
+}
+
 func evalIndexExpression(left object.Object, index object.Object) object.Object {
+	if deref, err := derefPointerObject(left); err != nil {
+		return err
+	} else {
+		left = deref
+	}
 	if mp, ok := left.(*object.Map); ok {
 		keyType := runtimeTypeName(index)
 		if !typesys.IsAssignableTypeName(mp.KeyType, keyType, nil) {
@@ -166,6 +186,14 @@ func evalMethodCallExpression(node *ast.MethodCallExpression, env *object.Enviro
 		return obj
 	}
 
+	if node.NullSafe && obj == NULL {
+		return NULL
+	}
+	if deref, err := derefPointerObject(obj); err != nil {
+		return err
+	} else {
+		obj = deref
+	}
 	if node.NullSafe && obj == NULL {
 		return NULL
 	}
@@ -445,6 +473,14 @@ func evalMemberAccess(obj object.Object, property *ast.Identifier, nullSafe bool
 			return NULL
 		}
 		return newError("invalid member access")
+	}
+	if deref, err := derefPointerObject(obj); err != nil {
+		return err
+	} else {
+		obj = deref
+	}
+	if nullSafe && obj == NULL {
+		return NULL
 	}
 	switch property.Value {
 	case "length":
@@ -834,6 +870,7 @@ const (
 	rtList
 	rtMap
 	rtTuple
+	rtPointer
 	rtNull
 	rtType
 )
@@ -858,6 +895,8 @@ func runtimeTypeKindOf(obj object.Object) runtimeTypeKind {
 		return rtMap
 	case *object.Tuple:
 		return rtTuple
+	case *object.Pointer:
+		return rtPointer
 	case *object.Struct:
 		return rtUnknown
 	case *object.Null:
@@ -893,6 +932,12 @@ func runtimeTypeName(obj object.Object) string {
 	case rtTuple:
 		v := obj.(*object.Tuple)
 		return "(" + strings.Join(v.ElementTypes, ",") + ")"
+	case rtPointer:
+		v := obj.(*object.Pointer)
+		if strings.TrimSpace(v.TargetType) == "" {
+			return "*unknown"
+		}
+		return "*" + v.TargetType
 	case rtUnknown:
 		if v, ok := obj.(*object.Struct); ok {
 			return v.TypeName
@@ -977,6 +1022,13 @@ func isKnownTypeNameWithParams(t string, env *object.Environment, typeParams map
 		}
 		return false
 	}
+	if inner, ok := typesys.PeelPointerType(base); ok {
+		inner = strings.TrimSpace(inner)
+		if inner == "" {
+			return false
+		}
+		return isKnownTypeNameWithParams(inner, env, typeParams)
+	}
 	if typeParams != nil {
 		if _, ok := typeParams[base]; ok {
 			return true
@@ -1036,6 +1088,13 @@ func resolveTypeNameWithParams(t string, env *object.Environment, visiting map[s
 }
 
 func resolveTypeBaseWithParams(base string, env *object.Environment, visiting map[string]struct{}, typeParams map[string]struct{}) (string, bool) {
+	if inner, ok := typesys.PeelPointerType(base); ok {
+		r, ok := resolveTypeBaseWithParams(inner, env, visiting, typeParams)
+		if !ok {
+			return "", false
+		}
+		return "*" + r, true
+	}
 	if members, ok := splitTopLevelUnion(base); ok {
 		parts := make([]string, 0, len(members))
 		for _, m := range members {
@@ -1112,6 +1171,14 @@ func splitTopLevelTuple(t string) ([]string, bool) {
 	return typesys.SplitTopLevelTuple(t)
 }
 
+func isNonNullablePointerType(t string, env *object.Environment) bool {
+	n := normalizeTypeName(t, env)
+	if _, ok := typesys.PeelPointerType(n); !ok {
+		return false
+	}
+	return !typeAllowsNull(n, env)
+}
+
 func genericTypeArityError(typeName string, env *object.Environment, typeParams map[string]struct{}) (string, bool) {
 	base, _, ok := parseTypeName(typeName)
 	if !ok {
@@ -1157,6 +1224,9 @@ func genericTypeArityError(typeName string, env *object.Environment, typeParams 
 			}
 		}
 		return "", false
+	}
+	if inner, ok := typesys.PeelPointerType(base); ok {
+		return genericTypeArityError(inner, env, typeParams)
 	}
 	if typeParams != nil {
 		if _, ok := typeParams[base]; ok {

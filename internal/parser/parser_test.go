@@ -461,6 +461,28 @@ func TestMemberAssignmentParses(t *testing.T) {
 	}
 }
 
+func TestPointerDeclarationAndOpsParse(t *testing.T) {
+	p := New(lexer.New("let x: int = 1; let p: *int = &x; let y = *p; *p = 2;"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+	if len(program.Statements) != 4 {
+		t.Fatalf("expected 4 statements, got=%d", len(program.Statements))
+	}
+	ls, ok := program.Statements[1].(*ast.LetStatement)
+	if !ok {
+		t.Fatalf("expected second statement let, got=%T", program.Statements[1])
+	}
+	if ls.TypeName != "*int" {
+		t.Fatalf("expected pointer type *int, got=%q", ls.TypeName)
+	}
+	if _, ok := ls.Value.(*ast.PrefixExpression); !ok {
+		t.Fatalf("expected address-of prefix expression")
+	}
+	if _, ok := program.Statements[3].(*ast.DerefAssignStatement); !ok {
+		t.Fatalf("expected deref assignment statement, got=%T", program.Statements[3])
+	}
+}
+
 func TestArrayLengthMethodCallParses(t *testing.T) {
 	p := New(lexer.New("arr.length();"))
 	program := p.ParseProgram()

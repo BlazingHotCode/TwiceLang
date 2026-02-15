@@ -1261,6 +1261,7 @@ func (cg *CodeGen) emitFooter() {
 	cg.emit("newline_char: .byte 10")
 	cg.emit("runtime_err_list_oob: .asciz \"Runtime error: list index out of bounds\"")
 	cg.emit("runtime_err_out_of_memory: .asciz \"Runtime error: out of list memory\"")
+	cg.emit("runtime_err_null_deref: .asciz \"Runtime error: null pointer dereference\"")
 	for lit, label := range cg.stringLits {
 		cg.emit("%s: .asciz \"%s\"", label, escapeAsmString(lit))
 	}

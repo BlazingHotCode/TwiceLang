@@ -83,6 +83,22 @@ func evalPrefixExpression(operator string, right object.Object) object.Object {
 		return evalBangOperatorExpression(right)
 	case "-":
 		return evalMinusPrefixOperatorExpression(right)
+	case "*":
+		ptr, ok := right.(*object.Pointer)
+		if !ok {
+			return newError("cannot dereference non-pointer value of type %s", runtimeTypeName(right))
+		}
+		if ptr == nil || ptr.Env == nil {
+			return newError("invalid pointer")
+		}
+		val, ok := ptr.Env.Get(ptr.Name)
+		if !ok {
+			return newError("pointer target not found: %s", ptr.Name)
+		}
+		if val == NULL {
+			return newError("cannot dereference null pointer")
+		}
+		return val
 	default:
 		return newError("unknown operator: %s%s", operator, right.Type())
 	}

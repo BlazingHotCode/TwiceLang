@@ -118,6 +118,13 @@ func (cg *CodeGen) symbolCheckStatement(stmt ast.Statement, scopes *[]symbolScop
 		if s != nil && s.Value != nil {
 			cg.symbolCheckExpression(s.Value, scopes)
 		}
+	case *ast.DerefAssignStatement:
+		if s != nil && s.Left != nil {
+			cg.symbolCheckExpression(s.Left, scopes)
+		}
+		if s != nil && s.Value != nil {
+			cg.symbolCheckExpression(s.Value, scopes)
+		}
 	case *ast.ExpressionStatement:
 		if s != nil && s.Expression != nil {
 			cg.symbolCheckExpression(s.Expression, scopes)

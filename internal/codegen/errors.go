@@ -73,6 +73,8 @@ func tokenFromNode(node ast.Node) (token.Token, bool) {
 		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
 	case *ast.MemberAssignStatement:
 		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.DerefAssignStatement:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
 	case *ast.IndexAssignStatement:
 		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
 	case *ast.ReturnStatement:

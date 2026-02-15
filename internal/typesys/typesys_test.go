@@ -86,6 +86,18 @@ func TestResolveNormalizeKnownAndAssign(t *testing.T) {
 	if !IsAssignableTypeName("int", "null", resolve) {
 		t.Fatalf("null should be assignable by current rules")
 	}
+	if !IsKnownTypeName("*int", resolve) || IsKnownTypeName("*", resolve) {
+		t.Fatalf("pointer known-type checks unexpected")
+	}
+	if !IsAssignableTypeName("*int", "*int", resolve) {
+		t.Fatalf("pointer same-type assignment should pass")
+	}
+	if IsAssignableTypeName("*int", "null", resolve) {
+		t.Fatalf("non-null pointer should reject null")
+	}
+	if !IsAssignableTypeName("*int||null", "null", resolve) {
+		t.Fatalf("nullable pointer should accept null")
+	}
 	if IsAssignableTypeName("int", "string", resolve) {
 		t.Fatalf("unexpected assign success")
 	}

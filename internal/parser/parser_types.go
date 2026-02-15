@@ -51,6 +51,14 @@ func (p *Parser) parseTypeTermFromCurrent() (string, bool) {
 		}
 	case token.NULL:
 		base = p.curToken.Literal
+	case token.ASTERISK:
+		p.nextToken()
+		inner, ok := p.parseTypeTermFromCurrent()
+		if !ok {
+			return "", false
+		}
+		base = "*" + inner
+		return p.parseArrayTypeSuffixes(base)
 	case token.LPAREN:
 		p.nextToken()
 		first, ok := p.parseTypeExpressionFromCurrent()

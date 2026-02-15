@@ -22,14 +22,7 @@
 - Pointer struct function usage syntax (auto-deref):
 - `ptr.methodName(args...)` (no `(*ptr).methodName(...)` required)
 
-## 2. Pointers
-
-- Pointer types are nullable only when explicitly declared nullable.
-- Add pointer operations (`&value`, `*ptr`, pointer assignment).
-- Pointer method calls auto-deref: allow `p.method()` without requiring `(*p).method()`.
-- Pointer + struct design should be combined, so references and mutation go through pointers.
-
-## 3. Custom Libraries
+## 2. Custom Libraries
 
 - Add `import ...` syntax.
 - Built-in libraries are imported with `twice.<lib>`.
@@ -43,7 +36,7 @@
 - `import twice.math.sqrt as sqrt`
 - Support cross-module generic specialization in v1 (imports included).
 
-## 4. OOP and Type System Expansion
+## 3. OOP and Type System Expansion
 
 - Add class declarations and object instantiation.o
 - Structs stay public-focused; classes support explicit `public`/`private`.
@@ -67,7 +60,7 @@
 - Typed declarations without `new` remain `null` until initialized (for example `let s: Shape;`).
 - Generic classes are supported by syntax plan, but are implemented together with class support.
 
-## 5. Inheritance
+## 4. Inheritance
 
 - Add inheritance as a separate feature from base class/object support.
 - Define overriding and method resolution rules.

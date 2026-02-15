@@ -56,6 +56,7 @@ Notes:
 - Generic lists (`List<T>`) with constructor syntax, indexing/mutation, `length`/`length()`, and list methods
 - Generic maps (`Map<K,V>`) with constructor syntax, bracket get/set, `length`/`length()`, and map methods
 - Struct declarations with typed fields, defaults/optional fields, constructor calls, and field access/update
+- Pointer types and operations (`*T`, `&value`, `*ptr`, and `*ptr = value`)
 - Null-safe access/coalescing with `?.` and `??`
 - Union types (`type1||type2`) including array forms like `(int||string)[3]`
 - Tuple types and values: `(type1, type2, ...)` with tuple access `value.0`, `value.1`, ...
@@ -574,6 +575,31 @@ Notes:
 - Fields marked `?:` are optional and default to `null` when omitted.
 - Fields with `= value` have constructor defaults.
 - Required fields (no `?:` and no default) must be provided.
+
+### Pointers
+
+Pointer types use `*`:
+
+```tw
+let x: int = 1;
+let p: *int = &x;
+println(*p); // 1
+*p = 7;
+println(x);  // 7
+```
+
+Nullable pointers must be explicit (for example union with `null`):
+
+```tw
+let maybe: *int||null = null;
+println(*(maybe ?? &x));
+```
+
+Notes:
+
+- Non-null pointer declarations require an initializer.
+- `&` currently takes an identifier target.
+- Pointer receivers auto-deref for member/method/index access in codegen/evaluator paths.
 
 ### Tuples
 

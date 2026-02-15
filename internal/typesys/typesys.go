@@ -8,6 +8,14 @@ import (
 
 type AliasResolver func(name string) (string, bool)
 
+func PeelPointerType(t string) (string, bool) {
+	t = strings.TrimSpace(t)
+	if len(t) < 2 || t[0] != '*' {
+		return "", false
+	}
+	return strings.TrimSpace(t[1:]), true
+}
+
 func ParseTypeDescriptor(t string) (string, []int, bool) {
 	if t == "" {
 		return "", nil, false
@@ -199,6 +207,13 @@ func IsKnownTypeName(t string, resolve AliasResolver) bool {
 		}
 		return true
 	}
+	if inner, ok := PeelPointerType(base); ok {
+		inner = stripOuterGroupingParens(inner)
+		if inner == "" {
+			return false
+		}
+		return IsKnownTypeName(inner, resolve)
+	}
 	return IsBuiltinTypeName(base)
 }
 
@@ -218,9 +233,6 @@ func IsAssignableTypeName(target, value string, resolve AliasResolver) bool {
 	if value == "any" {
 		return true
 	}
-	if value == "null" {
-		return true
-	}
 	if target == value {
 		return true
 	}
@@ -231,6 +243,13 @@ func IsAssignableTypeName(target, value string, resolve AliasResolver) bool {
 			}
 		}
 		return false
+	}
+	if value == "null" {
+		if targetPtrInner, targetIsPtr := PeelPointerType(target); targetIsPtr {
+			_ = targetPtrInner
+			return false
+		}
+		return true
 	}
 	if valueMembers, valueIsUnion := SplitTopLevelUnion(value); valueIsUnion {
 		for _, m := range valueMembers {
@@ -243,6 +262,16 @@ func IsAssignableTypeName(target, value string, resolve AliasResolver) bool {
 	tb, td, okT := ParseTypeDescriptor(target)
 	vb, vd, okV := ParseTypeDescriptor(value)
 	if !okT || !okV || len(td) != len(vd) {
+		return false
+	}
+	if targetInner, targetIsPtr := PeelPointerType(tb); targetIsPtr {
+		valueInner, valueIsPtr := PeelPointerType(vb)
+		if !valueIsPtr {
+			return false
+		}
+		return IsAssignableTypeName(targetInner, valueInner, resolve)
+	}
+	if _, valueIsPtr := PeelPointerType(vb); valueIsPtr {
 		return false
 	}
 	for i := range td {

@@ -852,6 +852,33 @@ func TestCodegenStructValidation(t *testing.T) {
 	}
 }
 
+func TestCodegenPointerOps(t *testing.T) {
+	asm, cg := generateAssembly(t, `let x: int = 1; let p: *int = &x; *p = 7; print(*p);`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "lea -") || !strings.Contains(asm, "mov (%rax), %rax") {
+		t.Fatalf("expected pointer address/deref instructions, got:\n%s", asm)
+	}
+}
+
+func TestCodegenPointerCoalesceDeref(t *testing.T) {
+	asm, cg := generateAssembly(t, `let x: int = 7; let maybe: *int||null = null; print(*(maybe ?? &x));`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "call print_int") {
+		t.Fatalf("expected coalesced pointer deref to print as int, got:\n%s", asm)
+	}
+}
+
+func TestCodegenPointerValidation(t *testing.T) {
+	_, cg := generateAssembly(t, `let p: *int;`)
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen error for non-null pointer without initializer")
+	}
+}
+
 func TestCodegenListConstructorAndMethods(t *testing.T) {
 	asm, cg := generateAssembly(t, "let xs: List<int> = new List<int>(1,2); xs.append(3); xs.insert(1,7); print(xs.length()); print(xs[1]); print(xs.remove(2)); print(xs.pop()); print(xs.contains(1)); xs.clear(); print(xs.length());")
 	if len(cg.Errors()) != 0 {

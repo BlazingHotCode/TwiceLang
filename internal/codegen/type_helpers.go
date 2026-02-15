@@ -99,6 +99,10 @@ func peelMapType(t string) (string, string, bool) {
 	return gargs[0], gargs[1], true
 }
 
+func peelPointerType(t string) (string, bool) {
+	return typesys.PeelPointerType(t)
+}
+
 func mergeUnionBases(a, b string) (string, bool) {
 	if merged, ok := typesys.MergeTypeNames(a, b, nil); ok {
 		base, dims, ok := typesys.ParseTypeDescriptor(merged)

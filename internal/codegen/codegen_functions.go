@@ -157,6 +157,13 @@ func (cg *CodeGen) collectFunctionsInStatement(stmt ast.Statement, scope map[str
 		if s != nil && s.Value != nil {
 			cg.collectFunctionsInExpression(s.Value, scope)
 		}
+	case *ast.DerefAssignStatement:
+		if s != nil && s.Left != nil {
+			cg.collectFunctionsInExpression(s.Left, scope)
+		}
+		if s != nil && s.Value != nil {
+			cg.collectFunctionsInExpression(s.Value, scope)
+		}
 	case *ast.WhileStatement:
 		if s != nil && s.Condition != nil {
 			cg.collectFunctionsInExpression(s.Condition, scope)
@@ -963,6 +970,13 @@ func collectUsedNamesInStatement(stmt ast.Statement, used map[string]struct{}) {
 			collectUsedNamesInExpression(s.Value, used)
 		}
 	case *ast.MemberAssignStatement:
+		if s != nil && s.Left != nil {
+			collectUsedNamesInExpression(s.Left, used)
+		}
+		if s != nil && s.Value != nil {
+			collectUsedNamesInExpression(s.Value, used)
+		}
+	case *ast.DerefAssignStatement:
 		if s != nil && s.Left != nil {
 			collectUsedNamesInExpression(s.Left, used)
 		}

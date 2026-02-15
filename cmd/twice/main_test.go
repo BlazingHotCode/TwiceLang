@@ -344,6 +344,41 @@ fn main() int {
 	}
 }
 
+func TestCLICompileAndRunPointerFeature(t *testing.T) {
+	root := repoRoot(t)
+	ensureToolchain(t)
+
+	srcPath := filepath.Join(t.TempDir(), "pointer.tw")
+	source := `
+fn main() int {
+  let x: int = 1;
+  let p: *int = &x;
+  *p = 7;
+  println(*p);
+  println(x);
+  return 0;
+}
+`
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	outputName := "twice_cli_ptr_bin"
+	outputPath := filepath.Join(root, outputName)
+	_ = os.Remove(outputPath)
+	t.Cleanup(func() { _ = os.Remove(outputPath) })
+
+	cmd := exec.Command("go", "run", "./cmd/twice", "-run", "-o", outputName, srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("compile/run failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "\n7\n7\n") {
+		t.Fatalf("expected pointer runtime output. output:\n%s", out)
+	}
+}
+
 func TestCLICodegenErrorForPrintArity(t *testing.T) {
 	root := repoRoot(t)
 

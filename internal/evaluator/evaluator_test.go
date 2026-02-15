@@ -875,6 +875,35 @@ func TestStructEvalErrors(t *testing.T) {
 	}
 }
 
+func TestPointerEvalBasics(t *testing.T) {
+	evaluated := testEval(`let x: int = 1; let p: *int = &x; *p = 7; x`)
+	testIntegerObject(t, evaluated, 7)
+
+	evaluated = testEval(`let x: int = 3; let p: *int = &x; let y = *p; y`)
+	testIntegerObject(t, evaluated, 3)
+}
+
+func TestPointerEvalErrors(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{`let p: *int;`, "pointer variable p requires initializer unless nullable"},
+		{`let x: int = 1; let p: *int||null = null; *p`, "cannot dereference non-pointer value of type null"},
+		{`let x: int = 1; let y = *x;`, "cannot dereference non-pointer value of type int"},
+	}
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		errObj, ok := evaluated.(*object.Error)
+		if !ok {
+			t.Fatalf("expected error object for %q, got=%T", tt.input, evaluated)
+		}
+		if errObj.Message != tt.want {
+			t.Fatalf("wrong error message for %q: got=%q want=%q", tt.input, errObj.Message, tt.want)
+		}
+	}
+}
+
 func TestIndexOperatorTypeErrorsEval(t *testing.T) {
 	evaluated := testEval(`1[0]`)
 	errObj, ok := evaluated.(*object.Error)

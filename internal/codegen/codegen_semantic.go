@@ -205,6 +205,9 @@ func (cg *CodeGen) semanticKnownTypeWithParams(typeName string, aliases map[stri
 	if !ok {
 		return false
 	}
+	if inner, ok := typesys.PeelPointerType(base); ok {
+		return cg.semanticKnownTypeWithParams(inner, aliases, typeParams)
+	}
 	if parts, isUnion := typesys.SplitTopLevelUnion(base); isUnion {
 		for _, p := range parts {
 			if !cg.semanticKnownTypeWithParams(p, aliases, typeParams) {
@@ -333,6 +336,13 @@ func (cg *CodeGen) semanticCheckStatement(stmt ast.Statement, aliases map[string
 			cg.semanticCheckExpression(s.Value, aliases, genericArities, nonGenericAliases)
 		}
 	case *ast.MemberAssignStatement:
+		if s.Left != nil {
+			cg.semanticCheckExpression(s.Left, aliases, genericArities, nonGenericAliases)
+		}
+		if s.Value != nil {
+			cg.semanticCheckExpression(s.Value, aliases, genericArities, nonGenericAliases)
+		}
+	case *ast.DerefAssignStatement:
 		if s.Left != nil {
 			cg.semanticCheckExpression(s.Left, aliases, genericArities, nonGenericAliases)
 		}
@@ -510,6 +520,9 @@ func semanticGenericTypeArityError(typeName string, genericArities map[string]in
 			}
 		}
 		return "", false
+	}
+	if inner, ok := typesys.PeelPointerType(base); ok {
+		return semanticGenericTypeArityError(inner, genericArities, nonGenericAliases, typeParams)
 	}
 	if gb, args, ok := typesys.SplitGenericType(base); ok {
 		if gb == "List" {

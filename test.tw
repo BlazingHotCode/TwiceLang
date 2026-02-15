@@ -428,6 +428,21 @@ fn demo_structs() {
   return;
 }
 
+fn demo_pointers() {
+  header("pointers");
+
+  let x: int = 1;
+  let p: *int = &x;
+  println(*p);
+  *p = 7;
+  println(*p);
+  println(x);
+
+  let maybe_p: *int||null = null;
+  println(*(maybe_p ?? &x));
+  return;
+}
+
 fn demo_generics() {
   header("generics");
 
@@ -463,6 +478,7 @@ fn main() {
   demo_lists();
   demo_maps();
   demo_structs();
+  demo_pointers();
   demo_generics();
   return;
 }

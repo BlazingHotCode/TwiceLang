@@ -324,6 +324,28 @@ func (mas *MemberAssignStatement) String() string {
 	return out.String()
 }
 
+// DerefAssignStatement represents: *<ptrExpr> = <value>;
+type DerefAssignStatement struct {
+	Token token.Token
+	Left  *PrefixExpression
+	Value Expression
+}
+
+func (das *DerefAssignStatement) statementNode()       {}
+func (das *DerefAssignStatement) TokenLiteral() string { return das.Token.Literal }
+func (das *DerefAssignStatement) String() string {
+	var out bytes.Buffer
+	if das.Left != nil {
+		out.WriteString(das.Left.String())
+	}
+	out.WriteString(" = ")
+	if das.Value != nil {
+		out.WriteString(das.Value.String())
+	}
+	out.WriteString(";")
+	return out.String()
+}
+
 // IndexAssignStatement represents: <arrayExpr>[<indexExpr>] = <value>;
 type IndexAssignStatement struct {
 	Token token.Token // The ASSIGN token

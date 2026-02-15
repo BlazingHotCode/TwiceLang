@@ -83,8 +83,14 @@ var builtins = map[string]*object.Builtin{
 			if !ok {
 				return newError("hasField field must be string, got %s", runtimeTypeName(args[1]))
 			}
+			target := args[0]
+			if deref, err := derefPointerObject(target); err != nil {
+				return err
+			} else {
+				target = deref
+			}
 
-			switch obj := args[0].(type) {
+			switch obj := target.(type) {
 			case *object.Array:
 				return nativeBoolToBooleanObject(field.Value == "length" && obj != nil)
 			case *object.List:
@@ -184,6 +190,9 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 				return val
 			}
 		} else if varType != "" {
+			if isNonNullablePointerType(varType, env) {
+				return newError("pointer variable %s requires initializer unless nullable", node.Name.Value)
+			}
 			if _, isUnion := splitTopLevelUnion(normalizeTypeName(varType, env)); !isUnion {
 				if arr, ok := instantiateTypedArray(varType, env); ok {
 					val = arr
@@ -413,6 +422,29 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		}
 		st.Fields[left.Property.Value] = val
 		return val
+	case *ast.DerefAssignStatement:
+		if node.Left == nil {
+			return newError("invalid dereference assignment")
+		}
+		ptrObj := Eval(node.Left.Right, env)
+		if isError(ptrObj) {
+			return ptrObj
+		}
+		ptr, ok := ptrObj.(*object.Pointer)
+		if !ok {
+			return newError("left side of dereference assignment must be a pointer")
+		}
+		val := Eval(node.Value, env)
+		if isError(val) {
+			return val
+		}
+		if ptr.TargetType != "" && !isAssignableToType(ptr.TargetType, runtimeTypeName(val), env) {
+			return newError("cannot assign %s to %s", runtimeTypeName(val), ptr.TargetType)
+		}
+		if ptr.Env == nil || !ptr.Env.Assign(ptr.Name, val) {
+			return newError("pointer target not found: %s", ptr.Name)
+		}
+		return val
 	case *ast.IndexAssignStatement:
 		return annotateErrorWithNode(evalIndexAssignStatement(node, env), node)
 	case *ast.FunctionStatement:
@@ -453,6 +485,17 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		return evalIdentifier(node, env)
 
 	case *ast.PrefixExpression:
+		if node.Operator == "&" {
+			id, ok := node.Right.(*ast.Identifier)
+			if !ok {
+				return annotateErrorWithNode(newError("address-of operator requires identifier"), node)
+			}
+			if !env.Has(id.Value) {
+				return annotateErrorWithNode(newError("identifier not found: %s", id.Value), node)
+			}
+			targetType, _ := env.TypeOf(id.Value)
+			return &object.Pointer{Name: id.Value, Env: env, TargetType: targetType}
+		}
 		right := Eval(node.Right, env)
 		if isError(right) {
 			return right

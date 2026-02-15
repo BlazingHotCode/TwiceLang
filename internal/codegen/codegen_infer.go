@@ -70,6 +70,16 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) (out valueType) {
 			if t == typeInt || t == typeFloat {
 				return t
 			}
+		case "&":
+			return typeArray
+		case "*":
+			rt := cg.inferExpressionTypeName(e.Right)
+			if resolved, ok := cg.normalizeTypeName(rt); ok {
+				rt = resolved
+			}
+			if inner, ok := peelPointerType(rt); ok {
+				return cg.parseTypeName(inner)
+			}
 		}
 		return typeUnknown
 	case *ast.InfixExpression:
@@ -78,6 +88,26 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) (out valueType) {
 		switch e.Operator {
 		case "??":
 			// Null-coalescing evaluates to the non-null operand type.
+			leftName := cg.inferExpressionTypeName(e.Left)
+			rightName := cg.inferExpressionTypeName(e.Right)
+			if resolved, ok := cg.normalizeTypeName(leftName); ok {
+				leftName = resolved
+			}
+			if resolved, ok := cg.normalizeTypeName(rightName); ok {
+				rightName = resolved
+			}
+			if noNull, changed := removeNullMember(leftName); changed {
+				leftName = noNull
+			}
+			if noNull, changed := removeNullMember(rightName); changed {
+				rightName = noNull
+			}
+			if leftName != "" && leftName != "unknown" && leftName != "null" {
+				return cg.parseTypeName(leftName)
+			}
+			if rightName != "" && rightName != "unknown" {
+				return cg.parseTypeName(rightName)
+			}
 			if left == typeNull {
 				return right
 			}
@@ -208,6 +238,9 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) (out valueType) {
 		if resolved, ok := cg.normalizeTypeName(leftTypeName); ok {
 			leftTypeName = resolved
 		}
+		if inner, ok := peelPointerType(leftTypeName); ok {
+			leftTypeName = inner
+		}
 		if leftTypeName == "string" {
 			return typeChar
 		}
@@ -336,10 +369,32 @@ func (cg *CodeGen) inferExpressionTypeName(expr ast.Expression) (out string) {
 			parts = append(parts, cg.inferExpressionTypeName(el))
 		}
 		return "(" + strings.Join(parts, ",") + ")"
+	case *ast.PrefixExpression:
+		switch e.Operator {
+		case "&":
+			rt := cg.inferCurrentValueTypeName(e.Right)
+			if rt == "unknown" {
+				return "unknown"
+			}
+			return "*" + rt
+		case "*":
+			rt := cg.inferExpressionTypeName(e.Right)
+			if resolved, ok := cg.normalizeTypeName(rt); ok {
+				rt = resolved
+			}
+			if inner, ok := peelPointerType(rt); ok {
+				return inner
+			}
+			return "unknown"
+		}
+		return typeName(cg.inferExpressionType(e))
 	case *ast.IndexExpression:
 		leftTypeName := cg.inferExpressionTypeName(e.Left)
 		if resolved, ok := cg.normalizeTypeName(leftTypeName); ok {
 			leftTypeName = resolved
+		}
+		if inner, ok := peelPointerType(leftTypeName); ok {
+			leftTypeName = inner
 		}
 		if leftTypeName == "string" {
 			return "char"
@@ -460,8 +515,67 @@ func (cg *CodeGen) inferExpressionTypeName(expr ast.Expression) (out string) {
 			typeName = resolved
 		}
 		return typeName
+	case *ast.InfixExpression:
+		if e.Operator == "??" {
+			leftName := cg.inferExpressionTypeName(e.Left)
+			rightName := cg.inferExpressionTypeName(e.Right)
+			if resolved, ok := cg.normalizeTypeName(leftName); ok {
+				leftName = resolved
+			}
+			if resolved, ok := cg.normalizeTypeName(rightName); ok {
+				rightName = resolved
+			}
+			if noNull, changed := removeNullMember(leftName); changed {
+				leftName = noNull
+			}
+			if noNull, changed := removeNullMember(rightName); changed {
+				rightName = noNull
+			}
+			if leftName == "" || leftName == "unknown" || leftName == "null" {
+				return rightName
+			}
+			if rightName == "" || rightName == "unknown" || rightName == "null" {
+				return leftName
+			}
+			if leftName == rightName {
+				return leftName
+			}
+			if merged, ok := mergeTypeNames(leftName, rightName); ok {
+				if noNull, changed := removeNullMember(merged); changed {
+					return noNull
+				}
+				return merged
+			}
+		}
 	}
 	return typeName(cg.inferExpressionType(expr))
+}
+
+func removeNullMember(typeName string) (string, bool) {
+	typeName = strings.TrimSpace(typeName)
+	if typeName == "" || typeName == "unknown" {
+		return typeName, false
+	}
+	members, isUnion := splitTopLevelUnion(typeName)
+	if !isUnion {
+		return typeName, false
+	}
+	out := make([]string, 0, len(members))
+	removed := false
+	for _, member := range members {
+		if strings.TrimSpace(member) == "null" {
+			removed = true
+			continue
+		}
+		out = append(out, member)
+	}
+	if !removed {
+		return typeName, false
+	}
+	if len(out) == 0 {
+		return "null", true
+	}
+	return strings.Join(out, "||"), true
 }
 
 func (cg *CodeGen) resolveGenericCallReturnTypeName(fn *compiledFunction, ce *ast.CallExpression) string {
@@ -788,6 +902,9 @@ func (cg *CodeGen) parseTypeName(s string) valueType {
 	if resolved, ok := cg.normalizeTypeName(s); ok {
 		s = resolved
 	}
+	if inner, ok := peelPointerType(s); ok {
+		return cg.parseTypeName(inner)
+	}
 	if _, dims, ok := parseTypeDescriptor(s); ok && len(dims) > 0 {
 		return typeArray
 	}
@@ -839,6 +956,9 @@ func (cg *CodeGen) isKnownTypeName(t string) bool {
 func (cg *CodeGen) isKnownTypeNameWithParams(t string, typeParams map[string]struct{}) bool {
 	if resolved, ok := cg.normalizeTypeNameWithParams(t, map[string]struct{}{}, typeParams); ok {
 		t = resolved
+	}
+	if inner, ok := peelPointerType(t); ok {
+		return cg.isKnownTypeNameWithParams(inner, typeParams)
 	}
 	base, _, ok := parseTypeDescriptor(t)
 	if !ok {
@@ -901,6 +1021,9 @@ func (cg *CodeGen) structFieldTypeForExpression(object ast.Expression, property 
 	objType := cg.inferCurrentValueTypeName(object)
 	if resolved, ok := cg.normalizeTypeName(objType); ok {
 		objType = resolved
+	}
+	if inner, ok := peelPointerType(objType); ok {
+		objType = inner
 	}
 	if parts, isUnion := splitTopLevelUnion(objType); isUnion {
 		found := false
@@ -994,6 +1117,13 @@ func (cg *CodeGen) normalizeTypeNameWithParams(t string, visiting map[string]str
 
 func (cg *CodeGen) resolveTypeBaseWithParams(base string, visiting map[string]struct{}, typeParams map[string]struct{}) (string, bool) {
 	base = stripOuterGroupingParens(base)
+	if inner, ok := peelPointerType(base); ok {
+		r, ok := cg.resolveTypeBaseWithParams(inner, visiting, typeParams)
+		if !ok {
+			return "", false
+		}
+		return "*" + r, true
+	}
 	if parts, isUnion := splitTopLevelUnion(base); isUnion {
 		resolved := make([]string, 0, len(parts))
 		for _, p := range parts {
