@@ -1,11 +1,47 @@
 # TODO
 
-## 1. String Formatting
+## 1. Member Access Without Call
+
+- Add direct member access support (`a.b`) instead of erroring when no call follows.
+- Keep tuple access (`a.0`) behavior intact.
+- Ensure parser, evaluator, and codegen agree on member access semantics.
+
+## 2. Complete Null-Safe Member Access
+
+- Expand null-safe access beyond partial handling so `?.` works consistently for member reads and method calls.
+- Keep array `?.length()` support and generalize to other valid members.
+- Ensure parser, evaluator, and codegen behavior matches.
+
+## 3. Expand `hasField`
+
+- Remove current codegen limitation that requires compile-time-only field strings.
+- Support broader object/struct/class field checks instead of only array `"length"`.
+- Keep behavior aligned between evaluator and codegen.
+
+## 4. Function Literals in Codegen
+
+- Add codegen support for function literals/anonymous functions.
+- Match existing parser/evaluator behavior.
+- Add tests for calls, captures, and failure cases.
+
+## 5. Empty Literal Support
+
+- Add support for empty array/tuple literals where type information is available.
+- Define clear typing rules for empty literals in declarations and assignments.
+- Keep evaluator and codegen parity.
+
+## 6. Remove Function Arity/Capture Hard Limit
+
+- Remove/raise the current codegen limit of 6 combined parameters/captures.
+- Implement a stable calling convention strategy for larger functions.
+- Add regression tests for higher arity and capture counts.
+
+## 7. String Formatting
 
 - Add escape-sequence formatting in strings (for example `\n`, `\t`, and related escapes).
 - Add string interpolation with `${...}` expressions inside string literals.
 
-## 2. Structs
+## 8. Structs
 
 - Add struct declarations and typed struct values.
 - Use literal construction syntax for structs.
@@ -29,14 +65,14 @@
 - Pointer struct function usage syntax (auto-deref):
 - `ptr.methodName(args...)` (no `(*ptr).methodName(...)` required)
 
-## 3. Pointers
+## 9. Pointers
 
 - Pointer types are nullable only when explicitly declared nullable.
 - Add pointer operations (`&value`, `*ptr`, pointer assignment).
 - Pointer method calls auto-deref: allow `p.method()` without requiring `(*p).method()`.
 - Pointer + struct design should be combined, so references and mutation go through pointers.
 
-## 4. Custom Libraries
+## 10. Custom Libraries
 
 - Add `import ...` syntax.
 - Built-in libraries are imported with `twice.<lib>`.
@@ -49,7 +85,7 @@
 - Add member import alias syntax like:
 - `import twice.math.sqrt as sqrt`
 
-## 5. OOP and Type System Expansion
+## 11. OOP and Type System Expansion
 
 - Add class declarations and object instantiation.o
 - Structs stay public-focused; classes support explicit `public`/`private`.
@@ -72,7 +108,7 @@
 - `this` is valid in instance methods and constructors, and invalid in `static` methods.
 - Typed declarations without `new` remain `null` until initialized (for example `let s: Shape;`).
 
-## 6. Inheritance
+## 12. Inheritance
 
 - Add inheritance as a separate feature from base class/object support.
 - Define overriding and method resolution rules.
