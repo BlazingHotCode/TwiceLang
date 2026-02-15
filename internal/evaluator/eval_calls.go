@@ -144,6 +144,14 @@ func applyUserFunction(function *object.Function, args []object.Object, namedArg
 		return newError("unknown named argument: %s", name)
 	}
 
+	if len(function.TypeParams) > 0 && len(typeArgs) == 0 {
+		for _, tp := range function.TypeParams {
+			if typeArgMap[tp] == "" {
+				return newError("could not infer generic type argument for %s; specify it explicitly", tp)
+			}
+		}
+	}
+
 	evaluated := Eval(function.Body, extendedEnv)
 	result := unwrapReturnValue(evaluated)
 	if result != nil {

@@ -1008,6 +1008,28 @@ func TestCodegenGenericFunctionTypeArgArityErrors(t *testing.T) {
 	}
 }
 
+func TestCodegenGenericFunctionInferenceRequiresUnambiguousUse(t *testing.T) {
+	_, cg := generateAssembly(t, `fn passthrough<T>(x: int) int { return x; } print(passthrough(5));`)
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen errors for unresolved generic inference")
+	}
+	found := false
+	for _, err := range cg.Errors() {
+		if strings.Contains(err, "could not infer generic type argument for T; specify it explicitly") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected unresolved-generic inference error, got: %v", cg.Errors())
+	}
+
+	_, cg = generateAssembly(t, `fn passthrough<T>(x: int) int { return x; } print(passthrough<int>(5));`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors for explicit generic passthrough: %v", cg.Errors())
+	}
+}
+
 func TestCodegenGenericAliasTypeArgArityErrors(t *testing.T) {
 	_, cg := generateAssembly(t, `type Pair<T, U> = (T, U); let p: Pair<int> = (1, "x");`)
 	if len(cg.Errors()) == 0 {

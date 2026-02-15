@@ -327,6 +327,31 @@ let p: Pair<int> = (1, "x");
 	}
 }
 
+func TestCLICodegenErrorForUnresolvedGenericInference(t *testing.T) {
+	root := repoRoot(t)
+
+	srcPath := filepath.Join(t.TempDir(), "bad_generic_inference.tw")
+	source := `
+fn passthrough<T>(x: int) int { return x; }
+print(passthrough(5));
+`
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	cmd := exec.Command("go", "run", "./cmd/twice", srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected codegen failure, got success. output:\n%s", out)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "Codegen error: could not infer generic type argument for T; specify it explicitly") {
+		t.Fatalf("missing unresolved generic inference diagnostic. output:\n%s", output)
+	}
+}
+
 func TestCLICodegenErrorForUndefinedIdentifier(t *testing.T) {
 	root := repoRoot(t)
 

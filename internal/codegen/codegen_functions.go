@@ -589,6 +589,16 @@ func (cg *CodeGen) generateUserFunctionCall(fn *compiledFunction, ce *ast.CallEx
 		passedArgs = append(passedArgs, arg)
 	}
 
+	if len(fn.Literal.TypeParams) > 0 && len(ce.TypeArguments) == 0 {
+		for _, tp := range fn.Literal.TypeParams {
+			if typeArgMap[tp] == "" {
+				cg.addNodeError("could not infer generic type argument for "+tp+"; specify it explicitly", ce)
+				cg.emit("    mov $0, %%rax")
+				return
+			}
+		}
+	}
+
 	for _, capName := range fn.Captures {
 		passedArgs = append(passedArgs, &ast.Identifier{Value: capName})
 	}

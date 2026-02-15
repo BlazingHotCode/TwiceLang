@@ -1103,6 +1103,18 @@ func TestGenericFunctionExplicitTypeArgErrorsEval(t *testing.T) {
 	if errObj.Message != "unknown type: unknown" {
 		t.Fatalf("wrong error message: %q", errObj.Message)
 	}
+
+	evaluated = testEval(`fn passthrough<T>(x: int) int { return x; } passthrough(5);`)
+	errObj, ok = evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "could not infer generic type argument for T; specify it explicitly" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+
+	evaluated = testEval(`fn passthrough<T>(x: int) int { return x; } passthrough<int>(5);`)
+	testIntegerObject(t, evaluated, 5)
 }
 
 func TestTypeAliasesEval(t *testing.T) {
