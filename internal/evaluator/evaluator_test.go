@@ -1063,6 +1063,17 @@ func TestGenericTypeAliasesEval(t *testing.T) {
 	testIntegerObject(t, evaluated, 9)
 }
 
+func TestGenericTypeAliasArityErrorsEval(t *testing.T) {
+	evaluated := testEval(`type Pair<T, U> = (T, U); let p: Pair<int> = (1, "x");`)
+	errObj, ok := evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "wrong number of generic type arguments for Pair: expected 2, got 1" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+}
+
 func TestGenericFunctionEval(t *testing.T) {
 	evaluated := testEval(`fn id<T>(x: T) T { return x; } id(11);`)
 	testIntegerObject(t, evaluated, 11)

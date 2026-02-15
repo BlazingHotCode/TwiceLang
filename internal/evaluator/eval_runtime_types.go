@@ -571,6 +571,56 @@ func splitTopLevelTuple(t string) ([]string, bool) {
 	return typesys.SplitTopLevelTuple(t)
 }
 
+func genericTypeArityError(typeName string, env *object.Environment, typeParams map[string]struct{}) (string, bool) {
+	base, _, ok := parseTypeName(typeName)
+	if !ok {
+		return "", false
+	}
+	if members, isUnion := splitTopLevelUnion(base); isUnion {
+		for _, m := range members {
+			if msg, ok := genericTypeArityError(m, env, typeParams); ok {
+				return msg, true
+			}
+		}
+		return "", false
+	}
+	if members, isTuple := splitTopLevelTuple(base); isTuple {
+		for _, m := range members {
+			if msg, ok := genericTypeArityError(m, env, typeParams); ok {
+				return msg, true
+			}
+		}
+		return "", false
+	}
+	if gb, args, ok := typesys.SplitGenericType(base); ok {
+		if _, exists := env.TypeAlias(gb); exists {
+			// Non-generic alias with this name is valid; Pair<int> will fail later as unknown type.
+		} else if alias, exists := env.GenericTypeAlias(gb); exists {
+			if len(alias.TypeParams) != len(args) {
+				return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", gb, len(alias.TypeParams), len(args)), true
+			}
+		}
+		for _, a := range args {
+			if msg, ok := genericTypeArityError(a, env, typeParams); ok {
+				return msg, true
+			}
+		}
+		return "", false
+	}
+	if typeParams != nil {
+		if _, ok := typeParams[base]; ok {
+			return "", false
+		}
+	}
+	if _, exists := env.TypeAlias(base); exists {
+		return "", false
+	}
+	if alias, exists := env.GenericTypeAlias(base); exists && len(alias.TypeParams) > 0 {
+		return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", base, len(alias.TypeParams), 0), true
+	}
+	return "", false
+}
+
 func castToInt(args []object.Object) object.Object {
 	if len(args) != 1 {
 		return newError("int expects 1 argument, got=%d", len(args))

@@ -302,6 +302,31 @@ fn main() int {
 	}
 }
 
+func TestCLICodegenErrorForGenericAliasArity(t *testing.T) {
+	root := repoRoot(t)
+
+	srcPath := filepath.Join(t.TempDir(), "bad_generic_alias_arity.tw")
+	source := `
+type Pair<T, U> = (T, U);
+let p: Pair<int> = (1, "x");
+`
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	cmd := exec.Command("go", "run", "./cmd/twice", srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected codegen failure, got success. output:\n%s", out)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "Codegen error: wrong number of generic type arguments for Pair") {
+		t.Fatalf("missing generic alias arity diagnostic. output:\n%s", output)
+	}
+}
+
 func TestCLICodegenErrorForUndefinedIdentifier(t *testing.T) {
 	root := repoRoot(t)
 

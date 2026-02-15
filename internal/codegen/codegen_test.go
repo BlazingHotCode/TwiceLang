@@ -1008,6 +1008,23 @@ func TestCodegenGenericFunctionTypeArgArityErrors(t *testing.T) {
 	}
 }
 
+func TestCodegenGenericAliasTypeArgArityErrors(t *testing.T) {
+	_, cg := generateAssembly(t, `type Pair<T, U> = (T, U); let p: Pair<int> = (1, "x");`)
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen errors for generic alias arity mismatch")
+	}
+	found := false
+	for _, err := range cg.Errors() {
+		if strings.Contains(err, "wrong number of generic type arguments for Pair") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected generic alias arity error, got: %v", cg.Errors())
+	}
+}
+
 func TestCodegenTupleTypesAndAccess(t *testing.T) {
 	asm, cg := generateAssembly(t, `let a: (int,string,bool) = (1, "x", true); print(a.0); print(a.1); print(a.2);`)
 	if len(cg.Errors()) != 0 {

@@ -137,8 +137,13 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			return newError("identifier already declared: %s", node.Name.Value)
 		}
 		varType := node.TypeName
-		if varType != "" && !isKnownTypeName(varType, env) {
-			return newError("unknown type: %s", varType)
+		if varType != "" {
+			if msg, ok := genericTypeArityError(varType, env, nil); ok {
+				return newError(msg)
+			}
+			if !isKnownTypeName(varType, env) {
+				return newError("unknown type: %s", varType)
+			}
 		}
 		var val object.Object = NULL
 		if node.Value != nil {
@@ -195,8 +200,13 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			return newError("identifier already declared: %s", node.Name.Value)
 		}
 		varType := node.TypeName
-		if varType != "" && !isKnownTypeName(varType, env) {
-			return newError("unknown type: %s", varType)
+		if varType != "" {
+			if msg, ok := genericTypeArityError(varType, env, nil); ok {
+				return newError(msg)
+			}
+			if !isKnownTypeName(varType, env) {
+				return newError("unknown type: %s", varType)
+			}
 		}
 		var val object.Object
 		switch lit := node.Value.(type) {
@@ -248,6 +258,9 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		typeParamSet := make(map[string]struct{}, len(node.TypeParams))
 		for _, tp := range node.TypeParams {
 			typeParamSet[tp] = struct{}{}
+		}
+		if msg, ok := genericTypeArityError(node.TypeName, env, typeParamSet); ok {
+			return newError(msg)
 		}
 		resolved, ok := resolveTypeNameWithParams(node.TypeName, env, map[string]struct{}{}, typeParamSet)
 		if !ok || !isKnownTypeNameWithParams(resolved, env, typeParamSet) {
@@ -394,12 +407,22 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			typeParamSet[tp] = struct{}{}
 		}
 		for _, param := range node.Parameters {
-			if param.TypeName != "" && !isKnownTypeNameWithParams(param.TypeName, env, typeParamSet) {
-				return newError("unknown type: %s", param.TypeName)
+			if param.TypeName != "" {
+				if msg, ok := genericTypeArityError(param.TypeName, env, typeParamSet); ok {
+					return newError(msg)
+				}
+				if !isKnownTypeNameWithParams(param.TypeName, env, typeParamSet) {
+					return newError("unknown type: %s", param.TypeName)
+				}
 			}
 		}
-		if node.ReturnType != "" && !isKnownTypeNameWithParams(node.ReturnType, env, typeParamSet) {
-			return newError("unknown type: %s", node.ReturnType)
+		if node.ReturnType != "" {
+			if msg, ok := genericTypeArityError(node.ReturnType, env, typeParamSet); ok {
+				return newError(msg)
+			}
+			if !isKnownTypeNameWithParams(node.ReturnType, env, typeParamSet) {
+				return newError("unknown type: %s", node.ReturnType)
+			}
 		}
 		name := ""
 		if node.Name != nil {
