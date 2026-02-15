@@ -574,6 +574,37 @@ func TestNullSafeMethodCallParses(t *testing.T) {
 	}
 }
 
+func TestArrayFunctionalMethodLambdaParses(t *testing.T) {
+	p := New(lexer.New("arr.map((x: int) int => { return x + 1; });"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+	if !ok {
+		t.Fatalf("expected expression statement, got=%T", program.Statements[0])
+	}
+	call, ok := stmt.Expression.(*ast.MethodCallExpression)
+	if !ok {
+		t.Fatalf("expected method call expression, got=%T", stmt.Expression)
+	}
+	if call.Method == nil || call.Method.Value != "map" {
+		t.Fatalf("expected method map, got=%v", call.Method)
+	}
+	if len(call.Arguments) != 1 {
+		t.Fatalf("expected 1 argument, got=%d", len(call.Arguments))
+	}
+	fl, ok := call.Arguments[0].(*ast.FunctionLiteral)
+	if !ok {
+		t.Fatalf("expected lambda callback argument, got=%T", call.Arguments[0])
+	}
+	if !fl.IsLambda {
+		t.Fatalf("expected lambda function literal")
+	}
+}
+
 func TestNullSafeAccessParses(t *testing.T) {
 	p := New(lexer.New("a?.b;"))
 	program := p.ParseProgram()

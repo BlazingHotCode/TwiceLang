@@ -10,15 +10,7 @@
 - adding snippet to [test.tw](./test.tw) and running using binary to test the code
 - adding guide/points to show the feature in [README](./README.md)
 
-## 1. Array Functional Methods
-
-- Add JS-style array methods such as `.map`, `.filter`, and related operations.
-- Methods should accept lambda/function arguments (for example callbacks like `(x: int) int => { ... }`).
-- Define consistent typing rules for callback parameter and return types.
-- Ensure parser/evaluator/codegen/runtime parity for these methods.
-- Add tests and docs examples for array functional method usage.
-
-## 2. OOP and Type System Expansion
+## 1. OOP and Type System Expansion
 
 - Add class declarations and object instantiation.o
 - Structs stay public-focused; classes support explicit `public`/`private`.
@@ -42,7 +34,7 @@
 - Typed declarations without `new` remain `null` until initialized (for example `let s: Shape;`).
 - Generic classes are supported by syntax plan, but are implemented together with class support.
 
-## 3. Inheritance
+## 2. Inheritance
 
 - Add inheritance as a separate feature from base class/object support.
 - Define overriding and method resolution rules.

@@ -262,6 +262,142 @@ func evalMethodCallExpression(node *ast.MethodCallExpression, env *object.Enviro
 			return newError("length is only supported on arrays/lists/maps")
 		}
 		return &object.Integer{Value: int64(len(arr.Elements))}
+	case "map":
+		if len(node.Arguments) != 1 {
+			if node.NullSafe {
+				return NULL
+			}
+			return newError("map expects 1 argument, got=%d", len(node.Arguments))
+		}
+		var elems []object.Object
+		switch seq := obj.(type) {
+		case *object.Array:
+			elems = seq.Elements
+		case *object.List:
+			elems = seq.Elements
+		default:
+			if node.NullSafe {
+				return NULL
+			}
+			return newError("map is only supported on arrays/lists")
+		}
+		callback := Eval(node.Arguments[0], env)
+		if isError(callback) {
+			return callback
+		}
+		switch callback.(type) {
+		case *object.Function, *object.Builtin:
+		default:
+			if node.NullSafe {
+				return NULL
+			}
+			return newError("map callback must be a function")
+		}
+		out := make([]object.Object, 0, len(elems))
+		outType := "any"
+		for _, el := range elems {
+			mapped := applyFunction(callback, []object.Object{el}, nil, nil)
+			if isError(mapped) {
+				return mapped
+			}
+			mt := runtimeTypeName(mapped)
+			if len(out) == 0 {
+				outType = mt
+			} else if merged, ok := mergeTypeNames(outType, mt, env); ok {
+				outType = merged
+			} else {
+				outType = "any"
+			}
+			out = append(out, mapped)
+		}
+		return &object.List{ElementType: outType, Elements: out}
+	case "filter":
+		if len(node.Arguments) != 1 {
+			if node.NullSafe {
+				return NULL
+			}
+			return newError("filter expects 1 argument, got=%d", len(node.Arguments))
+		}
+		var elems []object.Object
+		elemType := "any"
+		switch seq := obj.(type) {
+		case *object.Array:
+			elems = seq.Elements
+			elemType = seq.ElementType
+		case *object.List:
+			elems = seq.Elements
+			elemType = seq.ElementType
+		default:
+			if node.NullSafe {
+				return NULL
+			}
+			return newError("filter is only supported on arrays/lists")
+		}
+		callback := Eval(node.Arguments[0], env)
+		if isError(callback) {
+			return callback
+		}
+		switch callback.(type) {
+		case *object.Function, *object.Builtin:
+		default:
+			if node.NullSafe {
+				return NULL
+			}
+			return newError("filter callback must be a function")
+		}
+		out := make([]object.Object, 0, len(elems))
+		for _, el := range elems {
+			keep := applyFunction(callback, []object.Object{el}, nil, nil)
+			if isError(keep) {
+				return keep
+			}
+			keepBool, ok := keep.(*object.Boolean)
+			if !ok {
+				return newError("filter callback must return bool, got %s", runtimeTypeName(keep))
+			}
+			if keepBool.Value {
+				out = append(out, el)
+			}
+		}
+		return &object.List{ElementType: elemType, Elements: out}
+	case "forEach":
+		if len(node.Arguments) != 1 {
+			if node.NullSafe {
+				return NULL
+			}
+			return newError("forEach expects 1 argument, got=%d", len(node.Arguments))
+		}
+		var elems []object.Object
+		switch seq := obj.(type) {
+		case *object.Array:
+			elems = seq.Elements
+		case *object.List:
+			elems = seq.Elements
+		default:
+			if node.NullSafe {
+				return NULL
+			}
+			return newError("forEach is only supported on arrays/lists")
+		}
+		callback := Eval(node.Arguments[0], env)
+		if isError(callback) {
+			return callback
+		}
+		switch callback.(type) {
+		case *object.Function, *object.Builtin:
+		default:
+			if node.NullSafe {
+				return NULL
+			}
+			return newError("forEach callback must be a function")
+		}
+		for _, el := range elems {
+			res := applyFunction(callback, []object.Object{el}, nil, nil)
+			if isError(res) {
+				return res
+			}
+		}
+		return NULL
 	case "append":
 		list, ok := obj.(*object.List)
 		if !ok {

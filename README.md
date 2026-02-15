@@ -52,7 +52,7 @@ Notes:
 - Function literals/anonymous functions in codegen and runtime
 - Function calls with positional, named, and mixed arguments
 - Function calls before declaration (resolved by codegen)
-- Arrays with typed declarations, literals, indexing, mutation, `length()`, and `.length`
+- Arrays with typed declarations, literals, indexing, mutation, `length()`, `.length`, and functional methods (`map`, `filter`, `forEach`)
 - Generic lists (`List<T>`) with constructor syntax, indexing/mutation, `length`/`length()`, and list methods
 - Generic maps (`Map<K,V>`) with constructor syntax, bracket get/set, `length`/`length()`, and map methods
 - Import syntax with namespace/member aliases (including `twice.math` built-ins)
@@ -498,6 +498,30 @@ Array length method:
 ```tw
 println(arr.length()); // 3
 ```
+
+Array functional methods:
+
+```tw
+let mapped = {1, 2, 3}.map((x: int) int => { return x * 2; });
+println(mapped.length()); // 3
+println(mapped[0]); // 2
+println(mapped[2]); // 6
+
+let filtered = {1, 2, 3}.filter((x: int) bool => { return x > 1; });
+println(filtered.length()); // 2
+println(filtered[0]); // 2
+println(filtered[1]); // 3
+
+{1, 2, 3}.forEach((x: int) => { println(x); }); // 1, 2, 3
+```
+
+Notes:
+
+- `map` and `filter` return `List<...>`.
+- `forEach` returns `null`.
+- These methods are supported on arrays and `List<T>`.
+- Callback must be a function/lambda with exactly one parameter.
+- `filter` callback must return `bool`.
 
 Note: array type annotations require explicit sizes in every dimension (for example `int[3]`, `int[2][2]`, `(int||string)[3]`). Empty literals (`{}` / `()`) require type context.
 

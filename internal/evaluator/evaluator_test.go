@@ -767,6 +767,8 @@ func TestMethodCallErrorsEval(t *testing.T) {
 		{`let s = "abc"; s.length()`, "length is only supported on arrays/lists/maps"},
 		{`let arr = {1,2,3}; arr.length(1)`, "length expects 0 arguments, got=1"},
 		{`let arr = {1,2,3}; arr.missing()`, "unknown method: missing"},
+		{`let arr = {1,2,3}; arr.map(1)`, "map callback must be a function"},
+		{`let arr = {1,2,3}; arr.filter((x: int) int => { return x; })`, "filter callback must return bool, got int"},
 	}
 
 	for _, tt := range tests {
@@ -779,6 +781,28 @@ func TestMethodCallErrorsEval(t *testing.T) {
 			t.Fatalf("wrong error message for %q: got=%q want=%q", tt.input, errObj.Message, tt.want)
 		}
 	}
+}
+
+func TestArrayFunctionalMethodsEval(t *testing.T) {
+	evaluated := testEval(`let arr = {1,2,3}; let mapped = arr.map((x: int) int => { return x * 2; }); mapped.length()`)
+	testIntegerObject(t, evaluated, 3)
+
+	evaluated = testEval(`let arr = {1,2,3}; let mapped = arr.map((x: int) int => { return x * 2; }); mapped[1]`)
+	testIntegerObject(t, evaluated, 4)
+
+	evaluated = testEval(`let arr = {1,2,3}; let filtered = arr.filter((x: int) bool => { return x > 1; }); filtered.length()`)
+	testIntegerObject(t, evaluated, 2)
+
+	evaluated = testEval(`let arr = {1,2,3}; let filtered = arr.filter((x: int) bool => { return x > 1; }); filtered[0]`)
+	testIntegerObject(t, evaluated, 2)
+
+	evaluated = testEval(`let arr = {1,2,3}; arr.forEach((x: int) => { return; })`)
+	if evaluated != NULL {
+		t.Fatalf("expected null result from forEach, got=%T (%s)", evaluated, evaluated.Inspect())
+	}
+
+	evaluated = testEval(`let xs: List<int> = new List<int>(1,2,3); let mapped = xs.map((x: int) int => { return x + 1; }); mapped[2]`)
+	testIntegerObject(t, evaluated, 4)
 }
 
 func TestListEvalBasics(t *testing.T) {

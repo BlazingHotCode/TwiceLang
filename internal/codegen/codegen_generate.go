@@ -726,6 +726,12 @@ func (cg *CodeGen) generateMethodByName(mce *ast.MethodCallExpression, nullSafe 
 	switch mce.Method.Value {
 	case "length":
 		cg.generateArrayLengthMethod(mce, nullSafe)
+	case "map":
+		cg.generateArrayMapMethod(mce, nullSafe)
+	case "filter":
+		cg.generateArrayFilterMethod(mce, nullSafe)
+	case "forEach":
+		cg.generateArrayForEachMethod(mce, nullSafe)
 	case "append":
 		cg.generateListAppendMethod(mce, nullSafe)
 	case "remove":
@@ -745,6 +751,458 @@ func (cg *CodeGen) generateMethodByName(mce *ast.MethodCallExpression, nullSafe 
 	default:
 		cg.generateUnknownMethodError(mce, nullSafe)
 	}
+}
+
+func (cg *CodeGen) resolveArrayOrListForFunctionalMethod(object ast.Expression, allowNullable bool) (elemType string, isList bool, arrLen int, ok bool) {
+	typeName := cg.inferExpressionTypeName(object)
+	if resolved, has := cg.normalizeTypeName(typeName); has {
+		typeName = resolved
+	}
+	if inner, has := peelPointerType(typeName); has {
+		typeName = inner
+	}
+	if elem, has := peelListType(typeName); has {
+		return elem, true, -1, true
+	}
+	if elem, n, has := peelArrayType(typeName); has {
+		return elem, false, n, true
+	}
+	if !allowNullable {
+		return "", false, 0, false
+	}
+	parts, isUnion := splitTopLevelUnion(typeName)
+	if !isUnion {
+		return "", false, 0, false
+	}
+	found := false
+	modeList := false
+	elem := ""
+	length := -1
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" || part == "null" {
+			continue
+		}
+		if inner, has := peelPointerType(part); has {
+			part = inner
+		}
+		if pElem, has := peelListType(part); has {
+			if !found {
+				found = true
+				modeList = true
+				elem = pElem
+				length = -1
+				continue
+			}
+			if !modeList || elem != pElem {
+				return "", false, 0, false
+			}
+			continue
+		}
+		if pElem, pLen, has := peelArrayType(part); has {
+			if !found {
+				found = true
+				modeList = false
+				elem = pElem
+				length = pLen
+				continue
+			}
+			if modeList || elem != pElem || length != pLen {
+				return "", false, 0, false
+			}
+			continue
+		}
+		return "", false, 0, false
+	}
+	if !found {
+		return "", false, 0, false
+	}
+	return elem, modeList, length, true
+}
+
+func (cg *CodeGen) resolveMethodCallback(mce *ast.MethodCallExpression, methodName string) (*compiledFunction, bool) {
+	if len(mce.Arguments) != 1 {
+		cg.addNodeError(fmt.Sprintf("%s expects 1 argument, got=%d", methodName, len(mce.Arguments)), mce)
+		cg.emit("    mov $0, %%rax")
+		return nil, false
+	}
+	if _, isNamed := mce.Arguments[0].(*ast.NamedArgument); isNamed {
+		cg.addNodeError(fmt.Sprintf("named arguments are not supported for %s", methodName), mce.Arguments[0])
+		cg.emit("    mov $0, %%rax")
+		return nil, false
+	}
+
+	switch cb := mce.Arguments[0].(type) {
+	case *ast.FunctionLiteral:
+		key, ok := cg.funcLitKeys[cb]
+		if !ok {
+			cg.addNodeError(methodName+" callback literal not registered for codegen", cb)
+			cg.emit("    mov $0, %%rax")
+			return nil, false
+		}
+		fn, ok := cg.functions[key]
+		if !ok || fn == nil {
+			cg.addNodeError(methodName+" callback literal not found", cb)
+			cg.emit("    mov $0, %%rax")
+			return nil, false
+		}
+		cg.refreshFunctionCaptureTypes(fn)
+		return fn, true
+	case *ast.Identifier:
+		if key, ok := cg.varFuncs[cb.Value]; ok {
+			if fn, ok := cg.functions[key]; ok && fn != nil {
+				cg.refreshFunctionCaptureTypes(fn)
+				return fn, true
+			}
+		}
+		if key, ok := cg.funcByName[cb.Value]; ok {
+			if fn, ok := cg.functions[key]; ok && fn != nil {
+				cg.refreshFunctionCaptureTypes(fn)
+				return fn, true
+			}
+		}
+		cg.addNodeError(methodName+" callback function not found: "+cb.Value, cb)
+		cg.emit("    mov $0, %%rax")
+		return nil, false
+	default:
+		cg.addNodeError(methodName+" callback must be a function", mce.Arguments[0])
+		cg.emit("    mov $0, %%rax")
+		return nil, false
+	}
+}
+
+func (cg *CodeGen) refreshFunctionCaptureTypes(fn *compiledFunction) {
+	if fn == nil {
+		return
+	}
+	for i, capName := range fn.Captures {
+		if i >= len(fn.CaptureTypeNames) {
+			break
+		}
+		typeName := "unknown"
+		if t, ok := cg.varTypeNames[capName]; ok && t != "" {
+			typeName = t
+		} else if t, ok := cg.varValueTypeName[capName]; ok && t != "" {
+			typeName = t
+		} else {
+			inferred := cg.inferCurrentValueTypeName(&ast.Identifier{Value: capName})
+			if inferred != "" {
+				typeName = inferred
+			}
+		}
+		fn.CaptureTypeNames[i] = typeName
+	}
+}
+
+func (cg *CodeGen) inferCallbackReturnTypeName(fn *compiledFunction, argType string) string {
+	if fn == nil || fn.Literal == nil {
+		return "unknown"
+	}
+	ret := fn.Literal.ReturnType
+	if ret == "" {
+		if functionReturnsOnlyNull(fn.Literal.Body) {
+			return "null"
+		}
+		return "unknown"
+	}
+	if len(fn.Literal.TypeParams) == 0 {
+		return ret
+	}
+	mapping := map[string]string{}
+	for _, tp := range fn.Literal.TypeParams {
+		mapping[tp] = ""
+	}
+	if len(fn.Literal.Parameters) > 0 && argType != "" && argType != "unknown" {
+		paramType := fn.Literal.Parameters[0].TypeName
+		if paramType != "" {
+			if _, ok := cg.inferGenericTypeArgsFromTypes(paramType, argType, mapping); !ok {
+				return "unknown"
+			}
+		}
+	}
+	for _, tp := range fn.Literal.TypeParams {
+		if mapping[tp] == "" {
+			return "unknown"
+		}
+	}
+	return substituteTypeParams(ret, mapping)
+}
+
+func (cg *CodeGen) generateArrayMapMethod(mce *ast.MethodCallExpression, nullSafe bool) {
+	elemType, isList, arrLen, ok := cg.resolveArrayOrListForFunctionalMethod(mce.Object, mce.NullSafe)
+	if !ok {
+		if nullSafe {
+			cg.emit("    lea null_lit(%%rip), %%rax")
+			return
+		}
+		cg.addNodeError("map is only supported on arrays/lists", mce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	cbFn, ok := cg.resolveMethodCallback(mce, "map")
+	if !ok {
+		return
+	}
+	if len(cbFn.Literal.Parameters) != 1 {
+		cg.addNodeError("map callback must accept exactly 1 parameter", mce.Arguments[0])
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+
+	state := cg.enterScope()
+	defer cg.exitScope(state)
+
+	resultSlot := cg.allocateSlots(1)
+	sourceSlot := cg.allocateSlots(1)
+	indexSlot := cg.allocateSlots(1)
+	lengthSlot := cg.allocateSlots(1)
+
+	tmp := strings.ReplaceAll(cg.newLabel(), ".", "_")
+	elemName := "__map_elem" + tmp
+	elemSlot := cg.allocateSlots(1)
+	cg.variables[elemName] = elemSlot
+	cg.varTypes[elemName] = cg.parseTypeName(elemType)
+	cg.varDeclared[elemName] = cg.parseTypeName(elemType)
+	cg.varTypeNames[elemName] = elemType
+	cg.varDeclaredNames[elemName] = elemType
+	cg.varValueTypeName[elemName] = elemType
+
+	cg.emitObjectValueForAccess(mce.Object)
+	cg.emit("    mov %%rax, -%d(%%rbp)", sourceSlot)
+
+	if isList {
+		cg.emit("    mov -%d(%%rbp), %%rax", sourceSlot)
+		cg.emit("    mov (%%rax), %%rax")
+		cg.emit("    mov %%rax, -%d(%%rbp)", lengthSlot)
+	} else {
+		cg.emit("    mov $%d, %%rax", arrLen)
+		cg.emit("    mov %%rax, -%d(%%rbp)", lengthSlot)
+	}
+	cg.emit("    mov $0, %%rax")
+	cg.emit("    mov %%rax, -%d(%%rbp)", indexSlot)
+	cg.emit("    mov $0, %%rdi")
+	cg.emit("    call list_new")
+	cg.emit("    mov %%rax, -%d(%%rbp)", resultSlot)
+
+	loop := cg.newLabel()
+	done := cg.newLabel()
+	cg.emit("%s:", loop)
+	cg.emit("    mov -%d(%%rbp), %%rax", indexSlot)
+	cg.emit("    cmp -%d(%%rbp), %%rax", lengthSlot)
+	cg.emit("    jge %s", done)
+
+	if isList {
+		cg.emit("    mov -%d(%%rbp), %%rdi", sourceSlot)
+		cg.emit("    mov -%d(%%rbp), %%rsi", indexSlot)
+		cg.emit("    call list_get")
+	} else {
+		cg.emit("    mov -%d(%%rbp), %%rcx", sourceSlot)
+		cg.emit("    mov -%d(%%rbp), %%rdx", indexSlot)
+		cg.emit("    imul $8, %%rdx, %%rdx")
+		cg.emit("    mov (%%rcx,%%rdx), %%rax")
+	}
+	cg.emit("    mov %%rax, -%d(%%rbp)", elemSlot)
+
+	cg.generateUserFunctionCall(cbFn, &ast.CallExpression{
+		Token:     token.Token{Type: token.LPAREN, Literal: "("},
+		Arguments: []ast.Expression{&ast.Identifier{Value: elemName}},
+	})
+
+	cg.emit("    mov -%d(%%rbp), %%rdi", resultSlot)
+	cg.emit("    mov %%rax, %%rsi")
+	cg.emit("    call list_append")
+
+	cg.emit("    mov -%d(%%rbp), %%rax", indexSlot)
+	cg.emit("    inc %%rax")
+	cg.emit("    mov %%rax, -%d(%%rbp)", indexSlot)
+	cg.emit("    jmp %s", loop)
+	cg.emit("%s:", done)
+	cg.emit("    mov -%d(%%rbp), %%rax", resultSlot)
+}
+
+func (cg *CodeGen) generateArrayFilterMethod(mce *ast.MethodCallExpression, nullSafe bool) {
+	elemType, isList, arrLen, ok := cg.resolveArrayOrListForFunctionalMethod(mce.Object, mce.NullSafe)
+	if !ok {
+		if nullSafe {
+			cg.emit("    lea null_lit(%%rip), %%rax")
+			return
+		}
+		cg.addNodeError("filter is only supported on arrays/lists", mce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	cbFn, ok := cg.resolveMethodCallback(mce, "filter")
+	if !ok {
+		return
+	}
+	if len(cbFn.Literal.Parameters) != 1 {
+		cg.addNodeError("filter callback must accept exactly 1 parameter", mce.Arguments[0])
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	cbRet := cg.inferCallbackReturnTypeName(cbFn, elemType)
+	if cbRet != "unknown" && cbRet != "bool" {
+		cg.addNodeError(fmt.Sprintf("filter callback must return bool, got %s", cbRet), mce.Arguments[0])
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+
+	state := cg.enterScope()
+	defer cg.exitScope(state)
+
+	resultSlot := cg.allocateSlots(1)
+	sourceSlot := cg.allocateSlots(1)
+	indexSlot := cg.allocateSlots(1)
+	lengthSlot := cg.allocateSlots(1)
+
+	tmp := strings.ReplaceAll(cg.newLabel(), ".", "_")
+	elemName := "__filter_elem" + tmp
+	elemSlot := cg.allocateSlots(1)
+	cg.variables[elemName] = elemSlot
+	cg.varTypes[elemName] = cg.parseTypeName(elemType)
+	cg.varDeclared[elemName] = cg.parseTypeName(elemType)
+	cg.varTypeNames[elemName] = elemType
+	cg.varDeclaredNames[elemName] = elemType
+	cg.varValueTypeName[elemName] = elemType
+
+	cg.emitObjectValueForAccess(mce.Object)
+	cg.emit("    mov %%rax, -%d(%%rbp)", sourceSlot)
+
+	if isList {
+		cg.emit("    mov -%d(%%rbp), %%rax", sourceSlot)
+		cg.emit("    mov (%%rax), %%rax")
+		cg.emit("    mov %%rax, -%d(%%rbp)", lengthSlot)
+	} else {
+		cg.emit("    mov $%d, %%rax", arrLen)
+		cg.emit("    mov %%rax, -%d(%%rbp)", lengthSlot)
+	}
+	cg.emit("    mov $0, %%rax")
+	cg.emit("    mov %%rax, -%d(%%rbp)", indexSlot)
+	cg.emit("    mov $0, %%rdi")
+	cg.emit("    call list_new")
+	cg.emit("    mov %%rax, -%d(%%rbp)", resultSlot)
+
+	loop := cg.newLabel()
+	done := cg.newLabel()
+	skip := cg.newLabel()
+	cg.emit("%s:", loop)
+	cg.emit("    mov -%d(%%rbp), %%rax", indexSlot)
+	cg.emit("    cmp -%d(%%rbp), %%rax", lengthSlot)
+	cg.emit("    jge %s", done)
+
+	if isList {
+		cg.emit("    mov -%d(%%rbp), %%rdi", sourceSlot)
+		cg.emit("    mov -%d(%%rbp), %%rsi", indexSlot)
+		cg.emit("    call list_get")
+	} else {
+		cg.emit("    mov -%d(%%rbp), %%rcx", sourceSlot)
+		cg.emit("    mov -%d(%%rbp), %%rdx", indexSlot)
+		cg.emit("    imul $8, %%rdx, %%rdx")
+		cg.emit("    mov (%%rcx,%%rdx), %%rax")
+	}
+	cg.emit("    mov %%rax, -%d(%%rbp)", elemSlot)
+
+	cg.generateUserFunctionCall(cbFn, &ast.CallExpression{
+		Token:     token.Token{Type: token.LPAREN, Literal: "("},
+		Arguments: []ast.Expression{&ast.Identifier{Value: elemName}},
+	})
+	cg.emit("    test %%rax, %%rax")
+	cg.emit("    jz %s", skip)
+	cg.emit("    mov -%d(%%rbp), %%rdi", resultSlot)
+	cg.emit("    mov -%d(%%rbp), %%rsi", elemSlot)
+	cg.emit("    call list_append")
+	cg.emit("%s:", skip)
+
+	cg.emit("    mov -%d(%%rbp), %%rax", indexSlot)
+	cg.emit("    inc %%rax")
+	cg.emit("    mov %%rax, -%d(%%rbp)", indexSlot)
+	cg.emit("    jmp %s", loop)
+	cg.emit("%s:", done)
+	cg.emit("    mov -%d(%%rbp), %%rax", resultSlot)
+}
+
+func (cg *CodeGen) generateArrayForEachMethod(mce *ast.MethodCallExpression, nullSafe bool) {
+	elemType, isList, arrLen, ok := cg.resolveArrayOrListForFunctionalMethod(mce.Object, mce.NullSafe)
+	if !ok {
+		if nullSafe {
+			cg.emit("    lea null_lit(%%rip), %%rax")
+			return
+		}
+		cg.addNodeError("forEach is only supported on arrays/lists", mce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	cbFn, ok := cg.resolveMethodCallback(mce, "forEach")
+	if !ok {
+		return
+	}
+	if len(cbFn.Literal.Parameters) != 1 {
+		cg.addNodeError("forEach callback must accept exactly 1 parameter", mce.Arguments[0])
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+
+	state := cg.enterScope()
+	defer cg.exitScope(state)
+
+	sourceSlot := cg.allocateSlots(1)
+	indexSlot := cg.allocateSlots(1)
+	lengthSlot := cg.allocateSlots(1)
+
+	tmp := strings.ReplaceAll(cg.newLabel(), ".", "_")
+	elemName := "__foreach_elem" + tmp
+	elemSlot := cg.allocateSlots(1)
+	cg.variables[elemName] = elemSlot
+	cg.varTypes[elemName] = cg.parseTypeName(elemType)
+	cg.varDeclared[elemName] = cg.parseTypeName(elemType)
+	cg.varTypeNames[elemName] = elemType
+	cg.varDeclaredNames[elemName] = elemType
+	cg.varValueTypeName[elemName] = elemType
+
+	cg.emitObjectValueForAccess(mce.Object)
+	cg.emit("    mov %%rax, -%d(%%rbp)", sourceSlot)
+
+	if isList {
+		cg.emit("    mov -%d(%%rbp), %%rax", sourceSlot)
+		cg.emit("    mov (%%rax), %%rax")
+		cg.emit("    mov %%rax, -%d(%%rbp)", lengthSlot)
+	} else {
+		cg.emit("    mov $%d, %%rax", arrLen)
+		cg.emit("    mov %%rax, -%d(%%rbp)", lengthSlot)
+	}
+	cg.emit("    mov $0, %%rax")
+	cg.emit("    mov %%rax, -%d(%%rbp)", indexSlot)
+
+	loop := cg.newLabel()
+	done := cg.newLabel()
+	cg.emit("%s:", loop)
+	cg.emit("    mov -%d(%%rbp), %%rax", indexSlot)
+	cg.emit("    cmp -%d(%%rbp), %%rax", lengthSlot)
+	cg.emit("    jge %s", done)
+
+	if isList {
+		cg.emit("    mov -%d(%%rbp), %%rdi", sourceSlot)
+		cg.emit("    mov -%d(%%rbp), %%rsi", indexSlot)
+		cg.emit("    call list_get")
+	} else {
+		cg.emit("    mov -%d(%%rbp), %%rcx", sourceSlot)
+		cg.emit("    mov -%d(%%rbp), %%rdx", indexSlot)
+		cg.emit("    imul $8, %%rdx, %%rdx")
+		cg.emit("    mov (%%rcx,%%rdx), %%rax")
+	}
+	cg.emit("    mov %%rax, -%d(%%rbp)", elemSlot)
+
+	cg.generateUserFunctionCall(cbFn, &ast.CallExpression{
+		Token:     token.Token{Type: token.LPAREN, Literal: "("},
+		Arguments: []ast.Expression{&ast.Identifier{Value: elemName}},
+	})
+
+	cg.emit("    mov -%d(%%rbp), %%rax", indexSlot)
+	cg.emit("    inc %%rax")
+	cg.emit("    mov %%rax, -%d(%%rbp)", indexSlot)
+	cg.emit("    jmp %s", loop)
+	cg.emit("%s:", done)
+	cg.emit("    lea null_lit(%%rip), %%rax")
 }
 
 func (cg *CodeGen) generateStructMethodCall(mce *ast.MethodCallExpression) bool {

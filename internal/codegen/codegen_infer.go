@@ -324,6 +324,36 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) (out valueType) {
 		if e.Method != nil && e.Method.Value == "append" {
 			return typeNull
 		}
+		if e.Method != nil && e.Method.Value == "forEach" {
+			return typeNull
+		}
+		if e.Method != nil && e.Method.Value == "map" {
+			elemType, _, _, ok := cg.resolveArrayOrListForFunctionalMethod(e.Object, e.NullSafe)
+			if !ok {
+				if e.NullSafe {
+					return typeNull
+				}
+				return typeUnknown
+			}
+			retType := "unknown"
+			if len(e.Arguments) == 1 {
+				retType = cg.methodCallbackReturnTypeName(e.Arguments[0], elemType)
+			}
+			if retType == "unknown" {
+				retType = "any"
+			}
+			return cg.parseTypeName("List<" + retType + ">")
+		}
+		if e.Method != nil && e.Method.Value == "filter" {
+			elemType, _, _, ok := cg.resolveArrayOrListForFunctionalMethod(e.Object, e.NullSafe)
+			if !ok {
+				if e.NullSafe {
+					return typeNull
+				}
+				return typeUnknown
+			}
+			return cg.parseTypeName("List<" + elemType + ">")
+		}
 		if e.Method != nil && (e.Method.Value == "remove" || e.Method.Value == "pop") {
 			objTypeName := cg.inferExpressionTypeName(e.Object)
 			if resolved, ok := cg.normalizeTypeName(objTypeName); ok {
@@ -500,6 +530,36 @@ func (cg *CodeGen) inferExpressionTypeName(expr ast.Expression) (out string) {
 		}
 		if e.Method != nil && e.Method.Value == "append" {
 			return "null"
+		}
+		if e.Method != nil && e.Method.Value == "forEach" {
+			return "null"
+		}
+		if e.Method != nil && e.Method.Value == "map" {
+			elemType, _, _, ok := cg.resolveArrayOrListForFunctionalMethod(e.Object, e.NullSafe)
+			if !ok {
+				if e.NullSafe {
+					return "null"
+				}
+				return "unknown"
+			}
+			retType := "unknown"
+			if len(e.Arguments) == 1 {
+				retType = cg.methodCallbackReturnTypeName(e.Arguments[0], elemType)
+			}
+			if retType == "unknown" {
+				retType = "any"
+			}
+			return "List<" + retType + ">"
+		}
+		if e.Method != nil && e.Method.Value == "filter" {
+			elemType, _, _, ok := cg.resolveArrayOrListForFunctionalMethod(e.Object, e.NullSafe)
+			if !ok {
+				if e.NullSafe {
+					return "null"
+				}
+				return "unknown"
+			}
+			return "List<" + elemType + ">"
 		}
 		if e.Method != nil && (e.Method.Value == "remove" || e.Method.Value == "pop") {
 			objTypeName := cg.inferExpressionTypeName(e.Object)
@@ -707,6 +767,32 @@ func (cg *CodeGen) structMethodReturnTypeName(mce *ast.MethodCallExpression) (st
 		return lookupReturn(pointee)
 	}
 	return lookupReturn(objType)
+}
+
+func (cg *CodeGen) methodCallbackReturnTypeName(callback ast.Expression, argType string) string {
+	switch cb := callback.(type) {
+	case *ast.FunctionLiteral:
+		if cb.ReturnType != "" {
+			return cb.ReturnType
+		}
+		if functionReturnsOnlyNull(cb.Body) {
+			return "null"
+		}
+		return "unknown"
+	case *ast.Identifier:
+		var fn *compiledFunction
+		if key, ok := cg.varFuncs[cb.Value]; ok {
+			fn = cg.functions[key]
+		} else if key, ok := cg.funcByName[cb.Value]; ok {
+			fn = cg.functions[key]
+		}
+		if fn == nil || fn.Literal == nil {
+			return "unknown"
+		}
+		return cg.inferCallbackReturnTypeName(fn, argType)
+	default:
+		return "unknown"
+	}
 }
 
 func (cg *CodeGen) resolveGenericCallReturnTypeName(fn *compiledFunction, ce *ast.CallExpression) string {

@@ -970,6 +970,43 @@ func TestCodegenListTypeValidation(t *testing.T) {
 	}
 }
 
+func TestCodegenArrayFunctionalMethods(t *testing.T) {
+	asm, cg := generateAssembly(t, `let arr = {1,2,3}; let mapped = arr.map((x: int) int => { return x * 2; }); let filtered = arr.filter((x: int) bool => { return x > 1; }); let sum = 0; arr.forEach((x: int) => { sum += x; }); print(mapped.length()); print(filtered.length()); print(sum);`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	for _, want := range []string{
+		"call list_new",
+		"call list_append",
+	} {
+		if !strings.Contains(asm, want) {
+			t.Fatalf("expected %q in assembly, got:\n%s", want, asm)
+		}
+	}
+}
+
+func TestCodegenArrayFunctionalMethodErrors(t *testing.T) {
+	_, cg := generateAssembly(t, `let arr = {1,2,3}; arr.map(1);`)
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen errors for invalid map callback")
+	}
+
+	_, cg = generateAssembly(t, `let arr = {1,2,3}; arr.filter((x: int) int => { return x; });`)
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen errors for non-bool filter callback")
+	}
+	found := false
+	for _, err := range cg.Errors() {
+		if strings.Contains(err, "filter callback must return bool") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected filter callback bool error, got: %v", cg.Errors())
+	}
+}
+
 func TestCodegenBuiltinCallErrors(t *testing.T) {
 	_, cg := generateAssembly(t, "print();")
 	if len(cg.Errors()) == 0 || !strings.Contains(cg.Errors()[0], "print expects exactly 1 argument") {

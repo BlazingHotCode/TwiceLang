@@ -326,6 +326,19 @@ fn demo_arrays_unions_tuples() {
 
   let empty_pair: (int, string) = ();
   println(empty_pair.0 ?? 7);
+
+  let mapped = {1, 2, 3}.map((x: int) int => { return x * 2; });
+  println(mapped.length());
+  println(mapped[0]);
+  println(mapped[2]);
+
+  let filtered = {1, 2, 3}.filter((x: int) bool => { return x > 1; });
+  println(filtered.length());
+  println(filtered[0]);
+  println(filtered[1]);
+
+  let for_each_arr = {1, 2, 3};
+  for_each_arr.forEach((x: int) => { println(x); });
   return;
 }
 

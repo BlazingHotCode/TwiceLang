@@ -272,6 +272,50 @@ fn main() int {
 	}
 }
 
+func TestCLICompileAndRunArrayFunctionalMethods(t *testing.T) {
+	root := repoRoot(t)
+	ensureToolchain(t)
+
+	srcPath := filepath.Join(t.TempDir(), "array_methods.tw")
+	source := `
+fn main() int {
+  let arr = {1, 2, 3};
+  let mapped = arr.map((x: int) int => { return x * 2; });
+  println(mapped.length());
+  println(mapped[0]);
+  println(mapped[2]);
+
+  let filtered = arr.filter((x: int) bool => { return x > 1; });
+  println(filtered.length());
+  println(filtered[0]);
+  println(filtered[1]);
+
+  arr.forEach((x: int) => { println(x); });
+  return 0;
+}
+`
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	outputName := "twice_cli_array_methods_bin"
+	outputPath := filepath.Join(root, outputName)
+	_ = os.Remove(outputPath)
+	t.Cleanup(func() { _ = os.Remove(outputPath) })
+
+	cmd := exec.Command("go", "run", "./cmd/twice", "-run", "-o", outputName, srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("compile/run failed: %v\n%s", err, out)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "\n3\n2\n6\n2\n2\n3\n1\n2\n3\n") {
+		t.Fatalf("expected array functional methods runtime output. output:\n%s", output)
+	}
+}
+
 func TestCLIListRuntimeErrorFormatting(t *testing.T) {
 	root := repoRoot(t)
 	ensureToolchain(t)
