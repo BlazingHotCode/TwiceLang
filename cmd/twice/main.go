@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"twice/internal/codegen"
 	"twice/internal/diag"
@@ -94,15 +96,119 @@ func runCLI(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) 
 	// Optionally run
 	if *run {
 		cmd := execCmdFn(runPath(*output))
-		cmd.Stdout = stdout
-		cmd.Stderr = stderr
+		var runStdout bytes.Buffer
+		var runStderr bytes.Buffer
+		cmd.Stdout = &runStdout
+		cmd.Stderr = &runStderr
 		if err := cmd.Run(); err != nil {
+			if runStdout.Len() > 0 {
+				_, _ = io.Copy(stdout, &runStdout)
+			}
+			if runStderr.Len() > 0 {
+				formatRuntimeStderr(stderr, sourceFile, string(source), runStderr.String())
+			}
 			fmt.Fprintf(stdout, "Execution failed: %v\n", err)
 			return 1
+		}
+		if runStdout.Len() > 0 {
+			_, _ = io.Copy(stdout, &runStdout)
+		}
+		if runStderr.Len() > 0 {
+			_, _ = io.Copy(stderr, &runStderr)
 		}
 	}
 
 	return 0
+}
+
+type runtimeExecError struct {
+	Message string
+	Context string
+	Line    int
+	Column  int
+}
+
+func parseRuntimeErrorLine(line string) (runtimeExecError, bool) {
+	const prefix = "Runtime error: "
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, prefix) {
+		return runtimeExecError{}, false
+	}
+
+	payload := strings.TrimPrefix(line, prefix)
+	msg := payload
+	ctx := ""
+	ln := 0
+	col := 0
+
+	if idx := strings.Index(payload, " | context: "); idx >= 0 {
+		msg = strings.TrimSpace(payload[:idx])
+		ctx = strings.TrimSpace(payload[idx+len(" | context: "):])
+	}
+
+	if idx := strings.LastIndex(msg, " (at "); idx >= 0 && strings.HasSuffix(msg, ")") {
+		loc := strings.TrimSuffix(strings.TrimPrefix(msg[idx:], " (at "), ")")
+		parts := strings.Split(loc, ":")
+		if len(parts) == 2 {
+			if l, err := strconv.Atoi(parts[0]); err == nil {
+				if c, err := strconv.Atoi(parts[1]); err == nil {
+					ln, col = l, c
+					msg = strings.TrimSpace(msg[:idx])
+				}
+			}
+		}
+	}
+
+	return runtimeExecError{
+		Message: msg,
+		Context: ctx,
+		Line:    ln,
+		Column:  col,
+	}, true
+}
+
+func formatRuntimeStderr(stderr io.Writer, filename string, source string, stderrText string) {
+	lines := strings.Split(stderrText, "\n")
+	for _, ln := range lines {
+		trimmed := strings.TrimSpace(ln)
+		if trimmed == "" {
+			continue
+		}
+		if rerr, ok := parseRuntimeErrorLine(trimmed); ok {
+			printRuntimeError(filename, source, rerr)
+			continue
+		}
+		fmt.Fprintln(stderr, ln)
+	}
+}
+
+func printRuntimeError(filename string, source string, err runtimeExecError) {
+	fmt.Printf("Runtime error: %s\n", err.Message)
+	line, col, ok := 0, 0, false
+	if err.Line > 0 && err.Column > 0 {
+		line, col, ok = err.Line, err.Column, true
+	} else if err.Context != "" {
+		line, col, ok = diag.LocateContext(source, err.Context)
+	}
+	if !ok {
+		fmt.Printf("  --> %s\n", filename)
+		if err.Context != "" {
+			fmt.Printf("   | context: %s\n", err.Context)
+		}
+		return
+	}
+
+	lines := strings.Split(source, "\n")
+	fmt.Printf("  --> %s:%d:%d\n", filename, line, col)
+	fmt.Println("   |")
+	if line-2 >= 0 {
+		fmt.Printf("%3d| %s\n", line-1, lines[line-2])
+	}
+	fmt.Printf("%3d| %s\n", line, lines[line-1])
+	fmt.Printf("   | %s^\n", strings.Repeat(" ", col-1))
+	if line < len(lines) {
+		fmt.Printf("%3d| %s\n", line+1, lines[line])
+	}
 }
 
 func runPath(output string) string {

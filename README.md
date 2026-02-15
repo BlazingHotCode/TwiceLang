@@ -489,6 +489,22 @@ println(typeof(v)); // MaybePair
   - `char(...)`
   - `bool(...)`
 
+### Runtime Errors
+
+- Runtime failures are reported as: `Runtime error: <message>`
+- Runtime messages include source location and a short context snippet when available.
+- In `-run` mode, runtime failures exit with non-zero status.
+
+Example:
+
+```tw
+fn main() {
+  let arr: int[3] = {1,2,3};
+  let i = 9;
+  println(arr[i]); // Runtime error: array index out of bounds ...
+}
+```
+
 ### Comments
 
 ```tw

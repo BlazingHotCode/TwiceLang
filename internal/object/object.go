@@ -150,10 +150,22 @@ func (c *Continue) Inspect() string  { return "continue" }
 // Error represents runtime errors (type mismatches, unknown identifiers)
 type Error struct {
 	Message string
+	Line    int
+	Column  int
+	Context string
 }
 
 func (e *Error) Type() ObjectType { return ERROR_OBJ }
-func (e *Error) Inspect() string  { return "ERROR: " + e.Message }
+func (e *Error) Inspect() string {
+	msg := "Runtime error: " + e.Message
+	if e.Line > 0 && e.Column > 0 {
+		msg += fmt.Sprintf(" (at %d:%d)", e.Line, e.Column)
+	}
+	if strings.TrimSpace(e.Context) != "" {
+		msg += fmt.Sprintf(" | context: %s", strings.TrimSpace(e.Context))
+	}
+	return msg
+}
 
 // Function represents a user-defined function
 // It has parameters, a body (AST block), and its own environment (closure)

@@ -604,6 +604,32 @@ func TestCodegenArrayIndexGetAndSet(t *testing.T) {
 	}
 }
 
+func TestCodegenRuntimeArrayBoundsCheckForDynamicIndex(t *testing.T) {
+	asm, cg := generateAssembly(t, "fn pick(i: int) int { let arr: int[3] = {1,2,3}; return arr[i]; } print(pick(5));")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "call runtime_fail") {
+		t.Fatalf("expected runtime bounds-check trap for dynamic array index, got:\n%s", asm)
+	}
+	if !strings.Contains(asm, "Runtime error: array index out of bounds") {
+		t.Fatalf("expected runtime bounds-check error text in assembly, got:\n%s", asm)
+	}
+}
+
+func TestCodegenRuntimeStringBoundsCheckForDynamicIndex(t *testing.T) {
+	asm, cg := generateAssembly(t, "fn pick(i: int) char { let s = \"abc\"; return s[i]; } print(pick(9));")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "call runtime_fail") {
+		t.Fatalf("expected runtime bounds-check trap for dynamic string index, got:\n%s", asm)
+	}
+	if !strings.Contains(asm, "Runtime error: string index out of bounds") {
+		t.Fatalf("expected runtime bounds-check error text in assembly, got:\n%s", asm)
+	}
+}
+
 func TestCodegenArrayTypesAndTypeof(t *testing.T) {
 	asm, cg := generateAssembly(t, "let arr: int[3] = {1,2,3}; print(typeof(arr)); let grid: int[2][2] = {{1,2}, {2,3}}; print(typeof(grid));")
 	if len(cg.Errors()) != 0 {

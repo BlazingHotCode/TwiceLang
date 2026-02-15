@@ -311,6 +311,42 @@ func (cg *CodeGen) emitHeader() {
 	cg.emit("    ret")
 	cg.emit("")
 
+	// Print C-string helper to stderr.
+	// Input: rax = pointer to null-terminated string
+	cg.emit("print_cstr_stderr:")
+	cg.emit("    push %%rbp")
+	cg.emit("    mov %%rsp, %%rbp")
+	cg.emit("    mov %%rax, %%rsi")
+	cg.emit("    xor %%rdx, %%rdx")
+	cg.emit("print_cstr_stderr_len_loop:")
+	cg.emit("    cmpb $0, (%%rsi,%%rdx,1)")
+	cg.emit("    je print_cstr_stderr_write")
+	cg.emit("    inc %%rdx")
+	cg.emit("    jmp print_cstr_stderr_len_loop")
+	cg.emit("print_cstr_stderr_write:")
+	cg.emit("    mov $1, %%rax")
+	cg.emit("    mov $2, %%rdi")
+	cg.emit("    syscall")
+	cg.emit("    pop %%rbp")
+	cg.emit("    ret")
+	cg.emit("")
+
+	// Runtime failure helper: writes message to stderr and exits with code 1.
+	// Input: rax = pointer to null-terminated error message
+	cg.emit("runtime_fail:")
+	cg.emit("    push %%rbp")
+	cg.emit("    mov %%rsp, %%rbp")
+	cg.emit("    call print_cstr_stderr")
+	cg.emit("    lea newline_char(%%rip), %%rsi")
+	cg.emit("    mov $1, %%rdx")
+	cg.emit("    mov $1, %%rax")
+	cg.emit("    mov $2, %%rdi")
+	cg.emit("    syscall")
+	cg.emit("    mov $60, %%rax")
+	cg.emit("    mov $1, %%rdi")
+	cg.emit("    syscall")
+	cg.emit("")
+
 	// Compare two null-terminated strings.
 	// Input: rdi = left c-string, rsi = right c-string
 	// Output: rax = 1 if equal, 0 otherwise

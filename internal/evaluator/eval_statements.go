@@ -18,11 +18,11 @@ func evalProgram(program *ast.Program, env *object.Environment) object.Object {
 		case *object.ReturnValue:
 			return result.Value // Unwrap the return value
 		case *object.Error:
-			return result // Propagate errors
+			return annotateErrorWithNode(result, statement) // Propagate errors
 		case *object.Break:
-			return newError("break not inside loop")
+			return annotateErrorWithNode(newError("break not inside loop"), statement)
 		case *object.Continue:
-			return newError("continue not inside loop")
+			return annotateErrorWithNode(newError("continue not inside loop"), statement)
 		}
 	}
 
@@ -42,6 +42,9 @@ func evalBlockStatement(block *ast.BlockStatement, env *object.Environment) obje
 		if result != nil {
 			rt := result.Type()
 			if rt == object.RETURN_VALUE_OBJ || rt == object.ERROR_OBJ || rt == object.BREAK_OBJ || rt == object.CONTINUE_OBJ {
+				if rt == object.ERROR_OBJ {
+					return annotateErrorWithNode(result, statement)
+				}
 				return result // Return as-is, don't unwrap
 			}
 		}
@@ -119,7 +122,7 @@ func evalInfixExpression(operator string, left, right object.Object) object.Obje
 		}
 		return left
 	}
-	if operator == "&&" || operator == "||" || operator == "^^"{
+	if operator == "&&" || operator == "||" || operator == "^^" {
 		if left.Type() != object.BOOLEAN_OBJ || right.Type() != object.BOOLEAN_OBJ {
 			return newError("type mismatch: %s %s %s", left.Type(), operator, right.Type())
 		}

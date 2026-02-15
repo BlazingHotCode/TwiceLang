@@ -310,7 +310,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		}
 		env.Assign(node.Name.Value, val)
 	case *ast.IndexAssignStatement:
-		return evalIndexAssignStatement(node, env)
+		return annotateErrorWithNode(evalIndexAssignStatement(node, env), node)
 	case *ast.FunctionStatement:
 		fnObj := Eval(node.Function, env)
 		if isError(fnObj) {
@@ -336,9 +336,9 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		return NULL
 
 	case *ast.ArrayLiteral:
-		return evalArrayLiteral(node, env)
+		return annotateErrorWithNode(evalArrayLiteral(node, env), node)
 	case *ast.TupleLiteral:
-		return evalTupleLiteral(node, env)
+		return annotateErrorWithNode(evalTupleLiteral(node, env), node)
 
 	case *ast.Boolean:
 		return nativeBoolToBooleanObject(node.Value)
@@ -351,7 +351,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		if isError(right) {
 			return right
 		}
-		return evalPrefixExpression(node.Operator, right)
+		return annotateErrorWithNode(evalPrefixExpression(node.Operator, right), node)
 
 	case *ast.InfixExpression:
 		left := Eval(node.Left, env)
@@ -362,7 +362,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		if isError(right) {
 			return right
 		}
-		return evalInfixExpression(node.Operator, left, right)
+		return annotateErrorWithNode(evalInfixExpression(node.Operator, left, right), node)
 	case *ast.IndexExpression:
 		left := Eval(node.Left, env)
 		if isError(left) {
@@ -372,10 +372,10 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		if isError(index) {
 			return index
 		}
-		return evalIndexExpression(left, index)
+		return annotateErrorWithNode(evalIndexExpression(left, index), node)
 
 	case *ast.IfExpression:
-		return evalIfExpression(node, env)
+		return annotateErrorWithNode(evalIfExpression(node, env), node)
 
 	case *ast.FunctionLiteral:
 		for _, param := range node.Parameters {
@@ -413,7 +413,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 					if argErr != nil {
 						return argErr
 					}
-					return applyFunction(builtin, args, namedArgs)
+					return annotateErrorWithNode(applyFunction(builtin, args, namedArgs), node)
 				}
 			}
 		}
@@ -425,21 +425,21 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		if argErr != nil {
 			return argErr
 		}
-		return applyFunction(function, args, namedArgs)
+		return annotateErrorWithNode(applyFunction(function, args, namedArgs), node)
 	case *ast.MethodCallExpression:
-		return evalMethodCallExpression(node, env)
+		return annotateErrorWithNode(evalMethodCallExpression(node, env), node)
 	case *ast.MemberAccessExpression:
 		obj := Eval(node.Object, env)
 		if isError(obj) {
 			return obj
 		}
-		return evalMemberAccess(obj, node.Property, false)
+		return annotateErrorWithNode(evalMemberAccess(obj, node.Property, false), node)
 	case *ast.TupleAccessExpression:
 		left := Eval(node.Left, env)
 		if isError(left) {
 			return left
 		}
-		return evalTupleAccessExpression(left, node.Index)
+		return annotateErrorWithNode(evalTupleAccessExpression(left, node.Index), node)
 	case *ast.NullSafeAccessExpression:
 		obj := Eval(node.Object, env)
 		if isError(obj) {
@@ -448,7 +448,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		if obj == NULL {
 			return NULL
 		}
-		return evalMemberAccess(obj, node.Property, true)
+		return annotateErrorWithNode(evalMemberAccess(obj, node.Property, true), node)
 	}
 
 	return nil

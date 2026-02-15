@@ -1,6 +1,7 @@
 package evaluator
 
 import (
+	"strings"
 	"testing"
 
 	"twice/internal/ast"
@@ -1106,6 +1107,30 @@ func TestTupleUnionAndAliasEval(t *testing.T) {
 	evaluated = testEval(`type MaybePair = (int,string)||string; let v: MaybePair = (1, "x"); typeof(v)`)
 	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "MaybePair" {
 		t.Fatalf("expected typeof to preserve tuple-union alias, got=%s (%s)", evaluated.Type(), evaluated.Inspect())
+	}
+}
+
+func TestRuntimeErrorIncludesPrefixLocationAndContext(t *testing.T) {
+	evaluated := testEval("let arr: int[2] = {1, 2}; let i = 9; arr[i]")
+	errObj, ok := evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "array index out of bounds: 9" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+	if errObj.Line <= 0 || errObj.Column <= 0 {
+		t.Fatalf("expected runtime error location, got line=%d col=%d", errObj.Line, errObj.Column)
+	}
+	if errObj.Context == "" {
+		t.Fatalf("expected runtime error context to be populated")
+	}
+	inspected := errObj.Inspect()
+	if !strings.Contains(inspected, "Runtime error: array index out of bounds: 9") {
+		t.Fatalf("expected standardized runtime error prefix, got: %q", inspected)
+	}
+	if !strings.Contains(inspected, "context: arr[i]") {
+		t.Fatalf("expected runtime error context in inspect output, got: %q", inspected)
 	}
 }
 

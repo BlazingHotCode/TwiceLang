@@ -254,6 +254,54 @@ func TestCLICodegenErrorForUndefinedIdentifier(t *testing.T) {
 	}
 }
 
+func TestCLIRuntimeErrorForDynamicArrayIndex(t *testing.T) {
+	root := repoRoot(t)
+	ensureToolchain(t)
+
+	srcPath := filepath.Join(t.TempDir(), "runtime_array_oob.tw")
+	source := `
+fn pick(i: int) int {
+  let arr: int[3] = {1,2,3};
+  return arr[i];
+}
+fn main() {
+  println(pick(9));
+  return;
+}
+`
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	outputName := "twice_cli_runtime_array_oob_bin"
+	outputPath := filepath.Join(root, outputName)
+	_ = os.Remove(outputPath)
+	t.Cleanup(func() { _ = os.Remove(outputPath) })
+
+	cmd := exec.Command("go", "run", "./cmd/twice", "-run", "-o", outputName, srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected runtime failure for out-of-bounds array index. output:\n%s", out)
+	}
+	output := string(out)
+	if !strings.Contains(output, "Runtime error: array index out of bounds") {
+		t.Fatalf("missing runtime error prefix/message. output:\n%s", output)
+	}
+	if !strings.Contains(output, "--> "+srcPath+":4:13") {
+		t.Fatalf("missing runtime error location with file/line/col. output:\n%s", output)
+	}
+	if !strings.Contains(output, "4|   return arr[i];") {
+		t.Fatalf("missing runtime error source context line. output:\n%s", output)
+	}
+	if !strings.Contains(output, "context: arr[i]") {
+		t.Fatalf("missing runtime error context snippet. output:\n%s", output)
+	}
+	if !strings.Contains(output, "Execution failed: exit status 1") {
+		t.Fatalf("expected non-zero runtime exit propagation. output:\n%s", output)
+	}
+}
+
 func TestCLIStringConcatPrintsSingleLine(t *testing.T) {
 	root := repoRoot(t)
 	ensureToolchain(t)

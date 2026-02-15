@@ -1,5 +1,15 @@
 # TODO
 
+## Completion Criteria
+
+- A TODO item is only done when it has:
+- parser tests
+- evaluator tests
+- codegen tests
+- CLI/runtime tests
+- adding snippet to [test.tw](./test.tw) and running using binary to test the code
+- adding guide/points to show the feature in [README](./README.md)
+
 ## 1. Any Type
 
 - Add `any` type support for values that can hold any runtime type.
@@ -21,17 +31,7 @@
 - Implement evaluator and codegen parity from day one.
 - Keep backward compatibility with existing array behavior while adding `any`.
 
-## 2. Runtime Errors
-
-- Add a standardized runtime error format prefix: `Runtime error: ...`.
-- Use specific operation-level messages (not generic failures), for example cast/index/operator mismatch details.
-- Ensure runtime error behavior is consistent across evaluator and codegen execution paths.
-- Runtime errors should exit with non-zero status in compiled/run mode.
-- Include source location (`file:line:col`) when available.
-- Include a short context snippet for the failing operation.
-- Do not include stack traces in v1.
-
-## 3. Generics/Templates (Java-Style)
+## 2. Generics/Templates (Java-Style)
 
 - Add generic type syntax using angle brackets, like Java: `Type<T>`.
 - Support generic declarations for user-defined types/functions in v1.
@@ -50,7 +50,7 @@
 - Generic classes are supported by syntax plan, but are implemented together with class support.
 - Keep parser, evaluator, and codegen behavior aligned for generics.
 
-## 4. Lists (Dynamic Arrays)
+## 3. Lists (Dynamic Arrays)
 
 - Add generic list types as dynamic arrays without fixed compile-time length.
 - Use generic syntax for declarations, for example `let xs: List<int>;`.
@@ -77,15 +77,7 @@
 - Fixed array/list interoperability requires explicit conversion both ways.
 - Ensure parser, evaluator, and codegen all support lists consistently.
 
-## Completion Criteria
-
-- A TODO item is only done when it has:
-- parser tests
-- evaluator tests
-- codegen tests
-- CLI/runtime tests
-
-## 5. Structs
+## 4. Structs
 
 - Add struct declarations and typed struct values.
 - Use literal construction syntax for structs.
@@ -109,14 +101,14 @@
 - Pointer struct function usage syntax (auto-deref):
 - `ptr.methodName(args...)` (no `(*ptr).methodName(...)` required)
 
-## 6. Pointers
+## 5. Pointers
 
 - Pointer types are nullable only when explicitly declared nullable.
 - Add pointer operations (`&value`, `*ptr`, pointer assignment).
 - Pointer method calls auto-deref: allow `p.method()` without requiring `(*p).method()`.
 - Pointer + struct design should be combined, so references and mutation go through pointers.
 
-## 8. Custom Libraries
+## 6. Custom Libraries
 
 - Add `import ...` syntax.
 - Built-in libraries are imported with `twice.<lib>`.
@@ -129,7 +121,7 @@
 - Add member import alias syntax like:
 - `import twice.math.sqrt as sqrt`
 
-## 9. OOP and Type System Expansion
+## 7. OOP and Type System Expansion
 
 - Add class declarations and object instantiation.o
 - Structs stay public-focused; classes support explicit `public`/`private`.
@@ -152,7 +144,7 @@
 - `this` is valid in instance methods and constructors, and invalid in `static` methods.
 - Typed declarations without `new` remain `null` until initialized (for example `let s: Shape;`).
 
-## 10. Inheritance
+## 8. Inheritance
 
 - Add inheritance as a separate feature from base class/object support.
 - Define overriding and method resolution rules.
