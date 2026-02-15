@@ -564,7 +564,21 @@ func TestNullSafeAccessEval(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected error object, got=%T", evaluated)
 	}
-	if errObj.Message != "member access is only supported for methods" {
+	if errObj.Message != "unknown member: missing" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+}
+
+func TestMemberAccessEval(t *testing.T) {
+	evaluated := testEval(`let arr = {1,2,3}; arr.length`)
+	testIntegerObject(t, evaluated, 3)
+
+	evaluated = testEval(`let x = 1; x.missing`)
+	errObj, ok := evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "unknown member: missing" {
 		t.Fatalf("wrong error message: %q", errObj.Message)
 	}
 }

@@ -105,6 +105,10 @@ func tokenFromNode(node ast.Node) (token.Token, bool) {
 		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
 	case *ast.MethodCallExpression:
 		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.MemberAccessExpression:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.NullSafeAccessExpression:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
 	case *ast.TupleAccessExpression:
 		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
 	case *ast.NamedArgument:

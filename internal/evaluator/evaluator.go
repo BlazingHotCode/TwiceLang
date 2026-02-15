@@ -323,6 +323,12 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		return applyFunction(function, args, namedArgs)
 	case *ast.MethodCallExpression:
 		return evalMethodCallExpression(node, env)
+	case *ast.MemberAccessExpression:
+		obj := Eval(node.Object, env)
+		if isError(obj) {
+			return obj
+		}
+		return evalMemberAccess(obj, node.Property)
 	case *ast.TupleAccessExpression:
 		left := Eval(node.Left, env)
 		if isError(left) {
@@ -337,7 +343,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		if obj == NULL {
 			return NULL
 		}
-		return newError("member access is only supported for methods")
+		return evalMemberAccess(obj, node.Property)
 	}
 
 	return nil

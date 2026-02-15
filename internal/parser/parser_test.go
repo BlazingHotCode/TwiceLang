@@ -838,21 +838,27 @@ func TestParserForClauseForms(t *testing.T) {
 	}
 }
 
-func TestMemberAccessWithoutCallParseError(t *testing.T) {
+func TestMemberAccessWithoutCallParses(t *testing.T) {
 	p := New(lexer.New("a.b;"))
-	_ = p.ParseProgram()
-	if len(p.Errors()) == 0 {
-		t.Fatalf("expected parser errors for member access without call")
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
 	}
-	found := false
-	for _, err := range p.Errors() {
-		if strings.Contains(err, "member access without call is not supported") {
-			found = true
-			break
-		}
+	stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+	if !ok {
+		t.Fatalf("expected expression statement, got=%T", program.Statements[0])
 	}
-	if !found {
-		t.Fatalf("expected member-access parse error, got=%v", p.Errors())
+	access, ok := stmt.Expression.(*ast.MemberAccessExpression)
+	if !ok {
+		t.Fatalf("expected member access expression, got=%T", stmt.Expression)
+	}
+	if access.Object.String() != "a" {
+		t.Fatalf("expected object a, got=%s", access.Object.String())
+	}
+	if access.Property == nil || access.Property.Value != "b" {
+		t.Fatalf("expected property b, got=%v", access.Property)
 	}
 }
 

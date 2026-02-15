@@ -88,6 +88,8 @@ func (cg *CodeGen) generateExpression(expr ast.Expression) {
 		cg.generateIndexExpression(e)
 	case *ast.MethodCallExpression:
 		cg.generateMethodCallExpression(e)
+	case *ast.MemberAccessExpression:
+		cg.generateMemberAccessExpression(e)
 	case *ast.NullSafeAccessExpression:
 		cg.generateNullSafeAccessExpression(e)
 	case *ast.TupleAccessExpression:
@@ -250,6 +252,30 @@ func (cg *CodeGen) generateMethodByName(mce *ast.MethodCallExpression) {
 	}
 }
 
+func (cg *CodeGen) generateMemberAccessExpression(mae *ast.MemberAccessExpression) {
+	if mae == nil || mae.Property == nil {
+		cg.addNodeError("invalid member access", mae)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	cg.generateMemberByName(mae.Object, mae.Property, mae)
+}
+
+func (cg *CodeGen) generateMemberByName(object ast.Expression, property *ast.Identifier, node ast.Node) {
+	if property == nil {
+		cg.addNodeError("invalid member access", node)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	switch property.Value {
+	case "length":
+		cg.generateArrayLengthProperty(object, node)
+	default:
+		cg.addNodeError("unknown member: "+property.Value, node)
+		cg.emit("    mov $0, %%rax")
+	}
+}
+
 func (cg *CodeGen) generateArrayLengthMethod(mce *ast.MethodCallExpression) {
 	if len(mce.Arguments) != 0 {
 		cg.addNodeError(fmt.Sprintf("length expects 0 arguments, got=%d", len(mce.Arguments)), mce)
@@ -265,6 +291,22 @@ func (cg *CodeGen) generateArrayLengthMethod(mce *ast.MethodCallExpression) {
 	}
 	if n < 0 {
 		cg.addNodeError("array length is unknown at compile time", mce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	cg.emit("    mov $%d, %%rax", n)
+}
+
+func (cg *CodeGen) generateArrayLengthProperty(object ast.Expression, node ast.Node) {
+	typeName := cg.inferExpressionTypeName(object)
+	_, n, ok := peelArrayType(typeName)
+	if !ok {
+		cg.addNodeError("length is only supported on arrays", node)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+	if n < 0 {
+		cg.addNodeError("array length is unknown at compile time", node)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
@@ -293,7 +335,7 @@ func (cg *CodeGen) emitNullSafeObjectGuard(object ast.Expression) string {
 
 func (cg *CodeGen) generateNullSafeAccessExpression(e *ast.NullSafeAccessExpression) {
 	doneLabel := cg.emitNullSafeObjectGuard(e.Object)
-	cg.failNode("member access is only supported for methods", e)
+	cg.generateMemberByName(e.Object, e.Property, e)
 	cg.emit("%s:", doneLabel)
 }
 

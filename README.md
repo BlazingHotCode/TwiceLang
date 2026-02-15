@@ -50,7 +50,7 @@ Notes:
 - Named functions with typed/default parameters and typed returns
 - Function calls with positional, named, and mixed arguments
 - Function calls before declaration (resolved by codegen)
-- Arrays with typed declarations, literals, indexing, mutation, and `length()`
+- Arrays with typed declarations, literals, indexing, mutation, `length()`, and `.length`
 - Null-safe access/coalescing with `?.` and `??`
 - Union types (`type1||type2`) including array forms like `(int||string)[3]`
 - Tuple types and values: `(type1, type2, ...)` with tuple access `value.0`, `value.1`, ...
@@ -227,12 +227,18 @@ Null-safe and coalescing examples:
 
 ```tw
 let arr: int[3];
+print(arr?.length);   // null
 print(arr?.length()); // null
+
+let fallback2 = arr?.length ?? 0;
+print(fallback2); // 0
 
 let fallback = arr?.length() ?? 0;
 print(fallback); // 0
 
 let arr2 = {1, 2, 3};
+print(arr2.length);    // 3
+print(arr2?.length);   // 3
 print(arr2?.length()); // 3
 
 print(hasField(arr2, "length")); // true
@@ -240,7 +246,7 @@ print(hasField(arr2, "length")); // true
 
 Notes:
 
-- `?.` currently supports method/field read access only.
+- `?.` supports method calls and field reads.
 - `??` only falls back when the left side is `null`.
 - Mixing `??` with `&&`/`||` requires parentheses.
 

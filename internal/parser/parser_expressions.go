@@ -448,9 +448,11 @@ func (p *Parser) parseMethodCallExpression(left ast.Expression) ast.Expression {
 				Property: prop,
 			}
 		}
-		// normal a.b without call not supported yet in your language
-		p.addErrorCurrent("member access without call is not supported", prop.Value)
-		return nil
+		return &ast.MemberAccessExpression{
+			Token:    token.Token{Type: token.DOT, Literal: "."},
+			Object:   left,
+			Property: prop,
+		}
 	}
 
 	// a.b(...) or a?.b(...)

@@ -228,6 +228,10 @@ func (cg *CodeGen) collectFunctionsInExpression(expr ast.Expression, scope map[s
 		for _, arg := range e.Arguments {
 			cg.collectFunctionsInExpression(arg, scope)
 		}
+	case *ast.MemberAccessExpression:
+		cg.collectFunctionsInExpression(e.Object, scope)
+	case *ast.NullSafeAccessExpression:
+		cg.collectFunctionsInExpression(e.Object, scope)
 	case *ast.InfixExpression:
 		cg.collectFunctionsInExpression(e.Left, scope)
 		cg.collectFunctionsInExpression(e.Right, scope)
@@ -717,6 +721,10 @@ func collectUsedNamesInExpression(expr ast.Expression, used map[string]struct{})
 		for _, arg := range e.Arguments {
 			collectUsedNamesInExpression(arg, used)
 		}
+	case *ast.MemberAccessExpression:
+		collectUsedNamesInExpression(e.Object, used)
+	case *ast.NullSafeAccessExpression:
+		collectUsedNamesInExpression(e.Object, used)
 	case *ast.NamedArgument:
 		collectUsedNamesInExpression(e.Value, used)
 	case *ast.FunctionLiteral:

@@ -30,6 +30,7 @@ func TestProgramAndNodeStrings(t *testing.T) {
 	fnStmt := &FunctionStatement{Token: tok(token.FUNCTION, "fn"), Name: fnLit.Name, Function: fnLit}
 	call := &CallExpression{Token: tok(token.LPAREN, "("), Function: fnLit.Name, Arguments: []Expression{int1, idY}}
 	meth := &MethodCallExpression{Token: tok(token.DOT, "."), Object: idX, Method: &Identifier{Token: tok(token.IDENT, "length"), Value: "length"}, Arguments: []Expression{}, NullSafe: true}
+	macc := &MemberAccessExpression{Token: tok(token.DOT, "."), Object: idX, Property: idY}
 	tacc := &TupleAccessExpression{Token: tok(token.DOT, "."), Left: tuple, Index: 1}
 	narg := &NamedArgument{Token: tok(token.IDENT, "a"), Name: "a", Value: int1}
 	nsafe := &NullSafeAccessExpression{Token: tok(token.QDOT, "?."), Object: idX, Property: idY}
@@ -56,7 +57,7 @@ func TestProgramAndNodeStrings(t *testing.T) {
 		t.Fatalf("program stringify/token literal empty")
 	}
 
-	exprs := []Expression{idX, int1, flt, str, chr, null, arr, tuple, &Boolean{Token: tok(token.TRUE, "true"), Value: true}, pref, infx, idx, ifx, fnLit, call, meth, tacc, narg, nsafe}
+	exprs := []Expression{idX, int1, flt, str, chr, null, arr, tuple, &Boolean{Token: tok(token.TRUE, "true"), Value: true}, pref, infx, idx, ifx, fnLit, call, meth, macc, tacc, narg, nsafe}
 	for _, e := range exprs {
 		if e.TokenLiteral() == "" {
 			t.Fatalf("empty token literal for %T", e)
@@ -86,5 +87,6 @@ func TestEmptyProgramAndNilBranches(t *testing.T) {
 	_ = (&ConstStatement{Token: tok(token.CONST, "const"), Name: &Identifier{Token: tok(token.IDENT, "a"), Value: "a"}}).String()
 	_ = (&TypeDeclStatement{Token: tok(token.IDENT, "type")}).String()
 	_ = (&MethodCallExpression{Token: tok(token.DOT, ".")}).String()
+	_ = (&MemberAccessExpression{Token: tok(token.DOT, ".")}).String()
 	_ = (&NullSafeAccessExpression{Token: tok(token.QDOT, "?.")}).String()
 }

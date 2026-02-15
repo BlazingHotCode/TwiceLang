@@ -216,6 +216,10 @@ func (cg *CodeGen) semanticCheckExpression(expr ast.Expression, aliases map[stri
 		for _, a := range e.Arguments {
 			cg.semanticCheckExpression(a, aliases)
 		}
+	case *ast.MemberAccessExpression:
+		cg.semanticCheckExpression(e.Object, aliases)
+	case *ast.NullSafeAccessExpression:
+		cg.semanticCheckExpression(e.Object, aliases)
 	case *ast.TupleAccessExpression:
 		cg.semanticCheckExpression(e.Left, aliases)
 	case *ast.NamedArgument:

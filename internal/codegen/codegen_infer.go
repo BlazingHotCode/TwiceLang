@@ -200,6 +200,16 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) (out valueType) {
 			return typeInt
 		}
 		return typeUnknown
+	case *ast.MemberAccessExpression:
+		if e.Property != nil && e.Property.Value == "length" {
+			return typeInt
+		}
+		return typeUnknown
+	case *ast.NullSafeAccessExpression:
+		if e.Property != nil && e.Property.Value == "length" {
+			return typeInt
+		}
+		return typeUnknown
 	case *ast.TupleAccessExpression:
 		leftType := cg.inferCurrentValueTypeName(e.Left)
 		if resolved, ok := cg.normalizeTypeName(leftType); ok {
@@ -259,6 +269,16 @@ func (cg *CodeGen) inferExpressionTypeName(expr ast.Expression) (out string) {
 		return elem
 	case *ast.MethodCallExpression:
 		if e.Method != nil && e.Method.Value == "length" {
+			return "int"
+		}
+		return "unknown"
+	case *ast.MemberAccessExpression:
+		if e.Property != nil && e.Property.Value == "length" {
+			return "int"
+		}
+		return "unknown"
+	case *ast.NullSafeAccessExpression:
+		if e.Property != nil && e.Property.Value == "length" {
 			return "int"
 		}
 		return "unknown"

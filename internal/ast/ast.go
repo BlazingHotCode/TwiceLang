@@ -627,6 +627,27 @@ func (mce *MethodCallExpression) String() string {
 	return out.String()
 }
 
+// MemberAccessExpression represents <object>.<property>
+type MemberAccessExpression struct {
+	Token    token.Token // The . token
+	Object   Expression
+	Property *Identifier
+}
+
+func (mae *MemberAccessExpression) expressionNode()      {}
+func (mae *MemberAccessExpression) TokenLiteral() string { return mae.Token.Literal }
+func (mae *MemberAccessExpression) String() string {
+	var out bytes.Buffer
+	if mae.Object != nil {
+		out.WriteString(mae.Object.String())
+	}
+	out.WriteString(".")
+	if mae.Property != nil {
+		out.WriteString(mae.Property.String())
+	}
+	return out.String()
+}
+
 
 // TupleAccessExpression represents <tupleExpr>.<index>
 type TupleAccessExpression struct {
@@ -676,4 +697,3 @@ func (nsa *NullSafeAccessExpression) String() string {
 	}
 	return out.String()
 }
-

@@ -615,20 +615,26 @@ func TestCodegenNullSafeMethodCall(t *testing.T) {
 	}
 }
 
-func TestCodegenNullSafeAccessUnsupported(t *testing.T) {
-	_, cg := generateAssembly(t, "let arr = {1,2,3}; arr?.missing;")
-	if len(cg.Errors()) == 0 {
-		t.Fatalf("expected codegen error for unsupported null-safe member access")
+func TestCodegenMemberAccess(t *testing.T) {
+	asm, cg := generateAssembly(t, "let arr = {1,2,3}; print(arr.length);")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
 	}
-	found := false
-	for _, err := range cg.Errors() {
-		if strings.Contains(err, "member access is only supported for methods") {
-			found = true
-			break
-		}
+	if !strings.Contains(asm, "mov $3, %rax") {
+		t.Fatalf("expected constant length load in assembly, got:\n%s", asm)
 	}
-	if !found {
-		t.Fatalf("expected null-safe member access error, got: %v", cg.Errors())
+}
+
+func TestCodegenNullSafeAccess(t *testing.T) {
+	asm, cg := generateAssembly(t, "let arr: int[3]; print(arr?.length); let arr2 = {1,2,3}; print(arr2?.length);")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "lea null_lit(%rip), %rax") {
+		t.Fatalf("expected null-safe path to materialize null literal, got:\n%s", asm)
+	}
+	if !strings.Contains(asm, "mov $3, %rax") {
+		t.Fatalf("expected non-null length path to materialize array length, got:\n%s", asm)
 	}
 }
 

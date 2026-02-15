@@ -110,6 +110,22 @@ func evalMethodCallExpression(node *ast.MethodCallExpression, env *object.Enviro
 	}
 }
 
+func evalMemberAccess(obj object.Object, property *ast.Identifier) object.Object {
+	if property == nil {
+		return newError("invalid member access")
+	}
+	switch property.Value {
+	case "length":
+		arr, ok := obj.(*object.Array)
+		if !ok {
+			return newError("length is only supported on arrays")
+		}
+		return &object.Integer{Value: int64(len(arr.Elements))}
+	default:
+		return newError("unknown member: %s", property.Value)
+	}
+}
+
 func evalArrayLiteral(lit *ast.ArrayLiteral, env *object.Environment) object.Object {
 	if len(lit.Elements) == 0 {
 		return newError("empty array literals are not supported")
