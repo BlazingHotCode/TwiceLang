@@ -1037,7 +1037,7 @@ func TestCodegenGenericAliasTypeArgArityErrors(t *testing.T) {
 	}
 	found := false
 	for _, err := range cg.Errors() {
-		if strings.Contains(err, "wrong number of generic type arguments for Pair") {
+		if strings.Contains(err, "wrong number of generic type arguments for Pair: expected 2, got 1") {
 			found = true
 			break
 		}

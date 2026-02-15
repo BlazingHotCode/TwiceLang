@@ -1,6 +1,7 @@
 package codegen
 
 import (
+	"fmt"
 	"twice/internal/ast"
 	"twice/internal/typesys"
 )
@@ -409,7 +410,7 @@ func semanticGenericTypeArityError(typeName string, genericArities map[string]in
 	}
 	if gb, args, ok := typesys.SplitGenericType(base); ok {
 		if expected, exists := genericArities[gb]; exists && expected != len(args) {
-			return "wrong number of generic type arguments for " + gb, true
+			return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", gb, expected, len(args)), true
 		}
 		for _, a := range args {
 			if msg, ok := semanticGenericTypeArityError(a, genericArities, nonGenericAliases, typeParams); ok {
@@ -427,7 +428,7 @@ func semanticGenericTypeArityError(typeName string, genericArities map[string]in
 		return "", false
 	}
 	if expected, exists := genericArities[base]; exists && expected > 0 {
-		return "wrong number of generic type arguments for " + base, true
+		return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", base, expected, 0), true
 	}
 	return "", false
 }

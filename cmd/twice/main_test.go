@@ -322,7 +322,7 @@ let p: Pair<int> = (1, "x");
 	}
 
 	output := string(out)
-	if !strings.Contains(output, "Codegen error: wrong number of generic type arguments for Pair") {
+	if !strings.Contains(output, "Codegen error: wrong number of generic type arguments for Pair: expected 2, got 1") {
 		t.Fatalf("missing generic alias arity diagnostic. output:\n%s", output)
 	}
 }
