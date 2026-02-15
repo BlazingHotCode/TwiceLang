@@ -218,6 +218,45 @@ func TestCLICodegenErrorForUndefinedIdentifier(t *testing.T) {
 	}
 }
 
+func TestCLIStringConcatPrintsSingleLine(t *testing.T) {
+	root := repoRoot(t)
+	ensureToolchain(t)
+
+	srcPath := filepath.Join(t.TempDir(), "concat_header.tw")
+	source := `
+fn header(name: string) {
+  print("--- " + name + " ---");
+  return;
+}
+fn main() {
+  header("arrays unions tuples");
+  return;
+}
+`
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	outputName := "twice_cli_concat_header_bin"
+	outputPath := filepath.Join(root, outputName)
+	_ = os.Remove(outputPath)
+	t.Cleanup(func() { _ = os.Remove(outputPath) })
+
+	cmd := exec.Command("go", "run", "./cmd/twice", "-run", "-o", outputName, srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("compile/run failed: %v\n%s", err, out)
+	}
+	output := string(out)
+	if !strings.Contains(output, "\n--- arrays unions tuples ---\n") {
+		t.Fatalf("expected single-line concatenated header output. output:\n%s", output)
+	}
+	if strings.Contains(output, "--- \narrays unions tuples\n ---") {
+		t.Fatalf("unexpected multi-line concat output. output:\n%s", output)
+	}
+}
+
 func TestCLICompileAndRunNewTypesTypeofAndCasts(t *testing.T) {
 	root := repoRoot(t)
 	ensureToolchain(t)

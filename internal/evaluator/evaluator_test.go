@@ -3,9 +3,11 @@ package evaluator
 import (
 	"testing"
 
+	"twice/internal/ast"
 	"twice/internal/lexer"
 	"twice/internal/object"
 	"twice/internal/parser"
+	"twice/internal/token"
 )
 
 func TestIntegerEval(t *testing.T) {
@@ -528,6 +530,392 @@ func TestArrayLengthMethodEval(t *testing.T) {
 
 	evaluated = testEval("let grid = {{1}, {2, 3}}; grid.length()")
 	testIntegerObject(t, evaluated, 2)
+}
+
+func TestNullishCoalescingEval(t *testing.T) {
+	evaluated := testEval(`null ?? 7`)
+	testIntegerObject(t, evaluated, 7)
+
+	evaluated = testEval(`5 ?? 7`)
+	testIntegerObject(t, evaluated, 5)
+
+	evaluated = testEval(`let x: int; x ?? 9`)
+	testIntegerObject(t, evaluated, 9)
+}
+
+func TestNullSafeMethodCallEval(t *testing.T) {
+	evaluated := testEval(`let arr: int[3]; arr?.length()`)
+	if evaluated != NULL {
+		t.Fatalf("expected null result for null-safe method call on null receiver, got=%T (%s)", evaluated, evaluated.Inspect())
+	}
+
+	evaluated = testEval(`let arr = {1,2,3}; arr?.length()`)
+	testIntegerObject(t, evaluated, 3)
+}
+
+func TestNullSafeAccessEval(t *testing.T) {
+	evaluated := testEval(`let x: int; x?.missing`)
+	if evaluated != NULL {
+		t.Fatalf("expected null for null-safe access on null receiver, got=%T (%s)", evaluated, evaluated.Inspect())
+	}
+
+	evaluated = testEval(`let x = 1; x?.missing`)
+	errObj, ok := evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "member access is only supported for methods" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+}
+
+func TestHasFieldBuiltinEval(t *testing.T) {
+	evaluated := testEval(`hasField({1,2,3}, "length")`)
+	testBooleanObject(t, evaluated, true)
+
+	evaluated = testEval(`hasField(1, "x")`)
+	testBooleanObject(t, evaluated, false)
+
+	evaluated = testEval(`hasField(null, "x")`)
+	testBooleanObject(t, evaluated, false)
+}
+
+func TestHasFieldBuiltinErrorsEval(t *testing.T) {
+	evaluated := testEval(`hasField({1,2,3}, 1)`)
+	errObj, ok := evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "hasField field must be string, got int" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+
+	evaluated = testEval(`hasField({1,2,3})`)
+	errObj, ok = evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "hasField expects 2 arguments, got=1" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+}
+
+func TestBuiltinArgumentErrorsEval(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{`typeof()`, "typeof expects 1 argument, got=0"},
+		{`typeof(1, 2)`, "typeof expects 1 argument, got=2"},
+		{`typeofValue()`, "typeofValue expects 1 argument, got=0"},
+		{`typeofvalue(1, 2)`, "typeofvalue expects 1 argument, got=2"},
+		{`int()`, "int expects 1 argument, got=0"},
+		{`float()`, "float expects 1 argument, got=0"},
+		{`string()`, "string expects 1 argument, got=0"},
+		{`char()`, "char expects 1 argument, got=0"},
+		{`bool()`, "bool expects 1 argument, got=0"},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		errObj, ok := evaluated.(*object.Error)
+		if !ok {
+			t.Fatalf("expected error object for %q, got=%T", tt.input, evaluated)
+		}
+		if errObj.Message != tt.want {
+			t.Fatalf("wrong error message for %q: got=%q want=%q", tt.input, errObj.Message, tt.want)
+		}
+	}
+}
+
+func TestNamedArgumentsBuiltinCallErrorEval(t *testing.T) {
+	evaluated := testEval(`typeof(x = 1)`)
+	errObj, ok := evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "named arguments are not supported for builtin functions" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+}
+
+func TestFunctionCallArgumentErrorsEval(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{`fn f(a: int) int { return a; } f()`, "missing required argument: a"},
+		{`fn f(a: int) int { return a; } f(1, 2)`, "too many positional arguments"},
+		{`fn f(a: int = 1) int { return a; } f(b = 1)`, "unknown named argument: b"},
+		{`fn f(a: int) int { return a; } f(a = 1, a = 2)`, "duplicate named argument: a"},
+		{`fn f(a: int) int { return a; } f(1, a = 2)`, "argument provided twice: a"},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		errObj, ok := evaluated.(*object.Error)
+		if !ok {
+			t.Fatalf("expected error object for %q, got=%T", tt.input, evaluated)
+		}
+		if errObj.Message != tt.want {
+			t.Fatalf("wrong error message for %q: got=%q want=%q", tt.input, errObj.Message, tt.want)
+		}
+	}
+}
+
+func TestMethodCallErrorsEval(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{`let s = "abc"; s.length()`, "length is only supported on arrays"},
+		{`let arr = {1,2,3}; arr.length(1)`, "length expects 0 arguments, got=1"},
+		{`let arr = {1,2,3}; arr.missing()`, "unknown method: missing"},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		errObj, ok := evaluated.(*object.Error)
+		if !ok {
+			t.Fatalf("expected error object for %q, got=%T", tt.input, evaluated)
+		}
+		if errObj.Message != tt.want {
+			t.Fatalf("wrong error message for %q: got=%q want=%q", tt.input, errObj.Message, tt.want)
+		}
+	}
+}
+
+func TestIndexOperatorTypeErrorsEval(t *testing.T) {
+	evaluated := testEval(`1[0]`)
+	errObj, ok := evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "index operator not supported: INTEGER" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+}
+
+func TestTypeDeclarationErrorsEval(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{`type int = string;`, "cannot redefine builtin type: int"},
+		{`type A = int; type A = string;`, "type already declared: A"},
+		{`type A = unknown_type;`, "unknown type: unknown_type"},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		errObj, ok := evaluated.(*object.Error)
+		if !ok {
+			t.Fatalf("expected error object for %q, got=%T", tt.input, evaluated)
+		}
+		if errObj.Message != tt.want {
+			t.Fatalf("wrong error message for %q: got=%q want=%q", tt.input, errObj.Message, tt.want)
+		}
+	}
+}
+
+func TestEvaluatorAdditionalCoverageHelpers(t *testing.T) {
+	env := object.NewEnvironment()
+	results := evalExpressions([]ast.Expression{
+		&ast.IntegerLiteral{Token: token.Token{Type: token.INT, Literal: "1"}, Value: 1},
+		&ast.IntegerLiteral{Token: token.Token{Type: token.INT, Literal: "2"}, Value: 2},
+	}, env)
+	if len(results) != 2 {
+		t.Fatalf("evalExpressions expected 2 results, got=%d", len(results))
+	}
+
+	if got := evalPrefixExpression("-", &object.Integer{Value: 5}); got.(*object.Integer).Value != -5 {
+		t.Fatalf("prefix minus on int failed")
+	}
+	if got := evalPrefixExpression("-", &object.Float{Value: 2.5}); got.(*object.Float).Value != -2.5 {
+		t.Fatalf("prefix minus on float failed")
+	}
+	if got := evalPrefixExpression("!", TRUE); got != FALSE {
+		t.Fatalf("bang true failed")
+	}
+	if got := evalPrefixExpression("!", FALSE); got != TRUE {
+		t.Fatalf("bang false failed")
+	}
+	if got := evalPrefixExpression("!", NULL); got != TRUE {
+		t.Fatalf("bang null failed")
+	}
+	if got := evalPrefixExpression("?", TRUE); got.(*object.Error).Message == "" {
+		t.Fatalf("unknown prefix should error")
+	}
+}
+
+func TestEvaluatorFloatAndCastCoverage(t *testing.T) {
+	tests := []struct {
+		input string
+	}{
+		{"1.0 + 2.0"},
+		{"4.0 - 1.0"},
+		{"3.0 * 2.0"},
+		{"9.0 / 3.0"},
+		{"5.5 % 2.0"},
+		{"1.0 < 2.0"},
+		{"2.0 > 1.0"},
+		{"2.0 == 2.0"},
+		{"2.0 != 3.0"},
+		{"int(3.8)"},
+		{"int('A')"},
+		{"int(\"12\")"},
+		{"float(3)"},
+		{"float('A')"},
+		{"float(\"3.5\")"},
+		{"string(3)"},
+		{"string(3.5)"},
+		{"char(65)"},
+		{"char(\"A\")"},
+		{"bool(1)"},
+		{"bool(0.0)"},
+		{"bool(\"x\")"},
+	}
+	for _, tt := range tests {
+		got := testEval(tt.input)
+		if errObj, ok := got.(*object.Error); ok {
+			t.Fatalf("unexpected error for %q: %s", tt.input, errObj.Message)
+		}
+	}
+
+	errCases := []struct {
+		input string
+	}{
+		{"float(\"bad\")"},
+		{"char(\"ab\")"},
+		{"char(true)"},
+		{"int(\"bad\")"},
+	}
+	for _, tt := range errCases {
+		if _, ok := testEval(tt.input).(*object.Error); !ok {
+			t.Fatalf("expected error for %q", tt.input)
+		}
+	}
+}
+
+func TestEvaluatorTypeHelperWrappers(t *testing.T) {
+	env := object.NewEnvironment()
+	env.SetTypeAlias("Num", "int")
+	if base, dims, ok := parseTypeName("Num[2]"); !ok || base != "Num" || len(dims) != 1 || dims[0] != 2 {
+		t.Fatalf("parseTypeName unexpected: %q %v %v", base, dims, ok)
+	}
+	if got := formatTypeName("int||string", []int{2}); got != "(int||string)[2]" {
+		t.Fatalf("formatTypeName unexpected: %q", got)
+	}
+	if got := normalizeTypeName("Num[2]", env); got != "int[2]" {
+		t.Fatalf("normalizeTypeName unexpected: %q", got)
+	}
+	if got, ok := resolveTypeName("Num", env, nil); !ok || got != "int" {
+		t.Fatalf("resolveTypeName unexpected: %q %v", got, ok)
+	}
+	if !isBuiltinTypeName("int") || isBuiltinTypeName("nope") {
+		t.Fatalf("isBuiltinTypeName unexpected")
+	}
+	if !typeAllowsNull("int||null", env) || typeAllowsNull("int", env) {
+		t.Fatalf("typeAllowsNull unexpected")
+	}
+	if parts, ok := splitTopLevelUnion("int||string||bool"); !ok || len(parts) != 3 {
+		t.Fatalf("splitTopLevelUnion unexpected: %v %v", parts, ok)
+	}
+	if parts, ok := splitTopLevelTuple("(int,string,bool)"); !ok || len(parts) != 3 {
+		t.Fatalf("splitTopLevelTuple unexpected: %v %v", parts, ok)
+	}
+}
+
+func TestEvaluatorDirectInfixHelpers(t *testing.T) {
+	lf := &object.Float{Value: 7.5}
+	rf := &object.Float{Value: 2.5}
+	for _, op := range []string{"+", "-", "*", "/", "%", "<", ">", "==", "!="} {
+		got := evalFloatInfixExpression(op, lf, rf)
+		if got == nil {
+			t.Fatalf("nil result for float op %q", op)
+		}
+	}
+	if errObj, ok := evalFloatInfixExpression("?", lf, rf).(*object.Error); !ok || errObj.Message == "" {
+		t.Fatalf("expected float unknown-op error")
+	}
+
+	ls := &object.String{Value: "a"}
+	rs := &object.String{Value: "b"}
+	for _, op := range []string{"+", "==", "!="} {
+		if got := evalStringInfixExpression(op, ls, rs); got == nil {
+			t.Fatalf("nil result for string op %q", op)
+		}
+	}
+	if _, ok := evalStringInfixExpression("?", ls, rs).(*object.Error); !ok {
+		t.Fatalf("expected string unknown-op error")
+	}
+
+	lc := &object.Char{Value: 'a'}
+	rc := &object.Char{Value: 'b'}
+	for _, op := range []string{"+", "==", "!="} {
+		if got := evalCharInfixExpression(op, lc, rc); got == nil {
+			t.Fatalf("nil result for char op %q", op)
+		}
+	}
+	if _, ok := evalCharInfixExpression("?", lc, rc).(*object.Error); !ok {
+		t.Fatalf("expected char unknown-op error")
+	}
+
+	lt := &object.TypeValue{Name: "int"}
+	rt := &object.TypeValue{Name: "string"}
+	for _, op := range []string{"==", "!="} {
+		if got := evalTypeValueInfixExpression(op, lt, rt); got == nil {
+			t.Fatalf("nil result for type op %q", op)
+		}
+	}
+	if _, ok := evalTypeValueInfixExpression("?", lt, rt).(*object.Error); !ok {
+		t.Fatalf("expected type unknown-op error")
+	}
+}
+
+func TestEvaluatorDirectConcatAndTruthinessHelpers(t *testing.T) {
+	left := &object.String{Value: "x:"}
+	rights := []object.Object{
+		&object.String{Value: "s"},
+		&object.Integer{Value: 7},
+		&object.Float{Value: 3.5},
+		&object.Char{Value: 'A'},
+	}
+	for _, r := range rights {
+		if got := evalStringConcatWithCoercion(left, r); got == nil {
+			t.Fatalf("nil concat result for %T", r)
+		}
+	}
+	if _, ok := evalStringConcatWithCoercion(left, &object.Boolean{Value: true}).(*object.Error); !ok {
+		t.Fatalf("expected concat type mismatch error")
+	}
+
+	for _, l := range []object.Object{
+		&object.String{Value: "s"},
+		&object.Integer{Value: 7},
+		&object.Float{Value: 3.5},
+		&object.Char{Value: 'A'},
+	} {
+		if got := evalStringConcatWithCoercionRight(l, &object.String{Value: ":x"}); got == nil {
+			t.Fatalf("nil right-concat result for %T", l)
+		}
+	}
+	if _, ok := evalStringConcatWithCoercionRight(&object.Boolean{Value: true}, &object.String{Value: ":x"}).(*object.Error); !ok {
+		t.Fatalf("expected right-concat type mismatch error")
+	}
+
+	if isTruthy(NULL) {
+		t.Fatalf("null should be falsy")
+	}
+	if !isTruthy(TRUE) {
+		t.Fatalf("true should be truthy")
+	}
+	if isTruthy(FALSE) {
+		t.Fatalf("false should be falsy")
+	}
+	if !isTruthy(&object.Integer{Value: 0}) {
+		t.Fatalf("non-null non-bool should be truthy by current rules")
+	}
 }
 
 func TestStringIndexingEval(t *testing.T) {

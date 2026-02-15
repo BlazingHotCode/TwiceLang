@@ -277,6 +277,51 @@ func TestModuloAndCompoundOperatorTokens(t *testing.T) {
 	}
 }
 
+func TestNullSafeAndCoalesceTokens(t *testing.T) {
+	input := `a?.b ?? c;`
+	tests := []struct {
+		expectedType    token.TokenType
+		expectedLiteral string
+		expectedLine    int
+		expectedColumn  int
+	}{
+		{token.IDENT, "a", 1, 1},
+		{token.TokenType("?."), "?.", 1, 2},
+		{token.IDENT, "b", 1, 4},
+		{token.TokenType("??"), "??", 1, 6},
+		{token.IDENT, "c", 1, 9},
+		{token.SEMICOLON, ";", 1, 10},
+		{token.EOF, "", 1, 10},
+	}
+
+	l := New(input)
+	for i, tt := range tests {
+		tok := l.NextToken()
+		if tok.Type != tt.expectedType {
+			t.Fatalf("tests[%d] - token type wrong. expected=%q, got=%q", i, tt.expectedType, tok.Type)
+		}
+		if tok.Literal != tt.expectedLiteral {
+			t.Fatalf("tests[%d] - literal wrong. expected=%q, got=%q", i, tt.expectedLiteral, tok.Literal)
+		}
+		if tok.Line != tt.expectedLine || tok.Column != tt.expectedColumn {
+			t.Fatalf("tests[%d] - location wrong. expected=(%d,%d), got=(%d,%d)", i, tt.expectedLine, tt.expectedColumn, tok.Line, tok.Column)
+		}
+	}
+}
+
+func TestQuestionMarkWithoutDotOrCoalesceIsIllegal(t *testing.T) {
+	l := New(`a ? b`)
+
+	_ = l.NextToken() // a
+	tok := l.NextToken()
+	if tok.Type != token.ILLEGAL {
+		t.Fatalf("expected ILLEGAL token for '?', got=%q", tok.Type)
+	}
+	if tok.Literal != "?" {
+		t.Fatalf("expected literal '?', got=%q", tok.Literal)
+	}
+}
+
 func TestArrayTokensAndVarIdentifier(t *testing.T) {
 	input := `let arr: int[3]; var x = 1;`
 	tests := []struct {

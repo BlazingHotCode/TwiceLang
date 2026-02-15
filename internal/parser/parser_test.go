@@ -6,6 +6,7 @@ import (
 
 	"twice/internal/ast"
 	"twice/internal/lexer"
+	"twice/internal/token"
 )
 
 func TestLetRequiresSemicolon(t *testing.T) {
@@ -382,6 +383,76 @@ func TestArrayLengthMethodCallParses(t *testing.T) {
 	}
 }
 
+func TestNullSafeMethodCallParses(t *testing.T) {
+	p := New(lexer.New("arr?.length();"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+	if !ok {
+		t.Fatalf("expected expression statement, got=%T", program.Statements[0])
+	}
+	call, ok := stmt.Expression.(*ast.MethodCallExpression)
+	if !ok {
+		t.Fatalf("expected method call expression, got=%T", stmt.Expression)
+	}
+	if !call.NullSafe {
+		t.Fatalf("expected null-safe method call")
+	}
+	if call.Method == nil || call.Method.Value != "length" {
+		t.Fatalf("expected method length, got=%v", call.Method)
+	}
+}
+
+func TestNullSafeAccessParses(t *testing.T) {
+	p := New(lexer.New("a?.b;"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+	if !ok {
+		t.Fatalf("expected expression statement, got=%T", program.Statements[0])
+	}
+	access, ok := stmt.Expression.(*ast.NullSafeAccessExpression)
+	if !ok {
+		t.Fatalf("expected null-safe access expression, got=%T", stmt.Expression)
+	}
+	if access.Object.String() != "a" {
+		t.Fatalf("expected object a, got=%s", access.Object.String())
+	}
+	if access.Property == nil || access.Property.Value != "b" {
+		t.Fatalf("expected property b, got=%v", access.Property)
+	}
+}
+
+func TestNullishCoalesceAssociativityParses(t *testing.T) {
+	p := New(lexer.New("a ?? b ?? c;"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+	if !ok {
+		t.Fatalf("expected expression statement, got=%T", program.Statements[0])
+	}
+	top, ok := stmt.Expression.(*ast.InfixExpression)
+	if !ok || top.Operator != "??" {
+		t.Fatalf("expected top-level ?? infix expression, got=%T (%v)", stmt.Expression, stmt.Expression)
+	}
+	left, ok := top.Left.(*ast.InfixExpression)
+	if !ok || left.Operator != "??" {
+		t.Fatalf("expected left side to be ?? infix expression, got=%T (%v)", top.Left, top.Left)
+	}
+}
+
 func TestAdditionalLiteralParsing(t *testing.T) {
 	p := New(lexer.New(`3.14; "abc"; 'z'; null;`))
 	program := p.ParseProgram()
@@ -586,4 +657,255 @@ func checkNoParserErrors(t *testing.T, p *Parser) {
 		return
 	}
 	t.Fatalf("parser errors: %v", p.Errors())
+}
+
+func TestNullishMixingRequiresParens(t *testing.T) {
+	tests := []struct {
+		input       string
+		shouldError bool
+	}{
+		{`let x = a ?? b;`, false},
+		{`let x = (a || b) ?? c;`, false},
+		{`let x = a ?? (b && c);`, false},
+		{`let x = a ?? b || c;`, true},
+		{`let x = a && b ?? c;`, true},
+	}
+
+	for _, tt := range tests {
+		l := lexer.New(tt.input)
+		p := New(l)
+		_ = p.ParseProgram()
+
+		has := false
+		for _, err := range p.Errors() {
+			if strings.Contains(err, "cannot mix ?? with &&/|| without parentheses") {
+				has = true
+				break
+			}
+		}
+
+		if tt.shouldError && !has {
+			t.Fatalf("expected nullish mixing error for input: %s, got: %v", tt.input, p.Errors())
+		}
+		if !tt.shouldError && has {
+			t.Fatalf("unexpected nullish mixing error for input: %s, got: %v", tt.input, p.Errors())
+		}
+	}
+}
+
+func TestPrefixExpressionParses(t *testing.T) {
+	p := New(lexer.New("!true; -5;"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+	if len(program.Statements) != 2 {
+		t.Fatalf("expected 2 statements, got=%d", len(program.Statements))
+	}
+	for i := 0; i < 2; i++ {
+		stmt, ok := program.Statements[i].(*ast.ExpressionStatement)
+		if !ok {
+			t.Fatalf("expected expression statement, got=%T", program.Statements[i])
+		}
+		if _, ok := stmt.Expression.(*ast.PrefixExpression); !ok {
+			t.Fatalf("expected prefix expression, got=%T", stmt.Expression)
+		}
+	}
+}
+
+func TestFunctionLiteralExpressionParses(t *testing.T) {
+	p := New(lexer.New("let f = fn(x: int) int { return x; };"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	stmt, ok := program.Statements[0].(*ast.LetStatement)
+	if !ok {
+		t.Fatalf("expected let statement, got=%T", program.Statements[0])
+	}
+	if _, ok := stmt.Value.(*ast.FunctionLiteral); !ok {
+		t.Fatalf("expected function literal value, got=%T", stmt.Value)
+	}
+}
+
+func TestForConstStatementParses(t *testing.T) {
+	p := New(lexer.New("for (const i = 0; i < 1; i++) { }"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	fs, ok := program.Statements[0].(*ast.ForStatement)
+	if !ok {
+		t.Fatalf("expected for statement, got=%T", program.Statements[0])
+	}
+	if _, ok := fs.Init.(*ast.ConstStatement); !ok {
+		t.Fatalf("expected const init in for, got=%T", fs.Init)
+	}
+}
+
+func TestParserDetailedErrorsAndHelpers(t *testing.T) {
+	p := New(lexer.New("let x = ;"))
+	_ = p.ParseProgram()
+	derr := p.DetailedErrors()
+	if len(derr) == 0 {
+		t.Fatalf("expected detailed errors")
+	}
+
+	if got := compoundAssignOperator(token.PLUS_EQ); got != "+" {
+		t.Fatalf("compoundAssignOperator += got=%q", got)
+	}
+	if got := compoundAssignOperator(token.MINUS_EQ); got != "-" {
+		t.Fatalf("compoundAssignOperator -= got=%q", got)
+	}
+	if got := compoundAssignOperator(token.MUL_EQ); got != "*" {
+		t.Fatalf("compoundAssignOperator *= got=%q", got)
+	}
+	if got := compoundAssignOperator(token.DIV_EQ); got != "/" {
+		t.Fatalf("compoundAssignOperator /= got=%q", got)
+	}
+	if got := compoundAssignOperator(token.MOD_EQ); got != "%" {
+		t.Fatalf("compoundAssignOperator %%= got=%q", got)
+	}
+	if got := compoundAssignOperator(token.ASSIGN); got != "" {
+		t.Fatalf("compoundAssignOperator = got=%q", got)
+	}
+
+	p2 := New(lexer.New(""))
+	if got, ok := p2.parseOptionalArrayTypeSuffix("int[2][3]"); !ok || got != "int[2][3]" {
+		t.Fatalf("parseOptionalArrayTypeSuffix got=%q ok=%v", got, ok)
+	}
+}
+
+func TestParserNoPrefixErrorPath(t *testing.T) {
+	p := New(lexer.New(");"))
+	_ = p.ParseProgram()
+	if len(p.Errors()) == 0 {
+		t.Fatalf("expected parser error for missing prefix parse fn")
+	}
+	found := false
+	for _, err := range p.Errors() {
+		if strings.Contains(err, "no prefix parse function") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected no-prefix parser error, got=%v", p.Errors())
+	}
+}
+
+func TestIfElifElseParses(t *testing.T) {
+	p := New(lexer.New("if (x) { y; } elif (z) { w; } else { v; }"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	var ifx *ast.IfExpression
+	switch st := program.Statements[0].(type) {
+	case *ast.ExpressionStatement:
+		parsed, ok := st.Expression.(*ast.IfExpression)
+		if !ok {
+			t.Fatalf("expected if expression, got=%T", st.Expression)
+		}
+		ifx = parsed
+	case *ast.ReturnStatement:
+		parsed, ok := st.ReturnValue.(*ast.IfExpression)
+		if !ok {
+			t.Fatalf("expected if expression return value, got=%T", st.ReturnValue)
+		}
+		ifx = parsed
+	default:
+		t.Fatalf("expected expression/return statement, got=%T", program.Statements[0])
+	}
+	if ifx.Alternative == nil {
+		t.Fatalf("expected alternative block")
+	}
+}
+
+func TestParserInvalidLiteralsAndCallArgs(t *testing.T) {
+	p := New(lexer.New("let c = ''; let n = 12.3.4; fn f(a: int) int { return a; } f(a=1, b);"))
+	_ = p.ParseProgram()
+	if len(p.Errors()) == 0 {
+		t.Fatalf("expected parser errors")
+	}
+}
+
+func TestParserForClauseForms(t *testing.T) {
+	p := New(lexer.New("for (; i < 2; i++) { } for (i = 0; i < 2; i++) { }"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+	if len(program.Statements) != 2 {
+		t.Fatalf("expected 2 for statements, got=%d", len(program.Statements))
+	}
+}
+
+func TestMemberAccessWithoutCallParseError(t *testing.T) {
+	p := New(lexer.New("a.b;"))
+	_ = p.ParseProgram()
+	if len(p.Errors()) == 0 {
+		t.Fatalf("expected parser errors for member access without call")
+	}
+	found := false
+	for _, err := range p.Errors() {
+		if strings.Contains(err, "member access without call is not supported") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected member-access parse error, got=%v", p.Errors())
+	}
+}
+
+func TestNullSafeAccessRequiresIdentifierParseError(t *testing.T) {
+	p := New(lexer.New("a?.1;"))
+	_ = p.ParseProgram()
+	if len(p.Errors()) == 0 {
+		t.Fatalf("expected parser errors for invalid null-safe access")
+	}
+	found := false
+	for _, err := range p.Errors() {
+		if strings.Contains(err, "expected next token to be IDENT") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected IDENT-after-?. parse error, got=%v", p.Errors())
+	}
+}
+
+func TestConstRequiresInitializerParseError(t *testing.T) {
+	p := New(lexer.New("const x;"))
+	_ = p.ParseProgram()
+	if len(p.Errors()) == 0 {
+		t.Fatalf("expected parser errors for const without initializer")
+	}
+	found := false
+	for _, err := range p.Errors() {
+		if strings.Contains(err, "const declaration requires initializer") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected const-initializer parse error, got=%v", p.Errors())
+	}
+}
+
+func TestLetWithoutValueRequiresTypeParseError(t *testing.T) {
+	p := New(lexer.New("let x;"))
+	_ = p.ParseProgram()
+	if len(p.Errors()) == 0 {
+		t.Fatalf("expected parser errors for let without value/type")
+	}
+	found := false
+	for _, err := range p.Errors() {
+		if strings.Contains(err, "let declaration without value requires explicit type annotation") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected let-without-type parse error, got=%v", p.Errors())
+	}
 }

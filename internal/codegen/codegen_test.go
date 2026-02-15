@@ -582,6 +582,174 @@ func TestCodegenArrayLengthMethod(t *testing.T) {
 	}
 }
 
+func TestCodegenNullishCoalesce(t *testing.T) {
+	asm, cg := generateAssembly(t, "let x: int; x ?? 7; 3 ?? 7;")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "lea null_lit(%rip), %rcx") || !strings.Contains(asm, "je .L") {
+		t.Fatalf("expected null-coalescing compare/jump sequence, got:\n%s", asm)
+	}
+}
+
+func TestCodegenNullishCoalesceWorksInPrint(t *testing.T) {
+	asm, cg := generateAssembly(t, "let x: int; print(x ?? 7); print(3 ?? 7);")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if strings.Count(asm, "call print_int") < 2 {
+		t.Fatalf("expected coalesced values to print as ints, got:\n%s", asm)
+	}
+}
+
+func TestCodegenNullSafeMethodCall(t *testing.T) {
+	asm, cg := generateAssembly(t, "let arr: int[3]; print(arr?.length()); let arr2 = {1,2,3}; print(arr2?.length());")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "lea null_lit(%rip), %rax") {
+		t.Fatalf("expected null-safe path to materialize null literal, got:\n%s", asm)
+	}
+	if !strings.Contains(asm, "mov $3, %rax") {
+		t.Fatalf("expected non-null length path to materialize array length, got:\n%s", asm)
+	}
+}
+
+func TestCodegenNullSafeAccessUnsupported(t *testing.T) {
+	_, cg := generateAssembly(t, "let arr = {1,2,3}; arr?.missing;")
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen error for unsupported null-safe member access")
+	}
+	found := false
+	for _, err := range cg.Errors() {
+		if strings.Contains(err, "member access is only supported for methods") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected null-safe member access error, got: %v", cg.Errors())
+	}
+}
+
+func TestCodegenMethodCallErrors(t *testing.T) {
+	_, cg := generateAssembly(t, "let s = \"abc\"; s.length();")
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen error for length() on non-array")
+	}
+	if !strings.Contains(cg.Errors()[0], "length is only supported on arrays") {
+		t.Fatalf("expected non-array length error, got: %v", cg.Errors())
+	}
+
+	_, cg = generateAssembly(t, "let arr = {1,2,3}; arr.length(1);")
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen error for length() arity")
+	}
+	if !strings.Contains(cg.Errors()[0], "length expects 0 arguments, got=1") {
+		t.Fatalf("expected length arity error, got: %v", cg.Errors())
+	}
+
+	_, cg = generateAssembly(t, "let arr = {1,2,3}; arr.missing();")
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen error for unknown method")
+	}
+	if !strings.Contains(cg.Errors()[0], "unknown method: missing") {
+		t.Fatalf("expected unknown method error, got: %v", cg.Errors())
+	}
+}
+
+func TestCodegenBuiltinCallErrors(t *testing.T) {
+	_, cg := generateAssembly(t, "print();")
+	if len(cg.Errors()) == 0 || !strings.Contains(cg.Errors()[0], "print expects exactly 1 argument") {
+		t.Fatalf("expected print arity error, got: %v", cg.Errors())
+	}
+
+	_, cg = generateAssembly(t, "print(x = 1);")
+	if len(cg.Errors()) == 0 || !strings.Contains(cg.Errors()[0], "named arguments are not supported for print") {
+		t.Fatalf("expected print named-arg error, got: %v", cg.Errors())
+	}
+
+	_, cg = generateAssembly(t, "typeof();")
+	if len(cg.Errors()) == 0 || !strings.Contains(cg.Errors()[0], "typeof expects exactly 1 argument") {
+		t.Fatalf("expected typeof arity error, got: %v", cg.Errors())
+	}
+
+	_, cg = generateAssembly(t, "typeof(x = 1);")
+	if len(cg.Errors()) == 0 || !strings.Contains(cg.Errors()[0], "named arguments are not supported for typeof") {
+		t.Fatalf("expected typeof named-arg error, got: %v", cg.Errors())
+	}
+
+	_, cg = generateAssembly(t, "typeofValue();")
+	if len(cg.Errors()) == 0 || !strings.Contains(cg.Errors()[0], "typeofValue expects exactly 1 argument") {
+		t.Fatalf("expected typeofValue arity error, got: %v", cg.Errors())
+	}
+
+	_, cg = generateAssembly(t, "typeofvalue(x = 1);")
+	if len(cg.Errors()) == 0 || !strings.Contains(cg.Errors()[0], "named arguments are not supported for typeofvalue") {
+		t.Fatalf("expected typeofvalue named-arg error, got: %v", cg.Errors())
+	}
+
+	_, cg = generateAssembly(t, `hasField({1,2,3});`)
+	if len(cg.Errors()) == 0 || !strings.Contains(cg.Errors()[0], "hasField expects exactly 2 arguments") {
+		t.Fatalf("expected hasField arity error, got: %v", cg.Errors())
+	}
+}
+
+func TestCodegenHasFieldBuiltin(t *testing.T) {
+	asm, cg := generateAssembly(t, `let arr = {1,2,3}; print(hasField(arr, "length")); print(hasField(1, "length"));`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if strings.Count(asm, "call print_bool") < 2 {
+		t.Fatalf("expected hasField results to print as bool, got:\n%s", asm)
+	}
+
+	_, cg = generateAssembly(t, `let arr = {1,2,3}; let f = "length"; print(hasField(arr, f));`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors with const string identifier field: %v", cg.Errors())
+	}
+}
+
+func TestCodegenUnsupportedCallTarget(t *testing.T) {
+	_, cg := generateAssembly(t, "(fn(x) { x; })(1);")
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected unsupported call target codegen error")
+	}
+	found := false
+	for _, err := range cg.Errors() {
+		if strings.Contains(err, "unsupported call target") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected unsupported call target error, got: %v", cg.Errors())
+	}
+}
+
+func TestCodegenUnknownFunctionError(t *testing.T) {
+	_, cg := generateAssembly(t, "doesNotExist();")
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected unknown function codegen error")
+	}
+	if !strings.Contains(cg.Errors()[0], "unknown function doesNotExist") {
+		t.Fatalf("expected unknown-function error, got: %v", cg.Errors())
+	}
+}
+
+func TestCodegenParserErrorPropagation(t *testing.T) {
+	defer func() {
+		if recover() != nil {
+			t.Fatalf("generateAssembly should fail test on parser errors, not panic")
+		}
+	}()
+	p := parser.New(lexer.New("let x = ;"))
+	_ = p.ParseProgram()
+	if len(p.Errors()) == 0 {
+		t.Fatalf("expected parser errors for invalid input")
+	}
+}
+
 func TestCodegenStringIndexing(t *testing.T) {
 	asm, cg := generateAssembly(t, `print("abc"[1]); let s = "xyz"; print(s[2]);`)
 	if len(cg.Errors()) != 0 {
