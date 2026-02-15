@@ -1,18 +1,9 @@
 # TODO
 
-## 1. Null-Safe Access and Coalescing
+## 1. String Formatting
 
-- Add TypeScript-style null-safe member/method access with `?.`.
-- `a?.b` or `a?.fn(...)` evaluates to `null` when `a` is `null`, otherwise performs normal access/call.
-- Add TypeScript-style null-coalescing operator `??`.
-- `x ?? y` evaluates to `y` only when `x` is `null`, otherwise evaluates to `x`.
-- Support chaining like `a?.b?.c ?? fallback`.
-- Do not add null-safe index/call forms for bounds/type safety bypass:
-- Keep normal behavior for index/function errors (for example, index out of range or invalid function input should still error).
-- Use TypeScript-like precedence/behavior for `??` with `||`/`&&` (require parentheses in mixed cases).
-- Keep `?.` as read-access only (no null-safe assignment form).
-- For field existence checks before assignment, add helper:
-- `hasField(obj, field)`
+- Add escape-sequence formatting in strings (for example `\n`, `\t`, and related escapes).
+- Add string interpolation with `${...}` expressions inside string literals.
 
 ## 2. Structs
 

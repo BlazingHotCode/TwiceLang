@@ -280,6 +280,26 @@ fn demo_arrays_unions_tuples() {
   return;
 }
 
+fn demo_null_safe_and_coalesce() {
+  header("null-safe and coalesce");
+
+  let maybe_arr: int[3];
+  print(maybe_arr?.length());
+  print(maybe_arr?.length() ?? 0);
+
+  let arr = {1, 2, 3};
+  print(arr?.length());
+  print(arr?.length() ?? 0);
+
+  print(hasField(arr, "length"));
+  print(hasField(1, "length"));
+
+  let a: int;
+  print(a ?? 42);
+  print(7 ?? 42);
+  return;
+}
+
 fn main() {
   demo_types_and_casts();
   demo_operators();
@@ -287,5 +307,6 @@ fn main() {
   demo_loops();
   demo_functions();
   demo_arrays_unions_tuples();
+  demo_null_safe_and_coalesce();
   return;
 }

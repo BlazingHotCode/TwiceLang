@@ -51,6 +51,7 @@ Notes:
 - Function calls with positional, named, and mixed arguments
 - Function calls before declaration (resolved by codegen)
 - Arrays with typed declarations, literals, indexing, mutation, and `length()`
+- Null-safe access/coalescing with `?.` and `??`
 - Union types (`type1||type2`) including array forms like `(int||string)[3]`
 - Tuple types and values: `(type1, type2, ...)` with tuple access `value.0`, `value.1`, ...
 
@@ -221,6 +222,27 @@ String indexing example:
 ```tw
 print("Twice"[2]); // 'i'
 ```
+
+Null-safe and coalescing examples:
+
+```tw
+let arr: int[3];
+print(arr?.length()); // null
+
+let fallback = arr?.length() ?? 0;
+print(fallback); // 0
+
+let arr2 = {1, 2, 3};
+print(arr2?.length()); // 3
+
+print(hasField(arr2, "length")); // true
+```
+
+Notes:
+
+- `?.` currently supports method/field read access only.
+- `??` only falls back when the left side is `null`.
+- Mixing `??` with `&&`/`||` requires parentheses.
 
 ### Control Flow
 
