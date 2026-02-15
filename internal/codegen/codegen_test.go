@@ -638,6 +638,46 @@ func TestCodegenNullSafeAccess(t *testing.T) {
 	}
 }
 
+func TestCodegenNullSafeMissingMemberReturnsNull(t *testing.T) {
+	asm, cg := generateAssembly(t, "let arr = {1,2,3}; print(arr?.missing); let x = 1; print(x?.missing);")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if strings.Count(asm, "lea null_lit(%rip), %rax") < 2 {
+		t.Fatalf("expected null-safe missing members to materialize null, got:\n%s", asm)
+	}
+}
+
+func TestCodegenNullSafeMissingMethodReturnsNull(t *testing.T) {
+	asm, cg := generateAssembly(t, "let arr = {1,2,3}; print(arr?.missing()); let x = 1; print(x?.missing());")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if strings.Count(asm, "lea null_lit(%rip), %rax") < 2 {
+		t.Fatalf("expected null-safe missing methods to materialize null, got:\n%s", asm)
+	}
+}
+
+func TestCodegenNullSafeAccessNullableArrayUnion(t *testing.T) {
+	asm, cg := generateAssembly(t, "let x: int[3]||null = {1,2,3}; print(x?.length); x = null; print(x?.length ?? 0);")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if strings.Count(asm, "mov $3, %rax") < 1 {
+		t.Fatalf("expected nullable array union null-safe length to resolve array length, got:\n%s", asm)
+	}
+}
+
+func TestCodegenNullSafeMethodCallNullableArrayUnion(t *testing.T) {
+	asm, cg := generateAssembly(t, "let x: int[3]||null = {1,2,3}; print(x?.length()); x = null; print(x?.length() ?? 0);")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if strings.Count(asm, "mov $3, %rax") < 1 {
+		t.Fatalf("expected nullable array union null-safe length() to resolve array length, got:\n%s", asm)
+	}
+}
+
 func TestCodegenMethodCallErrors(t *testing.T) {
 	_, cg := generateAssembly(t, "let s = \"abc\"; s.length();")
 	if len(cg.Errors()) == 0 {

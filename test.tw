@@ -297,6 +297,10 @@ fn demo_null_safe_and_coalesce() {
   print(arr?.length());
   print(arr?.length ?? 0);
   print(arr?.length() ?? 0);
+  print(arr?.missing);
+  print(arr?.missing());
+  print(arr?.missing ?? "no member");
+  print(arr?.missing() ?? "no method");
 
   print(hasField(arr, "length"));
   print(hasField(1, "length"));

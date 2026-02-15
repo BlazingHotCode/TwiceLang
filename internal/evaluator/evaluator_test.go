@@ -551,6 +551,14 @@ func TestNullSafeMethodCallEval(t *testing.T) {
 
 	evaluated = testEval(`let arr = {1,2,3}; arr?.length()`)
 	testIntegerObject(t, evaluated, 3)
+
+	evaluated = testEval(`let arr: int[3]||null = {1,2,3}; arr?.length()`)
+	testIntegerObject(t, evaluated, 3)
+
+	evaluated = testEval(`let arr: int[3]||null = null; arr?.length()`)
+	if evaluated != NULL {
+		t.Fatalf("expected null result for null-safe method call on null union receiver, got=%T (%s)", evaluated, evaluated.Inspect())
+	}
 }
 
 func TestNullSafeAccessEval(t *testing.T) {
@@ -560,12 +568,16 @@ func TestNullSafeAccessEval(t *testing.T) {
 	}
 
 	evaluated = testEval(`let x = 1; x?.missing`)
-	errObj, ok := evaluated.(*object.Error)
-	if !ok {
-		t.Fatalf("expected error object, got=%T", evaluated)
+	if evaluated != NULL {
+		t.Fatalf("expected null for unknown null-safe member on non-null receiver, got=%T (%s)", evaluated, evaluated.Inspect())
 	}
-	if errObj.Message != "unknown member: missing" {
-		t.Fatalf("wrong error message: %q", errObj.Message)
+
+	evaluated = testEval(`let x: int[3]||null = {1,2,3}; x?.length`)
+	testIntegerObject(t, evaluated, 3)
+
+	evaluated = testEval(`let x: int[3]||null = null; x?.length`)
+	if evaluated != NULL {
+		t.Fatalf("expected null for null-safe access on null union receiver, got=%T (%s)", evaluated, evaluated.Inspect())
 	}
 }
 
@@ -580,6 +592,18 @@ func TestMemberAccessEval(t *testing.T) {
 	}
 	if errObj.Message != "unknown member: missing" {
 		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+}
+
+func TestNullSafeUnknownMethodEval(t *testing.T) {
+	evaluated := testEval(`let arr = {1,2,3}; arr?.missing()`)
+	if evaluated != NULL {
+		t.Fatalf("expected null for unknown null-safe method, got=%T (%s)", evaluated, evaluated.Inspect())
+	}
+
+	evaluated = testEval(`let x = 1; x?.missing()`)
+	if evaluated != NULL {
+		t.Fatalf("expected null for null-safe method on unsupported receiver, got=%T (%s)", evaluated, evaluated.Inspect())
 	}
 }
 

@@ -328,7 +328,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		if isError(obj) {
 			return obj
 		}
-		return evalMemberAccess(obj, node.Property)
+		return evalMemberAccess(obj, node.Property, false)
 	case *ast.TupleAccessExpression:
 		left := Eval(node.Left, env)
 		if isError(left) {
@@ -343,7 +343,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		if obj == NULL {
 			return NULL
 		}
-		return evalMemberAccess(obj, node.Property)
+		return evalMemberAccess(obj, node.Property, true)
 	}
 
 	return nil

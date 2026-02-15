@@ -2,6 +2,7 @@ package codegen
 
 import (
 	"fmt"
+	"strings"
 
 	"twice/internal/ast"
 	"twice/internal/token"
@@ -236,19 +237,19 @@ func (cg *CodeGen) generateMethodCallExpression(mce *ast.MethodCallExpression) {
 	}
 	if mce.NullSafe {
 		doneLabel := cg.emitNullSafeObjectGuard(mce.Object)
-		cg.generateMethodByName(mce)
+		cg.generateMethodByName(mce, true)
 		cg.emit("%s:", doneLabel)
 		return
 	}
-	cg.generateMethodByName(mce)
+	cg.generateMethodByName(mce, false)
 }
 
-func (cg *CodeGen) generateMethodByName(mce *ast.MethodCallExpression) {
+func (cg *CodeGen) generateMethodByName(mce *ast.MethodCallExpression, nullSafe bool) {
 	switch mce.Method.Value {
 	case "length":
-		cg.generateArrayLengthMethod(mce)
+		cg.generateArrayLengthMethod(mce, nullSafe)
 	default:
-		cg.generateUnknownMethodError(mce)
+		cg.generateUnknownMethodError(mce, nullSafe)
 	}
 }
 
@@ -258,33 +259,48 @@ func (cg *CodeGen) generateMemberAccessExpression(mae *ast.MemberAccessExpressio
 		cg.emit("    mov $0, %%rax")
 		return
 	}
-	cg.generateMemberByName(mae.Object, mae.Property, mae)
+	cg.generateMemberByName(mae.Object, mae.Property, mae, false)
 }
 
-func (cg *CodeGen) generateMemberByName(object ast.Expression, property *ast.Identifier, node ast.Node) {
+func (cg *CodeGen) generateMemberByName(object ast.Expression, property *ast.Identifier, node ast.Node, nullSafe bool) {
 	if property == nil {
+		if nullSafe {
+			cg.emit("    lea null_lit(%%rip), %%rax")
+			return
+		}
 		cg.addNodeError("invalid member access", node)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
 	switch property.Value {
 	case "length":
-		cg.generateArrayLengthProperty(object, node)
+		cg.generateArrayLengthProperty(object, node, nullSafe)
 	default:
+		if nullSafe {
+			cg.emit("    lea null_lit(%%rip), %%rax")
+			return
+		}
 		cg.addNodeError("unknown member: "+property.Value, node)
 		cg.emit("    mov $0, %%rax")
 	}
 }
 
-func (cg *CodeGen) generateArrayLengthMethod(mce *ast.MethodCallExpression) {
+func (cg *CodeGen) generateArrayLengthMethod(mce *ast.MethodCallExpression, nullSafe bool) {
 	if len(mce.Arguments) != 0 {
+		if nullSafe {
+			cg.emit("    lea null_lit(%%rip), %%rax")
+			return
+		}
 		cg.addNodeError(fmt.Sprintf("length expects 0 arguments, got=%d", len(mce.Arguments)), mce)
 		cg.emit("    mov $0, %%rax")
 		return
 	}
-	typeName := cg.inferExpressionTypeName(mce.Object)
-	_, n, ok := peelArrayType(typeName)
+	n, ok := cg.resolveArrayLengthForAccess(mce.Object, mce.NullSafe)
 	if !ok {
+		if nullSafe {
+			cg.emit("    lea null_lit(%%rip), %%rax")
+			return
+		}
 		cg.addNodeError("length is only supported on arrays", mce)
 		cg.emit("    mov $0, %%rax")
 		return
@@ -297,10 +313,14 @@ func (cg *CodeGen) generateArrayLengthMethod(mce *ast.MethodCallExpression) {
 	cg.emit("    mov $%d, %%rax", n)
 }
 
-func (cg *CodeGen) generateArrayLengthProperty(object ast.Expression, node ast.Node) {
-	typeName := cg.inferExpressionTypeName(object)
-	_, n, ok := peelArrayType(typeName)
+func (cg *CodeGen) generateArrayLengthProperty(object ast.Expression, node ast.Node, nullSafe bool) {
+	_, allowNullable := node.(*ast.NullSafeAccessExpression)
+	n, ok := cg.resolveArrayLengthForAccess(object, allowNullable)
 	if !ok {
+		if nullSafe {
+			cg.emit("    lea null_lit(%%rip), %%rax")
+			return
+		}
 		cg.addNodeError("length is only supported on arrays", node)
 		cg.emit("    mov $0, %%rax")
 		return
@@ -313,7 +333,55 @@ func (cg *CodeGen) generateArrayLengthProperty(object ast.Expression, node ast.N
 	cg.emit("    mov $%d, %%rax", n)
 }
 
-func (cg *CodeGen) generateUnknownMethodError(mce *ast.MethodCallExpression) {
+func (cg *CodeGen) resolveArrayLengthForAccess(object ast.Expression, allowNullable bool) (int, bool) {
+	typeName := cg.inferExpressionTypeName(object)
+	if resolved, ok := cg.normalizeTypeName(typeName); ok {
+		typeName = resolved
+	}
+
+	_, n, ok := peelArrayType(typeName)
+	if ok {
+		return n, true
+	}
+	if !allowNullable {
+		return 0, false
+	}
+
+	parts, isUnion := splitTopLevelUnion(typeName)
+	if !isUnion {
+		return 0, false
+	}
+	found := false
+	targetLen := -1
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "null" {
+			continue
+		}
+		_, n, ok := peelArrayType(part)
+		if !ok {
+			return 0, false
+		}
+		if !found {
+			found = true
+			targetLen = n
+			continue
+		}
+		if targetLen != n {
+			return 0, false
+		}
+	}
+	if !found {
+		return 0, false
+	}
+	return targetLen, true
+}
+
+func (cg *CodeGen) generateUnknownMethodError(mce *ast.MethodCallExpression, nullSafe bool) {
+	if nullSafe {
+		cg.emit("    lea null_lit(%%rip), %%rax")
+		return
+	}
 	cg.addNodeError("unknown method: "+mce.Method.Value, mce)
 	cg.emit("    mov $0, %%rax")
 }
@@ -335,7 +403,7 @@ func (cg *CodeGen) emitNullSafeObjectGuard(object ast.Expression) string {
 
 func (cg *CodeGen) generateNullSafeAccessExpression(e *ast.NullSafeAccessExpression) {
 	doneLabel := cg.emitNullSafeObjectGuard(e.Object)
-	cg.generateMemberByName(e.Object, e.Property, e)
+	cg.generateMemberByName(e.Object, e.Property, e, true)
 	cg.emit("%s:", doneLabel)
 }
 

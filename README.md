@@ -35,7 +35,7 @@ Required:
 Notes:
 
 - The produced programs are native Linux executables.
-- If your precompiled `twice` binary is dynamically linked, system libc must be present (typical on Linux systems).
+- If your precompiled `twice` binary is dynamically linked, system libs must be present (typical on Linux systems).
 
 ## What Works Today
 
@@ -227,19 +227,23 @@ Null-safe and coalescing examples:
 
 ```tw
 let arr: int[3];
-print(arr?.length);   // null
-print(arr?.length()); // null
+print(arr?.length);   // 3
+print(arr?.length()); // 3
 
 let fallback2 = arr?.length ?? 0;
-print(fallback2); // 0
+print(fallback2); // 3
 
 let fallback = arr?.length() ?? 0;
-print(fallback); // 0
+print(fallback); // 3
 
 let arr2 = {1, 2, 3};
 print(arr2.length);    // 3
 print(arr2?.length);   // 3
 print(arr2?.length()); // 3
+
+print(arr2?.missing);          // null
+print(arr2?.missing());        // null
+print(arr2?.missing ?? "n/a"); // "n/a"
 
 print(hasField(arr2, "length")); // true
 ```
@@ -247,6 +251,7 @@ print(hasField(arr2, "length")); // true
 Notes:
 
 - `?.` supports method calls and field reads.
+- Missing/unsupported members or methods accessed through `?.` evaluate to `null` instead of erroring.
 - `??` only falls back when the left side is `null`.
 - Mixing `??` with `&&`/`||` requires parentheses.
 

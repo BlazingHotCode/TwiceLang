@@ -98,30 +98,48 @@ func evalMethodCallExpression(node *ast.MethodCallExpression, env *object.Enviro
 	switch node.Method.Value {
 	case "length":
 		if len(node.Arguments) != 0 {
+			if node.NullSafe {
+				return NULL
+			}
 			return newError("length expects 0 arguments, got=%d", len(node.Arguments))
 		}
 		arr, ok := obj.(*object.Array)
 		if !ok {
+			if node.NullSafe {
+				return NULL
+			}
 			return newError("length is only supported on arrays")
 		}
 		return &object.Integer{Value: int64(len(arr.Elements))}
 	default:
+		if node.NullSafe {
+			return NULL
+		}
 		return newError("unknown method: %s", node.Method.Value)
 	}
 }
 
-func evalMemberAccess(obj object.Object, property *ast.Identifier) object.Object {
+func evalMemberAccess(obj object.Object, property *ast.Identifier, nullSafe bool) object.Object {
 	if property == nil {
+		if nullSafe {
+			return NULL
+		}
 		return newError("invalid member access")
 	}
 	switch property.Value {
 	case "length":
 		arr, ok := obj.(*object.Array)
 		if !ok {
+			if nullSafe {
+				return NULL
+			}
 			return newError("length is only supported on arrays")
 		}
 		return &object.Integer{Value: int64(len(arr.Elements))}
 	default:
+		if nullSafe {
+			return NULL
+		}
 		return newError("unknown member: %s", property.Value)
 	}
 }

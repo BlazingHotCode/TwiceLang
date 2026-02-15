@@ -1,41 +1,35 @@
 # TODO
 
-## 1. Complete Null-Safe Member Access
-
-- Expand null-safe access beyond partial handling so `?.` works consistently for member reads and method calls.
-- Keep array `?.length()` support and generalize to other valid members.
-- Ensure parser, evaluator, and codegen behavior matches.
-
-## 2. Expand `hasField`
+## 1. Expand `hasField`
 
 - Remove current codegen limitation that requires compile-time-only field strings.
 - Support broader object/struct/class field checks instead of only array `"length"`.
 - Keep behavior aligned between evaluator and codegen.
 
-## 3. Function Literals in Codegen
+## 2. Function Literals in Codegen
 
 - Add codegen support for function literals/anonymous functions.
 - Match existing parser/evaluator behavior.
 - Add tests for calls, captures, and failure cases.
 
-## 4. Empty Literal Support
+## 3. Empty Literal Support
 
 - Add support for empty array/tuple literals where type information is available.
 - Define clear typing rules for empty literals in declarations and assignments.
 - Keep evaluator and codegen parity.
 
-## 5. Remove Function Arity/Capture Hard Limit
+## 4. Remove Function Arity/Capture Hard Limit
 
 - Remove/raise the current codegen limit of 6 combined parameters/captures.
 - Implement a stable calling convention strategy for larger functions.
 - Add regression tests for higher arity and capture counts.
 
-## 6. String Formatting
+## 5. String Formatting
 
 - Add escape-sequence formatting in strings (for example `\n`, `\t`, and related escapes).
 - Add string interpolation with `${...}` expressions inside string literals.
 
-## 7. Any Type
+## 6. Any Type
 
 - Add `any` type support for values that can hold any runtime type.
 - `any` can hold `null` for variables/values.
@@ -56,7 +50,7 @@
 - Implement evaluator and codegen parity from day one.
 - Keep backward compatibility with existing array behavior while adding `any`.
 
-## 8. Runtime Errors
+## 7. Runtime Errors
 
 - Add a standardized runtime error format prefix: `Runtime error: ...`.
 - Use specific operation-level messages (not generic failures), for example cast/index/operator mismatch details.
@@ -66,7 +60,7 @@
 - Include a short context snippet for the failing operation.
 - Do not include stack traces in v1.
 
-## 9. Generics/Templates (Java-Style)
+## 8. Generics/Templates (Java-Style)
 
 - Add generic type syntax using angle brackets, like Java: `Type<T>`.
 - Support generic declarations for user-defined types/functions in v1.
@@ -85,7 +79,7 @@
 - Generic classes are supported by syntax plan, but are implemented together with class support.
 - Keep parser, evaluator, and codegen behavior aligned for generics.
 
-## 10. Lists (Dynamic Arrays)
+## 9. Lists (Dynamic Arrays)
 
 - Add generic list types as dynamic arrays without fixed compile-time length.
 - Use generic syntax for declarations, for example `let xs: List<int>;`.
@@ -120,7 +114,7 @@
 - codegen tests
 - CLI/runtime tests
 
-## 11. Structs
+## 10. Structs
 
 - Add struct declarations and typed struct values.
 - Use literal construction syntax for structs.
@@ -144,14 +138,14 @@
 - Pointer struct function usage syntax (auto-deref):
 - `ptr.methodName(args...)` (no `(*ptr).methodName(...)` required)
 
-## 12. Pointers
+## 11. Pointers
 
 - Pointer types are nullable only when explicitly declared nullable.
 - Add pointer operations (`&value`, `*ptr`, pointer assignment).
 - Pointer method calls auto-deref: allow `p.method()` without requiring `(*p).method()`.
 - Pointer + struct design should be combined, so references and mutation go through pointers.
 
-## 13. Custom Libraries
+## 12. Custom Libraries
 
 - Add `import ...` syntax.
 - Built-in libraries are imported with `twice.<lib>`.
@@ -164,7 +158,7 @@
 - Add member import alias syntax like:
 - `import twice.math.sqrt as sqrt`
 
-## 14. OOP and Type System Expansion
+## 13. OOP and Type System Expansion
 
 - Add class declarations and object instantiation.o
 - Structs stay public-focused; classes support explicit `public`/`private`.
@@ -187,7 +181,7 @@
 - `this` is valid in instance methods and constructors, and invalid in `static` methods.
 - Typed declarations without `new` remain `null` until initialized (for example `let s: Shape;`).
 
-## 15. Inheritance
+## 14. Inheritance
 
 - Add inheritance as a separate feature from base class/object support.
 - Define overriding and method resolution rules.
