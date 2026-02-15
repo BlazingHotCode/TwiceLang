@@ -265,24 +265,35 @@ func (cg *CodeGen) collectFunctionsInExpression(expr ast.Expression, scope map[s
 }
 
 func (cg *CodeGen) generateFunctionDefinitions() {
-	named := make([]string, 0, len(cg.functions))
-	literals := make([]string, 0, len(cg.functions))
-	for k := range cg.functions {
-		if strings.HasPrefix(k, "lit_") {
-			literals = append(literals, k)
-		} else {
-			named = append(named, k)
+	generated := make(map[string]struct{}, len(cg.functions))
+	for {
+		named := make([]string, 0, len(cg.functions))
+		literals := make([]string, 0, len(cg.functions))
+		for k := range cg.functions {
+			if _, done := generated[k]; done {
+				continue
+			}
+			if strings.HasPrefix(k, "lit_") {
+				literals = append(literals, k)
+			} else {
+				named = append(named, k)
+			}
 		}
-	}
-	sort.Strings(named)
-	sort.Slice(literals, func(i, j int) bool {
-		return literalFnIndex(literals[i]) < literalFnIndex(literals[j])
-	})
-	for _, key := range named {
-		cg.generateOneFunction(cg.functions[key])
-	}
-	for _, key := range literals {
-		cg.generateOneFunction(cg.functions[key])
+		if len(named) == 0 && len(literals) == 0 {
+			return
+		}
+		sort.Strings(named)
+		sort.Slice(literals, func(i, j int) bool {
+			return literalFnIndex(literals[i]) < literalFnIndex(literals[j])
+		})
+		for _, key := range named {
+			generated[key] = struct{}{}
+			cg.generateOneFunction(cg.functions[key])
+		}
+		for _, key := range literals {
+			generated[key] = struct{}{}
+			cg.generateOneFunction(cg.functions[key])
+		}
 	}
 }
 
@@ -373,8 +384,12 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 	cg.maxStackOffset = 0
 	cg.inFunction = true
 	cg.funcRetLbl = cg.newLabel()
-	cg.funcRetType = cg.parseTypeName(fn.Literal.ReturnType)
-	cg.funcRetTypeName = fn.Literal.ReturnType
+	retTypeName := fn.Literal.ReturnType
+	if len(fn.TypeArgMap) > 0 && retTypeName != "" {
+		retTypeName = substituteTypeParams(retTypeName, fn.TypeArgMap)
+	}
+	cg.funcRetType = cg.parseTypeName(retTypeName)
+	cg.funcRetTypeName = retTypeName
 	cg.currentFn = fn.Key
 	cg.arraySlots = make(map[*ast.ArrayLiteral]int)
 	cg.tupleSlots = make(map[*ast.TupleLiteral]int)
@@ -393,14 +408,18 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 		cg.markDeclaredInCurrentScope(p.Name.Value)
 		cg.emit("    mov %d(%%rbp), %%rax  # param %s", 16+idx*8, p.Name.Value)
 		cg.emit("    mov %%rax, -%d(%%rbp)", offset)
-		pt := cg.parseTypeName(p.TypeName)
+		paramTypeName := p.TypeName
+		if len(fn.TypeArgMap) > 0 && paramTypeName != "" {
+			paramTypeName = substituteTypeParams(paramTypeName, fn.TypeArgMap)
+		}
+		pt := cg.parseTypeName(paramTypeName)
 		cg.varTypes[p.Name.Value] = pt
 		cg.varDeclared[p.Name.Value] = pt
-		if p.TypeName != "" {
-			cg.varTypeNames[p.Name.Value] = p.TypeName
-			cg.varDeclaredNames[p.Name.Value] = p.TypeName
-			cg.varValueTypeName[p.Name.Value] = p.TypeName
-			if _, n, ok := peelArrayType(p.TypeName); ok {
+		if paramTypeName != "" {
+			cg.varTypeNames[p.Name.Value] = paramTypeName
+			cg.varDeclaredNames[p.Name.Value] = paramTypeName
+			cg.varValueTypeName[p.Name.Value] = paramTypeName
+			if _, n, ok := peelArrayType(paramTypeName); ok {
 				cg.varArrayLen[p.Name.Value] = n
 			}
 		}
@@ -608,10 +627,90 @@ func (cg *CodeGen) generateUserFunctionCall(fn *compiledFunction, ce *ast.CallEx
 		cg.emit("    push %%rax")
 	}
 
-	cg.emit("    call %s", fn.Label)
+	callTarget := fn
+	if len(fn.Literal.TypeParams) > 0 {
+		callTarget = cg.ensureFunctionSpecialization(fn, typeArgMap)
+	}
+	cg.emit("    call %s", callTarget.Label)
 	if len(passedArgs) > 0 {
 		cg.emit("    add $%d, %%rsp", len(passedArgs)*8)
 	}
+}
+
+func (cg *CodeGen) ensureFunctionSpecialization(fn *compiledFunction, typeArgMap map[string]string) *compiledFunction {
+	if fn == nil || fn.Literal == nil || len(fn.Literal.TypeParams) == 0 {
+		return fn
+	}
+	args := make([]string, len(fn.Literal.TypeParams))
+	for i, tp := range fn.Literal.TypeParams {
+		args[i] = typeArgMap[tp]
+	}
+	specKey := fn.Key + "<" + strings.Join(args, ",") + ">"
+	if existing, ok := cg.functions[specKey]; ok && existing != nil {
+		return existing
+	}
+	specTypeMap := make(map[string]string, len(typeArgMap))
+	for k, v := range typeArgMap {
+		specTypeMap[k] = v
+	}
+	spec := &compiledFunction{
+		Key:              specKey,
+		Name:             fn.Name,
+		Label:            fn.Label + "__" + mangleGenericArgs(args),
+		Literal:          fn.Literal,
+		Captures:         append([]string{}, fn.Captures...),
+		CaptureTypeNames: append([]string{}, fn.CaptureTypeNames...),
+		TypeArgMap:       specTypeMap,
+	}
+	cg.functions[specKey] = spec
+	return spec
+}
+
+func mangleGenericArgs(args []string) string {
+	if len(args) == 0 {
+		return "generic"
+	}
+	parts := make([]string, len(args))
+	for i, a := range args {
+		parts[i] = mangleTypeForLabel(a)
+	}
+	return strings.Join(parts, "__")
+}
+
+func mangleTypeForLabel(t string) string {
+	var b strings.Builder
+	for _, r := range t {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			continue
+		}
+		switch r {
+		case '_':
+			b.WriteString("_u")
+		case '<':
+			b.WriteString("_lt")
+		case '>':
+			b.WriteString("_gt")
+		case '[':
+			b.WriteString("_lb")
+		case ']':
+			b.WriteString("_rb")
+		case '(':
+			b.WriteString("_lp")
+		case ')':
+			b.WriteString("_rp")
+		case ',':
+			b.WriteString("_c")
+		case '|':
+			b.WriteString("_p")
+		default:
+			b.WriteString("_x")
+		}
+	}
+	if b.Len() == 0 {
+		return "type"
+	}
+	return b.String()
 }
 
 func copyScope(scope map[string]struct{}) map[string]struct{} {

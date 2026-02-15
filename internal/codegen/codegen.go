@@ -61,6 +61,7 @@ type compiledFunction struct {
 	Literal          *ast.FunctionLiteral
 	Captures         []string
 	CaptureTypeNames []string
+	TypeArgMap       map[string]string
 }
 
 type genericTypeAlias struct {

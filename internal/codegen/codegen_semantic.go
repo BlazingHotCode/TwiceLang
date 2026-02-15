@@ -409,11 +409,12 @@ func semanticGenericTypeArityError(typeName string, genericArities map[string]in
 		return "", false
 	}
 	if gb, args, ok := typesys.SplitGenericType(base); ok {
-		if _, isNonGeneric := nonGenericAliases[gb]; isNonGeneric {
+		if expected, exists := genericArities[gb]; exists {
+			if expected != len(args) {
+				return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", gb, expected, len(args)), true
+			}
+		} else if _, isNonGeneric := nonGenericAliases[gb]; isNonGeneric {
 			return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", gb, 0, len(args)), true
-		}
-		if expected, exists := genericArities[gb]; exists && expected != len(args) {
-			return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", gb, expected, len(args)), true
 		}
 		for _, a := range args {
 			if msg, ok := semanticGenericTypeArityError(a, genericArities, nonGenericAliases, typeParams); ok {

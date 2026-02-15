@@ -989,6 +989,25 @@ func TestCodegenGenericFunctionExplicitCall(t *testing.T) {
 	if !strings.Contains(asm, "call print_int") {
 		t.Fatalf("expected print_int for id<int>(9), got:\n%s", asm)
 	}
+	if !strings.Contains(asm, "fn_id__int:") {
+		t.Fatalf("expected specialized label fn_id__int, got:\n%s", asm)
+	}
+	if !strings.Contains(asm, "call fn_id__int") {
+		t.Fatalf("expected call to specialized function fn_id__int, got:\n%s", asm)
+	}
+}
+
+func TestCodegenGenericFunctionMonomorphizesPerTypeArg(t *testing.T) {
+	asm, cg := generateAssembly(t, `fn id<T>(x: T) T { return x; } print(id<int>(1)); print(id<string>("x"));`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors for generic monomorphization: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "fn_id__int:") || !strings.Contains(asm, "fn_id__string:") {
+		t.Fatalf("expected per-instantiation specialized labels, got:\n%s", asm)
+	}
+	if !strings.Contains(asm, "call fn_id__int") || !strings.Contains(asm, "call fn_id__string") {
+		t.Fatalf("expected calls to per-instantiation specialized labels, got:\n%s", asm)
+	}
 }
 
 func TestCodegenGenericFunctionTypeArgArityErrors(t *testing.T) {

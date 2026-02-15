@@ -302,6 +302,41 @@ fn main() int {
 	}
 }
 
+func TestCLICompileAndRunGenericFunctionMonomorphization(t *testing.T) {
+	root := repoRoot(t)
+	ensureToolchain(t)
+
+	srcPath := filepath.Join(t.TempDir(), "generic_monomorph.tw")
+	source := `
+fn id<T>(x: T) T { return x; }
+fn main() int {
+  println(id<int>(1));
+  println(id<string>("x"));
+  return 0;
+}
+`
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	outputName := "twice_cli_generic_monomorph_bin"
+	outputPath := filepath.Join(root, outputName)
+	_ = os.Remove(outputPath)
+	t.Cleanup(func() { _ = os.Remove(outputPath) })
+
+	cmd := exec.Command("go", "run", "./cmd/twice", "-run", "-o", outputName, srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("compile/run failed: %v\n%s", err, out)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "\n1\nx\n") {
+		t.Fatalf("expected generic monomorphization output. output:\n%s", output)
+	}
+}
+
 func TestCLICodegenErrorForGenericAliasArity(t *testing.T) {
 	root := repoRoot(t)
 
