@@ -12,6 +12,8 @@ type Environment struct {
 	genericTypeAlias map[string]GenericTypeAlias
 	structDefs       map[string]*ast.StructStatement
 	structMethods    map[string]Object
+	importNamespaces map[string]string
+	importMembers    map[string]string
 	outer            *Environment // Parent scope, nil for global scope
 }
 
@@ -31,6 +33,8 @@ func NewEnvironment() *Environment {
 		genericTypeAlias: make(map[string]GenericTypeAlias),
 		structDefs:       make(map[string]*ast.StructStatement),
 		structMethods:    make(map[string]Object),
+		importNamespaces: make(map[string]string),
+		importMembers:    make(map[string]string),
 		outer:            nil,
 	}
 }
@@ -202,4 +206,32 @@ func (e *Environment) StructMethod(receiverType, methodName string) (Object, boo
 		return e.outer.StructMethod(receiverType, methodName)
 	}
 	return nil, false
+}
+
+func (e *Environment) SetImportNamespace(alias, path string) {
+	e.importNamespaces[alias] = path
+}
+
+func (e *Environment) ImportNamespace(alias string) (string, bool) {
+	if p, ok := e.importNamespaces[alias]; ok {
+		return p, true
+	}
+	if e.outer != nil {
+		return e.outer.ImportNamespace(alias)
+	}
+	return "", false
+}
+
+func (e *Environment) SetImportMember(alias, target string) {
+	e.importMembers[alias] = target
+}
+
+func (e *Environment) ImportMember(alias string) (string, bool) {
+	if p, ok := e.importMembers[alias]; ok {
+		return p, true
+	}
+	if e.outer != nil {
+		return e.outer.ImportMember(alias)
+	}
+	return "", false
 }

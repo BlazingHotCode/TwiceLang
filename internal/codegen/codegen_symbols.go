@@ -57,6 +57,10 @@ func (cg *CodeGen) declareType(name string, node ast.Node, scopes *[]symbolScope
 
 func (cg *CodeGen) symbolCheckStatement(stmt ast.Statement, scopes *[]symbolScope) {
 	switch s := stmt.(type) {
+	case *ast.ImportStatement:
+		if s != nil && s.Alias != "" {
+			cg.declareValue(s.Alias, true, s, scopes)
+		}
 	case *ast.LetStatement:
 		if s != nil && s.Name != nil {
 			cg.declareValue(s.Name.Value, false, s, scopes)

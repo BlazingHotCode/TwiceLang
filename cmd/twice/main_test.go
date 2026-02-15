@@ -303,6 +303,47 @@ fn main() int {
 	}
 }
 
+func TestCLICompileAndRunImportBuiltinMath(t *testing.T) {
+	root := repoRoot(t)
+	ensureToolchain(t)
+
+	srcPath := filepath.Join(t.TempDir(), "import_math.tw")
+	source := `
+import twice.math as math;
+import twice.math.sqrt as sqrt;
+
+fn main() int {
+  println(math.abs(-7));
+  println(math.max(2, 9));
+  println(sqrt(49));
+  println(math.abs(-3.5));
+  println(math.min(1.5, 2));
+  println(sqrt(2.25));
+  return 0;
+}
+`
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	outputName := "twice_cli_import_math_bin"
+	outputPath := filepath.Join(root, outputName)
+	_ = os.Remove(outputPath)
+	t.Cleanup(func() { _ = os.Remove(outputPath) })
+
+	cmd := exec.Command("go", "run", "./cmd/twice", "-run", "-o", outputName, srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("compile/run failed: %v\n%s", err, out)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "\n7\n9\n7\n3.5\n1.5\n1.5\n") {
+		t.Fatalf("expected import math runtime output. output:\n%s", output)
+	}
+}
+
 func TestCLICompileAndRunStructMethodsWithPointers(t *testing.T) {
 	root := repoRoot(t)
 	ensureToolchain(t)

@@ -55,6 +55,7 @@ Notes:
 - Arrays with typed declarations, literals, indexing, mutation, `length()`, and `.length`
 - Generic lists (`List<T>`) with constructor syntax, indexing/mutation, `length`/`length()`, and list methods
 - Generic maps (`Map<K,V>`) with constructor syntax, bracket get/set, `length`/`length()`, and map methods
+- Import syntax with namespace/member aliases (including `twice.math` built-ins)
 - Struct declarations with typed fields, defaults/optional fields, constructor calls, and field access/update
 - Pointer types and operations (`*T`, `&value`, `*ptr`, and `*ptr = value`)
 - Null-safe access/coalescing with `?.` and `??`
@@ -670,6 +671,37 @@ println(typeof(v)); // MaybePair
   - `char(...)`
   - `bool(...)`
 
+### Imports
+
+Import syntax:
+
+```tw
+import twice.math as math;
+import twice.math.sqrt as sqrt;
+```
+
+Namespace/member usage:
+
+```tw
+println(math.abs(-7));
+println(math.min(9, 2));
+println(math.max(3, 8));
+println(sqrt(49));
+println(math.abs(-3.5));
+println(math.min(1.5, 2));
+println(sqrt(2.25));
+```
+
+Supported built-in library today:
+
+- `twice.math`
+  - `abs(int|float) int|float`
+  - `min(int|float, int|float) int|float`
+  - `max(int|float, int|float) int|float`
+  - `sqrt(int|float) int|float` (int input uses floor sqrt)
+
+Non-`twice.*` import paths are supported syntactically and can be used as aliases for local function names.
+
 ### Runtime Errors
 
 - Runtime failures are reported as: `Runtime error: <message>`
@@ -824,5 +856,4 @@ go test ./...
 
 See `TODO.md` for planned work, currently focused on:
 
-- Custom libraries (for example, a `math` library)
 - Continued evaluator/codegen parity polish

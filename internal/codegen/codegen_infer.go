@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"twice/internal/ast"
+	"twice/internal/imports"
 )
 
 func (cg *CodeGen) inferExpressionType(expr ast.Expression) (out valueType) {
@@ -187,6 +188,22 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) (out valueType) {
 			return cg.parseTypeName(fl.ReturnType)
 		}
 		if fn, ok := e.Function.(*ast.Identifier); ok {
+			if target, ok := cg.importMembers[fn.Value]; ok {
+				if builtinTarget, ok := imports.BuiltinMemberTarget(target); ok {
+					switch builtinTarget {
+					case "twice.math.abs", "twice.math.sqrt":
+						if len(e.Arguments) == 1 && cg.inferExpressionType(e.Arguments[0]) == typeFloat {
+							return typeFloat
+						}
+						return typeInt
+					case "twice.math.min", "twice.math.max":
+						if len(e.Arguments) == 2 && (cg.inferExpressionType(e.Arguments[0]) == typeFloat || cg.inferExpressionType(e.Arguments[1]) == typeFloat) {
+							return typeFloat
+						}
+						return typeInt
+					}
+				}
+			}
 			switch fn.Value {
 			case "typeof", "typeofValue", "typeofvalue":
 				return typeType
@@ -256,6 +273,24 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) (out valueType) {
 		}
 		return cg.parseTypeName(elemTypeName)
 	case *ast.MethodCallExpression:
+		if objID, ok := e.Object.(*ast.Identifier); ok && e.Method != nil {
+			if ns, ok := cg.importNamespaces[objID.Value]; ok {
+				if builtinTarget, ok := imports.BuiltinMemberTarget(ns + "." + e.Method.Value); ok {
+					switch builtinTarget {
+					case "twice.math.abs", "twice.math.sqrt":
+						if len(e.Arguments) == 1 && cg.inferExpressionType(e.Arguments[0]) == typeFloat {
+							return typeFloat
+						}
+						return typeInt
+					case "twice.math.min", "twice.math.max":
+						if len(e.Arguments) == 2 && (cg.inferExpressionType(e.Arguments[0]) == typeFloat || cg.inferExpressionType(e.Arguments[1]) == typeFloat) {
+							return typeFloat
+						}
+						return typeInt
+					}
+				}
+			}
+		}
 		if retName, ok := cg.structMethodReturnTypeName(e); ok {
 			return cg.parseTypeName(retName)
 		}
@@ -414,6 +449,24 @@ func (cg *CodeGen) inferExpressionTypeName(expr ast.Expression) (out string) {
 		}
 		return elem
 	case *ast.MethodCallExpression:
+		if objID, ok := e.Object.(*ast.Identifier); ok && e.Method != nil {
+			if ns, ok := cg.importNamespaces[objID.Value]; ok {
+				if builtinTarget, ok := imports.BuiltinMemberTarget(ns + "." + e.Method.Value); ok {
+					switch builtinTarget {
+					case "twice.math.abs", "twice.math.sqrt":
+						if len(e.Arguments) == 1 && cg.inferExpressionType(e.Arguments[0]) == typeFloat {
+							return "float"
+						}
+						return "int"
+					case "twice.math.min", "twice.math.max":
+						if len(e.Arguments) == 2 && (cg.inferExpressionType(e.Arguments[0]) == typeFloat || cg.inferExpressionType(e.Arguments[1]) == typeFloat) {
+							return "float"
+						}
+						return "int"
+					}
+				}
+			}
+		}
 		if retName, ok := cg.structMethodReturnTypeName(e); ok {
 			return retName
 		}
@@ -499,6 +552,22 @@ func (cg *CodeGen) inferExpressionTypeName(expr ast.Expression) (out string) {
 			return fl.ReturnType
 		}
 		if fn, ok := e.Function.(*ast.Identifier); ok {
+			if target, ok := cg.importMembers[fn.Value]; ok {
+				if builtinTarget, ok := imports.BuiltinMemberTarget(target); ok {
+					switch builtinTarget {
+					case "twice.math.abs", "twice.math.sqrt":
+						if len(e.Arguments) == 1 && cg.inferExpressionType(e.Arguments[0]) == typeFloat {
+							return "float"
+						}
+						return "int"
+					case "twice.math.min", "twice.math.max":
+						if len(e.Arguments) == 2 && (cg.inferExpressionType(e.Arguments[0]) == typeFloat || cg.inferExpressionType(e.Arguments[1]) == typeFloat) {
+							return "float"
+						}
+						return "int"
+					}
+				}
+			}
 			if key, ok := cg.varFuncs[fn.Value]; ok {
 				retName := cg.resolveGenericCallReturnTypeName(cg.functions[key], e)
 				if retName != "" {

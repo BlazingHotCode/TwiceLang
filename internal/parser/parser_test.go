@@ -152,6 +152,46 @@ func TestTypeDeclarationParses(t *testing.T) {
 	}
 }
 
+func TestImportStatementParses(t *testing.T) {
+	p := New(lexer.New("import twice.math as math; import twice.math.sqrt as sqrt; import local.lib;"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	if len(program.Statements) != 3 {
+		t.Fatalf("expected 3 statements, got=%d", len(program.Statements))
+	}
+	im0, ok := program.Statements[0].(*ast.ImportStatement)
+	if !ok {
+		t.Fatalf("expected import statement, got=%T", program.Statements[0])
+	}
+	if got := strings.Join(im0.Path, "."); got != "twice.math" {
+		t.Fatalf("unexpected import path: %s", got)
+	}
+	if im0.Alias != "math" {
+		t.Fatalf("unexpected import alias: %s", im0.Alias)
+	}
+	im1, ok := program.Statements[1].(*ast.ImportStatement)
+	if !ok {
+		t.Fatalf("expected import statement, got=%T", program.Statements[1])
+	}
+	if got := strings.Join(im1.Path, "."); got != "twice.math.sqrt" {
+		t.Fatalf("unexpected import path: %s", got)
+	}
+	if im1.Alias != "sqrt" {
+		t.Fatalf("unexpected import alias: %s", im1.Alias)
+	}
+	im2, ok := program.Statements[2].(*ast.ImportStatement)
+	if !ok {
+		t.Fatalf("expected import statement, got=%T", program.Statements[2])
+	}
+	if got := strings.Join(im2.Path, "."); got != "local.lib" {
+		t.Fatalf("unexpected import path: %s", got)
+	}
+	if im2.Alias != "lib" {
+		t.Fatalf("unexpected default alias: %s", im2.Alias)
+	}
+}
+
 func TestGenericTypeDeclarationParses(t *testing.T) {
 	p := New(lexer.New("type Pair<T, U> = (T, U); let p: Pair<int, string>;"))
 	program := p.ParseProgram()

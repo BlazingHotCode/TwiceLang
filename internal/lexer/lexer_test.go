@@ -347,6 +347,32 @@ func TestStructTokens(t *testing.T) {
 	}
 }
 
+func TestImportTokens(t *testing.T) {
+	input := `import twice.math.sqrt as sqrt;`
+	tests := []struct {
+		typ token.TokenType
+		lit string
+	}{
+		{token.IMPORT, "import"},
+		{token.IDENT, "twice"},
+		{token.DOT, "."},
+		{token.IDENT, "math"},
+		{token.DOT, "."},
+		{token.IDENT, "sqrt"},
+		{token.IDENT, "as"},
+		{token.IDENT, "sqrt"},
+		{token.SEMICOLON, ";"},
+		{token.EOF, ""},
+	}
+	l := New(input)
+	for i, tt := range tests {
+		tok := l.NextToken()
+		if tok.Type != tt.typ || tok.Literal != tt.lit {
+			t.Fatalf("tests[%d] got=(%q,%q) want=(%q,%q)", i, tok.Type, tok.Literal, tt.typ, tt.lit)
+		}
+	}
+}
+
 func TestArrayTokensAndVarIdentifier(t *testing.T) {
 	input := `let arr: int[3]; var x = 1;`
 	tests := []struct {

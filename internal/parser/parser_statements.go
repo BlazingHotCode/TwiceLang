@@ -100,6 +100,12 @@ func (p *Parser) parseStatement() ast.Statement {
 			return nil
 		}
 		return stmt
+	case token.IMPORT:
+		stmt := p.parseImportStatement()
+		if stmt == nil {
+			return nil
+		}
+		return stmt
 	case token.FOR:
 		return p.parseForStatement()
 	case token.WHILE:
@@ -153,6 +159,35 @@ func (p *Parser) parseStatement() ast.Statement {
 	default:
 		return p.parseExpressionStatement()
 	}
+}
+
+func (p *Parser) parseImportStatement() *ast.ImportStatement {
+	stmt := &ast.ImportStatement{Token: p.curToken}
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	stmt.Path = append(stmt.Path, p.curToken.Literal)
+	for p.peekTokenIs(token.DOT) {
+		p.nextToken()
+		if !p.expectPeek(token.IDENT) {
+			return nil
+		}
+		stmt.Path = append(stmt.Path, p.curToken.Literal)
+	}
+	if p.peekTokenIs(token.IDENT) && p.peekToken.Literal == "as" {
+		p.nextToken()
+		if !p.expectPeek(token.IDENT) {
+			return nil
+		}
+		stmt.Alias = p.curToken.Literal
+	}
+	if !p.expectPeek(token.SEMICOLON) {
+		return nil
+	}
+	if stmt.Alias == "" && len(stmt.Path) > 0 {
+		stmt.Alias = stmt.Path[len(stmt.Path)-1]
+	}
+	return stmt
 }
 
 func (p *Parser) parseTypeDeclStatement() ast.Statement {

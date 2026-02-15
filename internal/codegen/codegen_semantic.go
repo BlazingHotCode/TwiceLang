@@ -3,6 +3,7 @@ package codegen
 import (
 	"fmt"
 	"twice/internal/ast"
+	"twice/internal/imports"
 	"twice/internal/typesys"
 )
 
@@ -264,6 +265,23 @@ func (cg *CodeGen) semanticKnownTypeWithParams(typeName string, aliases map[stri
 
 func (cg *CodeGen) semanticCheckStatement(stmt ast.Statement, aliases map[string]string, genericArities map[string]int, nonGenericAliases map[string]struct{}) {
 	switch s := stmt.(type) {
+	case *ast.ImportStatement:
+		if s == nil || len(s.Path) == 0 {
+			cg.addNodeError("invalid import statement", s)
+			return
+		}
+		path := imports.JoinPath(s.Path)
+		if imports.IsBuiltinPath(s.Path) {
+			if len(s.Path) == 2 {
+				if !imports.BuiltinNamespace(path) {
+					cg.addNodeError("unknown built-in library: "+path, s)
+				}
+			} else if len(s.Path) >= 3 {
+				if _, ok := imports.BuiltinMemberTarget(path); !ok {
+					cg.addNodeError("unknown built-in import member: "+path, s)
+				}
+			}
+		}
 	case *ast.LetStatement:
 		if s.TypeName != "" {
 			if msg, ok := semanticGenericTypeArityError(s.TypeName, genericArities, nonGenericAliases, nil); ok {
@@ -559,7 +577,7 @@ func semanticGenericTypeArityError(typeName string, genericArities map[string]in
 		if expected, exists := genericArities[gb]; exists {
 			if expected != len(args) {
 				return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", gb, expected, len(args)), true
-				}
+			}
 		} else if _, isNonGeneric := nonGenericAliases[gb]; isNonGeneric {
 			return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", gb, 0, len(args)), true
 		}

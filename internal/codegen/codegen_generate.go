@@ -2,9 +2,11 @@ package codegen
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"twice/internal/ast"
+	"twice/internal/imports"
 	"twice/internal/token"
 )
 
@@ -12,6 +14,8 @@ func (cg *CodeGen) generateStatement(stmt ast.Statement) {
 	cg.inferTypeCache = make(map[ast.Expression]valueType)
 	cg.inferNameCache = make(map[ast.Expression]string)
 	switch s := stmt.(type) {
+	case *ast.ImportStatement:
+		cg.generateImportStatement(s)
 	case *ast.LetStatement:
 		cg.generateLet(s)
 	case *ast.ConstStatement:
@@ -62,6 +66,30 @@ func (cg *CodeGen) generateStatement(stmt ast.Statement) {
 		cg.markDeclaredInCurrentScope(s.Name.Value)
 	case *ast.BlockStatement:
 		cg.generateBlockStatement(s)
+	}
+}
+
+func (cg *CodeGen) generateImportStatement(is *ast.ImportStatement) {
+	if is == nil || len(is.Path) == 0 {
+		cg.addNodeError("invalid import statement", is)
+		return
+	}
+	alias := is.Alias
+	if alias == "" {
+		alias = imports.DefaultAlias(is.Path)
+	}
+	if alias == "" {
+		cg.addNodeError("invalid import alias", is)
+		return
+	}
+	path := imports.JoinPath(is.Path)
+	if len(is.Path) == 2 {
+		cg.importNamespaces[alias] = path
+		return
+	}
+	if len(is.Path) >= 3 {
+		cg.importMembers[alias] = path
+		return
 	}
 }
 
@@ -631,6 +659,9 @@ func (cg *CodeGen) generateMethodCallExpression(mce *ast.MethodCallExpression) {
 		cg.emit("    mov $0, %%rax")
 		return
 	}
+	if cg.generateImportedNamespaceCall(mce) {
+		return
+	}
 	if mce.NullSafe {
 		doneLabel := cg.emitNullSafeObjectGuard(mce.Object)
 		cg.generateMethodByName(mce, true)
@@ -638,6 +669,52 @@ func (cg *CodeGen) generateMethodCallExpression(mce *ast.MethodCallExpression) {
 		return
 	}
 	cg.generateMethodByName(mce, false)
+}
+
+func (cg *CodeGen) generateImportedNamespaceCall(mce *ast.MethodCallExpression) bool {
+	objID, ok := mce.Object.(*ast.Identifier)
+	if !ok || objID == nil {
+		return false
+	}
+	ns, ok := cg.importNamespaces[objID.Value]
+	if !ok {
+		return false
+	}
+	target := ns + "." + mce.Method.Value
+	if builtinTarget, ok := imports.BuiltinMemberTarget(target); ok {
+		cg.generateImportedBuiltinCall(builtinTarget, mce.Arguments, mce)
+		return true
+	}
+	if imports.BuiltinNamespace(ns) {
+		if mce.NullSafe {
+			cg.emit("    lea null_lit(%%rip), %%rax")
+		} else {
+			cg.addNodeError("unknown imported member: "+target, mce)
+			cg.emit("    mov $0, %%rax")
+		}
+		return true
+	}
+	if key, ok := cg.varFuncs[mce.Method.Value]; ok {
+		cg.generateUserFunctionCall(cg.functions[key], &ast.CallExpression{
+			Token:     token.Token{Type: token.LPAREN, Literal: "("},
+			Arguments: mce.Arguments,
+		})
+		return true
+	}
+	if key, ok := cg.funcByName[mce.Method.Value]; ok {
+		cg.generateUserFunctionCall(cg.functions[key], &ast.CallExpression{
+			Token:     token.Token{Type: token.LPAREN, Literal: "("},
+			Arguments: mce.Arguments,
+		})
+		return true
+	}
+	if mce.NullSafe {
+		cg.emit("    lea null_lit(%%rip), %%rax")
+		return true
+	}
+	cg.addNodeError("unknown local import member: "+target, mce)
+	cg.emit("    mov $0, %%rax")
+	return true
 }
 
 func (cg *CodeGen) generateMethodByName(mce *ast.MethodCallExpression, nullSafe bool) {
@@ -2517,6 +2594,135 @@ func (cg *CodeGen) currentContinueLabel() string {
 	return cg.loopContLabels[len(cg.loopContLabels)-1]
 }
 
+func (cg *CodeGen) generateImportedBuiltinCall(target string, args []ast.Expression, node ast.Node) {
+	switch target {
+	case "twice.math.abs":
+		if len(args) != 1 {
+			cg.failNodef(node, "abs expects 1 argument, got=%d", len(args))
+			return
+		}
+		argType := cg.inferExpressionType(args[0])
+		if argType != typeInt && argType != typeFloat {
+			cg.failNodef(args[0], "abs expects int or float argument")
+			return
+		}
+		if argType == typeFloat {
+			v, ok := cg.constFloatValue(args[0])
+			if !ok {
+				cg.failNodef(args[0], "float abs in codegen requires compile-time known numeric value")
+				return
+			}
+			cg.emitConstFloatResult(math.Abs(v))
+			return
+		}
+		cg.generateExpression(args[0])
+		done := cg.newLabel()
+		cg.emit("    cmp $0, %%rax")
+		cg.emit("    jge %s", done)
+		cg.emit("    neg %%rax")
+		cg.emit("%s:", done)
+	case "twice.math.min", "twice.math.max":
+		if len(args) != 2 {
+			cg.failNodef(node, "%s expects 2 arguments, got=%d", mangleImportedName(target), len(args))
+			return
+		}
+		leftType := cg.inferExpressionType(args[0])
+		rightType := cg.inferExpressionType(args[1])
+		if !isNumericType(leftType) || !isNumericType(rightType) {
+			cg.failNodef(node, "%s expects int/float arguments", mangleImportedName(target))
+			return
+		}
+		if leftType == typeFloat || rightType == typeFloat {
+			left, lok := cg.constFloatValue(args[0])
+			right, rok := cg.constFloatValue(args[1])
+			if !lok || !rok {
+				cg.failNodef(node, "float %s in codegen requires compile-time known numeric values", mangleImportedName(target))
+				return
+			}
+			if target == "twice.math.min" {
+				cg.emitConstFloatResult(math.Min(left, right))
+			} else {
+				cg.emitConstFloatResult(math.Max(left, right))
+			}
+			return
+		}
+		cg.generateExpression(args[0])
+		cg.emit("    push %%rax")
+		cg.generateExpression(args[1])
+		cg.emit("    mov %%rax, %%rcx")
+		cg.emit("    pop %%rax")
+		done := cg.newLabel()
+		if target == "twice.math.min" {
+			cg.emit("    cmp %%rcx, %%rax")
+			cg.emit("    jle %s", done)
+			cg.emit("    mov %%rcx, %%rax")
+		} else {
+			cg.emit("    cmp %%rcx, %%rax")
+			cg.emit("    jge %s", done)
+			cg.emit("    mov %%rcx, %%rax")
+		}
+		cg.emit("%s:", done)
+	case "twice.math.sqrt":
+		if len(args) != 1 {
+			cg.failNodef(node, "sqrt expects 1 argument, got=%d", len(args))
+			return
+		}
+		argType := cg.inferExpressionType(args[0])
+		if argType != typeInt && argType != typeFloat {
+			cg.failNodef(args[0], "sqrt expects int or float argument")
+			return
+		}
+		if argType == typeFloat {
+			v, ok := cg.constFloatValue(args[0])
+			if !ok {
+				cg.failNodef(args[0], "float sqrt in codegen requires compile-time known numeric value")
+				return
+			}
+			if v < 0 {
+				cg.failNodef(args[0], "sqrt expects non-negative number")
+				return
+			}
+			cg.emitConstFloatResult(math.Sqrt(v))
+			return
+		}
+		cg.generateExpression(args[0])
+		nonNeg := cg.newLabel()
+		done := cg.newLabel()
+		loop := cg.newLabel()
+		cg.emit("    cmp $0, %%rax")
+		cg.emit("    jge %s", nonNeg)
+		cg.emit("    mov $0, %%rax")
+		cg.emit("    jmp %s", done)
+		cg.emit("%s:", nonNeg)
+		cg.emit("    mov %%rax, %%r8")
+		cg.emit("    xor %%rax, %%rax")
+		cg.emit("%s:", loop)
+		cg.emit("    mov %%rax, %%rcx")
+		cg.emit("    inc %%rcx")
+		cg.emit("    mov %%rcx, %%rdx")
+		cg.emit("    imul %%rdx, %%rdx")
+		cg.emit("    cmp %%r8, %%rdx")
+		cg.emit("    jg %s", done)
+		cg.emit("    mov %%rcx, %%rax")
+		cg.emit("    jmp %s", loop)
+		cg.emit("%s:", done)
+	default:
+		cg.failNodef(node, "unsupported imported function: %s", target)
+	}
+}
+
+func (cg *CodeGen) emitConstFloatResult(v float64) {
+	label := cg.stringLabel(fmt.Sprintf("%g", v))
+	cg.emit("    lea %s(%%rip), %%rax", label)
+}
+
+func mangleImportedName(target string) string {
+	if strings.HasPrefix(target, "twice.math.") {
+		return strings.TrimPrefix(target, "twice.math.")
+	}
+	return target
+}
+
 func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 	if fl, ok := ce.Function.(*ast.FunctionLiteral); ok {
 		key, ok := cg.funcLitKeys[fl]
@@ -2535,6 +2741,36 @@ func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 	fn, ok := ce.Function.(*ast.Identifier)
 	if !ok {
 		cg.failNode("unsupported call target", ce)
+		return
+	}
+	if target, ok := cg.importMembers[fn.Value]; ok {
+		if len(ce.TypeArguments) > 0 {
+			cg.failNode("generic type arguments are not supported for imported builtin functions", ce)
+			return
+		}
+		for _, arg := range ce.Arguments {
+			if _, ok := arg.(*ast.NamedArgument); ok {
+				cg.failNode("named arguments are not supported for imported builtin functions", arg)
+				return
+			}
+		}
+		if builtinTarget, ok := imports.BuiltinMemberTarget(target); ok {
+			cg.generateImportedBuiltinCall(builtinTarget, ce.Arguments, ce)
+			return
+		}
+		localName := target
+		if dot := strings.LastIndex(target, "."); dot >= 0 {
+			localName = target[dot+1:]
+		}
+		if key, ok := cg.varFuncs[localName]; ok {
+			cg.generateUserFunctionCall(cg.functions[key], ce)
+			return
+		}
+		if key, ok := cg.funcByName[localName]; ok {
+			cg.generateUserFunctionCall(cg.functions[key], ce)
+			return
+		}
+		cg.failNode("unknown imported function "+target, ce)
 		return
 	}
 

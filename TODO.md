@@ -10,21 +10,7 @@
 - adding snippet to [test.tw](./test.tw) and running using binary to test the code
 - adding guide/points to show the feature in [README](./README.md)
 
-## 1. Custom Libraries
-
-- Add `import ...` syntax.
-- Built-in libraries are imported with `twice.<lib>`.
-- Local libraries use non-`twice.` import paths.
-- Namespace behavior depends on import form:
-- Importing only the library exposes the library namespace.
-- Importing `.<something>` exposes that specific member/namespace path.
-- Add alias import syntax like:
-- `import twice.math as math`
-- Add member import alias syntax like:
-- `import twice.math.sqrt as sqrt`
-- Support cross-module generic specialization in v1 (imports included).
-
-## 2. OOP and Type System Expansion
+## 1. OOP and Type System Expansion
 
 - Add class declarations and object instantiation.o
 - Structs stay public-focused; classes support explicit `public`/`private`.
@@ -48,7 +34,7 @@
 - Typed declarations without `new` remain `null` until initialized (for example `let s: Shape;`).
 - Generic classes are supported by syntax plan, but are implemented together with class support.
 
-## 3. Inheritance
+## 2. Inheritance
 
 - Add inheritance as a separate feature from base class/object support.
 - Define overriding and method resolution rules.

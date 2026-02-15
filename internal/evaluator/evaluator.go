@@ -2,7 +2,10 @@ package evaluator
 
 import (
 	"fmt"
+	"math"
+	"strings"
 	"twice/internal/ast"
+	"twice/internal/imports"
 	"twice/internal/object"
 	"twice/internal/token"
 )
@@ -107,6 +110,102 @@ var builtins = map[string]*object.Builtin{
 			}
 		},
 	},
+	"twice.math.abs": {
+		Fn: func(args ...object.Object) object.Object { return mathAbs(args) },
+	},
+	"twice.math.min": {
+		Fn: func(args ...object.Object) object.Object { return mathMin(args) },
+	},
+	"twice.math.max": {
+		Fn: func(args ...object.Object) object.Object { return mathMax(args) },
+	},
+	"twice.math.sqrt": {
+		Fn: func(args ...object.Object) object.Object { return mathSqrt(args) },
+	},
+}
+
+func mathAbs(args []object.Object) object.Object {
+	if len(args) != 1 {
+		return newError("abs expects 1 argument, got=%d", len(args))
+	}
+	switch v := args[0].(type) {
+	case *object.Integer:
+		if v.Value < 0 {
+			return &object.Integer{Value: -v.Value}
+		}
+		return &object.Integer{Value: v.Value}
+	case *object.Float:
+		return &object.Float{Value: math.Abs(v.Value)}
+	default:
+		return newError("abs expects int or float argument, got %s", runtimeTypeName(args[0]))
+	}
+}
+
+func mathMin(args []object.Object) object.Object {
+	if len(args) != 2 {
+		return newError("min expects 2 arguments, got=%d", len(args))
+	}
+	a, aInt, ok := numericValue(args[0])
+	if !ok {
+		return newError("min expects int/float arguments, got %s", runtimeTypeName(args[0]))
+	}
+	b, bInt, ok := numericValue(args[1])
+	if !ok {
+		return newError("min expects int/float arguments, got %s", runtimeTypeName(args[1]))
+	}
+	minVal := math.Min(a, b)
+	if aInt && bInt {
+		return &object.Integer{Value: int64(minVal)}
+	}
+	return &object.Float{Value: minVal}
+}
+
+func mathMax(args []object.Object) object.Object {
+	if len(args) != 2 {
+		return newError("max expects 2 arguments, got=%d", len(args))
+	}
+	a, aInt, ok := numericValue(args[0])
+	if !ok {
+		return newError("max expects int/float arguments, got %s", runtimeTypeName(args[0]))
+	}
+	b, bInt, ok := numericValue(args[1])
+	if !ok {
+		return newError("max expects int/float arguments, got %s", runtimeTypeName(args[1]))
+	}
+	maxVal := math.Max(a, b)
+	if aInt && bInt {
+		return &object.Integer{Value: int64(maxVal)}
+	}
+	return &object.Float{Value: maxVal}
+}
+
+func mathSqrt(args []object.Object) object.Object {
+	if len(args) != 1 {
+		return newError("sqrt expects 1 argument, got=%d", len(args))
+	}
+	n, isInt, ok := numericValue(args[0])
+	if !ok {
+		return newError("sqrt expects int or float argument, got %s", runtimeTypeName(args[0]))
+	}
+	if n < 0 {
+		return newError("sqrt expects non-negative number")
+	}
+	s := math.Sqrt(n)
+	if isInt {
+		return &object.Integer{Value: int64(math.Floor(s))}
+	}
+	return &object.Float{Value: s}
+}
+
+func numericValue(obj object.Object) (float64, bool, bool) {
+	switch v := obj.(type) {
+	case *object.Integer:
+		return float64(v.Value), true, true
+	case *object.Float:
+		return v.Value, false, true
+	default:
+		return 0, false, false
+	}
 }
 
 // Eval is the heart of the interpreter
@@ -142,6 +241,8 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		return evalLoopStatement(node, env)
 	case *ast.ForStatement:
 		return evalForStatement(node, env)
+	case *ast.ImportStatement:
+		return annotateErrorWithNode(evalImportStatement(node, env), node)
 	case *ast.LetStatement:
 		if env.HasInCurrentScope(node.Name.Value) {
 			if env.IsConstInCurrentScope(node.Name.Value) {
@@ -578,6 +679,27 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		}
 		if ident, ok := node.Function.(*ast.Identifier); ok {
 			if _, exists := env.Get(ident.Value); !exists {
+				if target, ok := env.ImportMember(ident.Value); ok {
+					if builtin, ok := builtins[target]; ok {
+						args, namedArgs, argErr := evalCallArguments(node.Arguments, env)
+						if argErr != nil {
+							return argErr
+						}
+						return annotateErrorWithNode(applyFunction(builtin, args, namedArgs, node.TypeArguments), node)
+					}
+					localName := target
+					if dot := strings.LastIndex(target, "."); dot >= 0 {
+						localName = target[dot+1:]
+					}
+					if localFn, ok := env.Get(localName); ok {
+						args, namedArgs, argErr := evalCallArguments(node.Arguments, env)
+						if argErr != nil {
+							return argErr
+						}
+						return annotateErrorWithNode(applyFunction(localFn, args, namedArgs, node.TypeArguments), node)
+					}
+					return newError("unknown imported function: %s", target)
+				}
 				if builtin, ok := builtins[ident.Value]; ok {
 					args, namedArgs, argErr := evalCallArguments(node.Arguments, env)
 					if argErr != nil {
@@ -622,6 +744,33 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 	}
 
 	return nil
+}
+
+func evalImportStatement(node *ast.ImportStatement, env *object.Environment) object.Object {
+	if node == nil || len(node.Path) == 0 {
+		return newError("invalid import statement")
+	}
+	path := imports.JoinPath(node.Path)
+	alias := node.Alias
+	if alias == "" {
+		alias = imports.DefaultAlias(node.Path)
+	}
+	if alias == "" {
+		return newError("invalid import alias")
+	}
+	if len(node.Path) == 2 {
+		env.SetImportNamespace(alias, path)
+		return NULL
+	}
+	if len(node.Path) >= 3 {
+		if target, ok := imports.BuiltinMemberTarget(path); ok {
+			env.SetImportMember(alias, target)
+			return NULL
+		}
+		env.SetImportMember(alias, path)
+		return NULL
+	}
+	return NULL
 }
 
 // evalProgram evaluates a list of statements

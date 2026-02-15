@@ -88,6 +88,7 @@ const (
 	NULL     TokenType = "NULL"
 	NEW      TokenType = "NEW"
 	STRUCT   TokenType = "STRUCT"
+	IMPORT   TokenType = "IMPORT"
 )
 
 // keywords maps string identifiers to their token type
@@ -110,6 +111,7 @@ var keywords = map[string]TokenType{
 	"null":     NULL,
 	"new":      NEW,
 	"struct":   STRUCT,
+	"import":   IMPORT,
 }
 
 // LookupIdent checks if an identifier is a keyword

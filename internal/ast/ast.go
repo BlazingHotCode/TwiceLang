@@ -231,6 +231,33 @@ func (ts *TypeDeclStatement) String() string {
 	return out.String()
 }
 
+// ImportStatement represents: import path.to.lib [as alias];
+type ImportStatement struct {
+	Token token.Token
+	Path  []string
+	Alias string
+}
+
+func (is *ImportStatement) statementNode()       {}
+func (is *ImportStatement) TokenLiteral() string { return is.Token.Literal }
+func (is *ImportStatement) String() string {
+	var out bytes.Buffer
+	out.WriteString("import ")
+	out.WriteString(strings.Join(is.Path, "."))
+	if is.Alias != "" {
+		last := ""
+		if len(is.Path) > 0 {
+			last = is.Path[len(is.Path)-1]
+		}
+		if is.Alias != last {
+			out.WriteString(" as ")
+			out.WriteString(is.Alias)
+		}
+	}
+	out.WriteString(";")
+	return out.String()
+}
+
 type StructField struct {
 	Token        token.Token
 	Name         *Identifier
@@ -718,8 +745,8 @@ func (fs *FunctionStatement) String() string {
 
 // NewExpression represents: new <TypeName>(<arguments>)
 type NewExpression struct {
-	Token    token.Token // The NEW token
-	TypeName string
+	Token     token.Token // The NEW token
+	TypeName  string
 	Arguments []Expression
 }
 

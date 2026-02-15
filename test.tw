@@ -1,5 +1,8 @@
 // Twice feature showcase (grouped output)
 
+import twice.math as math;
+import twice.math.sqrt as sqrt;
+
 fn header(name: string) {
   println("--- " + name + " ---");
   return;
@@ -492,6 +495,19 @@ fn demo_generics() {
   return;
 }
 
+fn demo_imports() {
+  header("imports");
+
+  println(math.abs(-7));
+  println(math.min(9, 2));
+  println(math.max(3, 8));
+  println(sqrt(49));
+  println(math.abs(-3.5));
+  println(math.min(1.5, 2));
+  println(sqrt(2.25));
+  return;
+}
+
 fn main() {
   demo_types_and_casts();
   demo_operators();
@@ -507,5 +523,6 @@ fn main() {
   demo_pointers();
   demo_struct_methods();
   demo_generics();
+  demo_imports();
   return;
 }

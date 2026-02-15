@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"twice/internal/ast"
+	"twice/internal/imports"
 	"twice/internal/object"
 	"twice/internal/typesys"
 )
@@ -179,6 +180,35 @@ func evalIndexAssignStatement(node *ast.IndexAssignStatement, env *object.Enviro
 func evalMethodCallExpression(node *ast.MethodCallExpression, env *object.Environment) object.Object {
 	if node == nil || node.Method == nil {
 		return newError("invalid method call")
+	}
+	if objID, ok := node.Object.(*ast.Identifier); ok {
+		if ns, ok := env.ImportNamespace(objID.Value); ok {
+			target := ns + "." + node.Method.Value
+			if builtin, ok := builtins[target]; ok {
+				args, namedArgs, argErr := evalCallArguments(node.Arguments, env)
+				if argErr != nil {
+					return argErr
+				}
+				return applyFunction(builtin, args, namedArgs, nil)
+			}
+			if imports.BuiltinNamespace(ns) {
+				if node.NullSafe {
+					return NULL
+				}
+				return newError("unknown imported member: %s", target)
+			}
+			if localFn, ok := env.Get(node.Method.Value); ok {
+				args, namedArgs, argErr := evalCallArguments(node.Arguments, env)
+				if argErr != nil {
+					return argErr
+				}
+				return applyFunction(localFn, args, namedArgs, nil)
+			}
+			if node.NullSafe {
+				return NULL
+			}
+			return newError("unknown local import member: %s", target)
+		}
 	}
 
 	obj := Eval(node.Object, env)

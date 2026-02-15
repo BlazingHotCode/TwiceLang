@@ -1350,6 +1350,45 @@ func TestCodegenAnyTypeInfixWithKnownValue(t *testing.T) {
 	}
 }
 
+func TestCodegenImportBuiltinMathNamespace(t *testing.T) {
+	asm, cg := generateAssembly(t, `import twice.math as math; println(math.abs(-7)); println(math.min(9, 2)); println(math.sqrt(49));`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if strings.Count(asm, "call println_int") < 3 {
+		t.Fatalf("expected imported math calls to print ints, got:\n%s", asm)
+	}
+	if !strings.Contains(asm, "imul %rdx, %rdx") {
+		t.Fatalf("expected sqrt integer loop path, got:\n%s", asm)
+	}
+}
+
+func TestCodegenImportBuiltinMathFloatInputs(t *testing.T) {
+	asm, cg := generateAssembly(t, `import twice.math as math; println(math.abs(-3.5)); println(math.min(1.5, 2)); println(math.sqrt(2.25));`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if strings.Count(asm, "call println_cstr") < 3 {
+		t.Fatalf("expected float math calls to print as cstr floats, got:\n%s", asm)
+	}
+	if !strings.Contains(asm, ".asciz \"3.5\"") {
+		t.Fatalf("expected folded float abs result, got:\n%s", asm)
+	}
+	if !strings.Contains(asm, ".asciz \"1.5\"") {
+		t.Fatalf("expected folded float sqrt result, got:\n%s", asm)
+	}
+}
+
+func TestCodegenImportBuiltinMathMemberAlias(t *testing.T) {
+	asm, cg := generateAssembly(t, `import twice.math.max as max; println(max(1, 8));`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "call println_int") {
+		t.Fatalf("expected imported alias call to print int, got:\n%s", asm)
+	}
+}
+
 func generateAssembly(t *testing.T, input string) (string, *CodeGen) {
 	t.Helper()
 	p := parser.New(lexer.New(input))

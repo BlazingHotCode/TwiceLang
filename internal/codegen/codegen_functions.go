@@ -59,6 +59,8 @@ func (cg *CodeGen) reset() {
 	cg.funcLitKeys = make(map[*ast.FunctionLiteral]string)
 	cg.varFuncs = make(map[string]string)
 	cg.structMethods = make(map[string]string)
+	cg.importNamespaces = make(map[string]string)
+	cg.importMembers = make(map[string]string)
 	cg.typeAliases = make(map[string]string)
 	cg.genericTypeAliases = make(map[string]genericTypeAlias)
 	cg.structDecls = make(map[string]*ast.StructStatement)
@@ -85,6 +87,10 @@ func (cg *CodeGen) collectFunctions(program *ast.Program) {
 	globalScope := map[string]struct{}{}
 	for _, stmt := range program.Statements {
 		switch s := stmt.(type) {
+		case *ast.ImportStatement:
+			if s != nil && s.Alias != "" {
+				globalScope[s.Alias] = struct{}{}
+			}
 		case *ast.FunctionStatement:
 			if s != nil && s.Name != nil && s.Receiver == nil {
 				globalScope[s.Name.Value] = struct{}{}
@@ -106,6 +112,10 @@ func (cg *CodeGen) collectFunctions(program *ast.Program) {
 
 func (cg *CodeGen) collectFunctionsInStatement(stmt ast.Statement, scope map[string]struct{}, topLevel bool) {
 	switch s := stmt.(type) {
+	case *ast.ImportStatement:
+		if s != nil && s.Alias != "" {
+			scope[s.Alias] = struct{}{}
+		}
 	case *ast.FunctionStatement:
 		if s == nil || s.Name == nil || s.Function == nil {
 			return
@@ -888,6 +898,10 @@ func collectDeclaredNames(block *ast.BlockStatement, scope map[string]struct{}) 
 	}
 	for _, st := range block.Statements {
 		switch s := st.(type) {
+		case *ast.ImportStatement:
+			if s != nil && s.Alias != "" {
+				scope[s.Alias] = struct{}{}
+			}
 		case *ast.LetStatement:
 			if s != nil && s.Name != nil {
 				scope[s.Name.Value] = struct{}{}

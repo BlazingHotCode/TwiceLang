@@ -1382,6 +1382,43 @@ func TestAnyTypeEval(t *testing.T) {
 	}
 }
 
+func TestImportBuiltinsEval(t *testing.T) {
+	evaluated := testEval(`import twice.math as math; math.abs(-7)`)
+	testIntegerObject(t, evaluated, 7)
+
+	evaluated = testEval(`import twice.math.sqrt as sqrt; sqrt(49)`)
+	testIntegerObject(t, evaluated, 7)
+
+	evaluated = testEval(`import twice.math as math; math.min(9, 2)`)
+	testIntegerObject(t, evaluated, 2)
+
+	evaluated = testEval(`import twice.math as math; math.abs(-3.5)`)
+	if f, ok := evaluated.(*object.Float); !ok || f.Value != 3.5 {
+		t.Fatalf("expected float 3.5, got=%T (%v)", evaluated, evaluated.Inspect())
+	}
+
+	evaluated = testEval(`import twice.math as math; math.max(1.25, 3)`)
+	if f, ok := evaluated.(*object.Float); !ok || f.Value != 3 {
+		t.Fatalf("expected float 3, got=%T (%v)", evaluated, evaluated.Inspect())
+	}
+
+	evaluated = testEval(`import twice.math.sqrt as sqrt; sqrt(2.25)`)
+	if f, ok := evaluated.(*object.Float); !ok || f.Value != 1.5 {
+		t.Fatalf("expected float 1.5, got=%T (%v)", evaluated, evaluated.Inspect())
+	}
+}
+
+func TestImportBuiltinsErrorsEval(t *testing.T) {
+	evaluated := testEval(`import twice.math as math; math.nope(1)`)
+	errObj, ok := evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error, got=%T (%v)", evaluated, evaluated)
+	}
+	if !strings.Contains(errObj.Message, "unknown imported member: twice.math.nope") {
+		t.Fatalf("unexpected error message: %q", errObj.Message)
+	}
+}
+
 func TestRuntimeErrorIncludesPrefixLocationAndContext(t *testing.T) {
 	evaluated := testEval("let arr: int[2] = {1, 2}; let i = 9; arr[i]")
 	errObj, ok := evaluated.(*object.Error)
