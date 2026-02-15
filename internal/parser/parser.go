@@ -62,6 +62,7 @@ type Parser struct {
 
 	curToken  token.Token // Current token under examination
 	peekToken token.Token // Next Token (for look-ahead)
+	lookahead []token.Token
 
 	errors []ParseError // Accumulated parse errors
 
@@ -163,7 +164,26 @@ func (p *Parser) registerInfix(tokenType token.TokenType, fn infixParseFn) {
 // nextToken advances to the next token
 func (p *Parser) nextToken() {
 	p.curToken = p.peekToken
+	if len(p.lookahead) > 0 {
+		p.peekToken = p.lookahead[0]
+		p.lookahead = p.lookahead[1:]
+		return
+	}
 	p.peekToken = p.l.NextToken()
+}
+
+func (p *Parser) ensureLookahead(n int) {
+	for len(p.lookahead) < n {
+		p.lookahead = append(p.lookahead, p.l.NextToken())
+	}
+}
+
+func (p *Parser) peekTokenN(n int) token.Token {
+	if n <= 1 {
+		return p.peekToken
+	}
+	p.ensureLookahead(n - 1)
+	return p.lookahead[n-2]
 }
 
 // Errors returns accumulated parse errors

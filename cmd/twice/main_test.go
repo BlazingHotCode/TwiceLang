@@ -268,6 +268,40 @@ fn main() int {
 	}
 }
 
+func TestCLICompileAndRunGenericFunctionExplicitCall(t *testing.T) {
+	root := repoRoot(t)
+	ensureToolchain(t)
+
+	srcPath := filepath.Join(t.TempDir(), "generic_fn_call.tw")
+	source := `
+fn id<T>(x: T) T { return x; }
+fn main() int {
+  println(id<int>(12));
+  return 0;
+}
+`
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	outputName := "twice_cli_generic_fn_call_bin"
+	outputPath := filepath.Join(root, outputName)
+	_ = os.Remove(outputPath)
+	t.Cleanup(func() { _ = os.Remove(outputPath) })
+
+	cmd := exec.Command("go", "run", "./cmd/twice", "-run", "-o", outputName, srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("compile/run failed: %v\n%s", err, out)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "\n12\n") {
+		t.Fatalf("expected generic explicit call output. output:\n%s", output)
+	}
+}
+
 func TestCLICodegenErrorForUndefinedIdentifier(t *testing.T) {
 	root := repoRoot(t)
 

@@ -1540,6 +1540,10 @@ func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 
 	switch fn.Value {
 	case "print", "println":
+		if len(ce.TypeArguments) > 0 {
+			cg.failNodef(ce, "generic type arguments are not supported for %s", fn.Value)
+			return
+		}
 		if len(ce.Arguments) != 1 {
 			cg.failNodef(ce, "%s expects exactly 1 argument", fn.Value)
 			return
@@ -1584,6 +1588,10 @@ func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 			cg.failNodef(ce.Arguments[0], "%s supports only int, bool, float, string, char, null, and type arguments", fn.Value)
 		}
 	case "typeof":
+		if len(ce.TypeArguments) > 0 {
+			cg.failNode("generic type arguments are not supported for typeof", ce)
+			return
+		}
 		if len(ce.Arguments) != 1 {
 			cg.failNode("typeof expects exactly 1 argument", ce)
 			return
@@ -1601,6 +1609,10 @@ func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 		label := cg.stringLabel(typeNameStr)
 		cg.emit("    lea %s(%%rip), %%rax", label)
 	case "typeofValue", "typeofvalue":
+		if len(ce.TypeArguments) > 0 {
+			cg.failNodef(ce, "generic type arguments are not supported for %s", fn.Value)
+			return
+		}
 		if len(ce.Arguments) != 1 {
 			cg.failNodef(ce, "%s expects exactly 1 argument", fn.Value)
 			return
@@ -1616,6 +1628,10 @@ func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 		label := cg.stringLabel(typeNameStr)
 		cg.emit("    lea %s(%%rip), %%rax", label)
 	case "hasField":
+		if len(ce.TypeArguments) > 0 {
+			cg.failNode("generic type arguments are not supported for hasField", ce)
+			return
+		}
 		if len(ce.Arguments) != 2 {
 			cg.failNodef(ce, "hasField expects exactly 2 arguments, got=%d", len(ce.Arguments))
 			return
@@ -1666,6 +1682,10 @@ func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 
 		cg.emit("    add $8, %%rsp")
 	case "int", "float", "string", "char", "bool":
+		if len(ce.TypeArguments) > 0 {
+			cg.failNodef(ce, "generic type arguments are not supported for %s", fn.Value)
+			return
+		}
 		cg.generateCastCall(fn.Value, ce)
 	default:
 		if key, ok := cg.varFuncs[fn.Value]; ok {

@@ -1069,6 +1069,29 @@ func TestGenericFunctionEval(t *testing.T) {
 
 	evaluated = testEval(`fn first<T>(a: T, b: T) T { return a; } first(3, 5);`)
 	testIntegerObject(t, evaluated, 3)
+
+	evaluated = testEval(`fn id<T>(x: T) T { return x; } id<int>(11);`)
+	testIntegerObject(t, evaluated, 11)
+}
+
+func TestGenericFunctionExplicitTypeArgErrorsEval(t *testing.T) {
+	evaluated := testEval(`fn id<T>(x: T) T { return x; } id<int, string>(11);`)
+	errObj, ok := evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "wrong number of generic type arguments: expected 1, got 2" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+
+	evaluated = testEval(`fn id<T>(x: T) T { return x; } id<unknown>(11);`)
+	errObj, ok = evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "unknown type: unknown" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
 }
 
 func TestTypeAliasesEval(t *testing.T) {

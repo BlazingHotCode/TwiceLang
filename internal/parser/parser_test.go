@@ -656,6 +656,43 @@ func TestGenericFunctionSyntaxParses(t *testing.T) {
 	}
 }
 
+func TestGenericCallSyntaxParses(t *testing.T) {
+	p := New(lexer.New(`fn id<T>(x: T) T { return x; } let a = id<int>(7);`))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+	if len(program.Statements) != 2 {
+		t.Fatalf("expected 2 statements, got=%d", len(program.Statements))
+	}
+	ls, ok := program.Statements[1].(*ast.LetStatement)
+	if !ok {
+		t.Fatalf("expected let statement, got=%T", program.Statements[1])
+	}
+	call, ok := ls.Value.(*ast.CallExpression)
+	if !ok {
+		t.Fatalf("expected call expression, got=%T", ls.Value)
+	}
+	if len(call.TypeArguments) != 1 || call.TypeArguments[0] != "int" {
+		t.Fatalf("expected generic type args [int], got=%v", call.TypeArguments)
+	}
+}
+
+func TestLessThanStillParsesAsInfix(t *testing.T) {
+	p := New(lexer.New(`let x = a < b;`))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+	ls, ok := program.Statements[0].(*ast.LetStatement)
+	if !ok {
+		t.Fatalf("expected let statement, got=%T", program.Statements[0])
+	}
+	inf, ok := ls.Value.(*ast.InfixExpression)
+	if !ok {
+		t.Fatalf("expected infix expression, got=%T", ls.Value)
+	}
+	if inf.Operator != "<" {
+		t.Fatalf("expected operator <, got=%q", inf.Operator)
+	}
+}
+
 func TestWhileStatementParses(t *testing.T) {
 	p := New(lexer.New("while (x < 3) { x = x + 1; }"))
 	program := p.ParseProgram()

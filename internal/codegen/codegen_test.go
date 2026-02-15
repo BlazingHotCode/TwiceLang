@@ -981,6 +981,33 @@ func TestCodegenGenericTypeAliases(t *testing.T) {
 	}
 }
 
+func TestCodegenGenericFunctionExplicitCall(t *testing.T) {
+	asm, cg := generateAssembly(t, `fn id<T>(x: T) T { return x; } print(id<int>(9));`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors for explicit generic call: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "call print_int") {
+		t.Fatalf("expected print_int for id<int>(9), got:\n%s", asm)
+	}
+}
+
+func TestCodegenGenericFunctionTypeArgArityErrors(t *testing.T) {
+	_, cg := generateAssembly(t, `fn id<T>(x: T) T { return x; } print(id<int, string>(9));`)
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen errors for generic arity mismatch")
+	}
+	found := false
+	for _, err := range cg.Errors() {
+		if strings.Contains(err, "wrong number of generic type arguments") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected generic arity error, got: %v", cg.Errors())
+	}
+}
+
 func TestCodegenTupleTypesAndAccess(t *testing.T) {
 	asm, cg := generateAssembly(t, `let a: (int,string,bool) = (1, "x", true); print(a.0); print(a.1); print(a.2);`)
 	if len(cg.Errors()) != 0 {

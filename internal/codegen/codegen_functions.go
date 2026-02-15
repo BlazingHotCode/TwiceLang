@@ -473,6 +473,34 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 }
 
 func (cg *CodeGen) generateUserFunctionCall(fn *compiledFunction, ce *ast.CallExpression) {
+	typeArgMap := map[string]string{}
+	if len(fn.Literal.TypeParams) > 0 {
+		if len(ce.TypeArguments) > 0 {
+			if len(ce.TypeArguments) != len(fn.Literal.TypeParams) {
+				cg.addNodeError(fmt.Sprintf("wrong number of generic type arguments: expected %d, got %d", len(fn.Literal.TypeParams), len(ce.TypeArguments)), ce)
+				cg.emit("    mov $0, %%rax")
+				return
+			}
+			for i, tp := range fn.Literal.TypeParams {
+				ta := ce.TypeArguments[i]
+				if !cg.isKnownTypeName(ta) {
+					cg.addNodeError("unknown type: "+ta, ce)
+					cg.emit("    mov $0, %%rax")
+					return
+				}
+				typeArgMap[tp] = ta
+			}
+		} else {
+			for _, tp := range fn.Literal.TypeParams {
+				typeArgMap[tp] = ""
+			}
+		}
+	} else if len(ce.TypeArguments) > 0 {
+		cg.addNodeError("generic type arguments provided for non-generic function", ce)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+
 	finalArgs := make([]ast.Expression, len(fn.Literal.Parameters))
 	namedMode := false
 	posIdx := 0
@@ -528,9 +556,22 @@ func (cg *CodeGen) generateUserFunctionCall(fn *compiledFunction, ce *ast.CallEx
 
 	passedArgs := make([]ast.Expression, 0, len(finalArgs)+len(fn.Captures))
 	for i, arg := range finalArgs {
-		want := cg.parseTypeName(fn.Literal.Parameters[i].TypeName)
-		got := cg.inferExpressionType(arg)
 		wantName := fn.Literal.Parameters[i].TypeName
+		if len(typeArgMap) > 0 && wantName != "" {
+			if cur, ok := typeArgMap[wantName]; ok {
+				gotName := cg.inferExpressionTypeName(arg)
+				if cur == "" && gotName != "unknown" {
+					typeArgMap[wantName] = gotName
+				} else if cur != "" && gotName != "unknown" && cur != gotName {
+					cg.addNodeError(fmt.Sprintf("cannot infer generic type %s from both %s and %s", wantName, cur, gotName), ce)
+					cg.emit("    mov $0, %%rax")
+					return
+				}
+			}
+			wantName = substituteTypeParams(wantName, typeArgMap)
+		}
+		want := cg.parseTypeName(wantName)
+		got := cg.inferExpressionType(arg)
 		if wantName == "" {
 			wantName = typeName(want)
 		}

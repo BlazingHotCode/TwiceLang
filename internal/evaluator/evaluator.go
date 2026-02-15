@@ -429,7 +429,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 					if argErr != nil {
 						return argErr
 					}
-					return annotateErrorWithNode(applyFunction(builtin, args, namedArgs), node)
+					return annotateErrorWithNode(applyFunction(builtin, args, namedArgs, node.TypeArguments), node)
 				}
 			}
 		}
@@ -441,7 +441,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		if argErr != nil {
 			return argErr
 		}
-		return annotateErrorWithNode(applyFunction(function, args, namedArgs), node)
+		return annotateErrorWithNode(applyFunction(function, args, namedArgs, node.TypeArguments), node)
 	case *ast.MethodCallExpression:
 		return annotateErrorWithNode(evalMethodCallExpression(node, env), node)
 	case *ast.MemberAccessExpression:

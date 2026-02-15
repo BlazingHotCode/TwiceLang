@@ -48,8 +48,11 @@ func evalCallArguments(exps []ast.Expression, env *object.Environment) ([]object
 }
 
 // applyFunction calls a function with arguments
-func applyFunction(fn object.Object, args []object.Object, namedArgs map[string]object.Object) object.Object {
+func applyFunction(fn object.Object, args []object.Object, namedArgs map[string]object.Object, typeArgs []string) object.Object {
 	if builtin, ok := fn.(*object.Builtin); ok {
+		if len(typeArgs) > 0 {
+			return newError("generic type arguments are not supported for builtin functions")
+		}
 		if len(namedArgs) > 0 {
 			return newError("named arguments are not supported for builtin functions")
 		}
@@ -59,16 +62,31 @@ func applyFunction(fn object.Object, args []object.Object, namedArgs map[string]
 	if !ok {
 		return newError("not a function: %s", fn.Type())
 	}
-	return applyUserFunction(function, args, namedArgs)
+	return applyUserFunction(function, args, namedArgs, typeArgs)
 }
 
-func applyUserFunction(function *object.Function, args []object.Object, namedArgs map[string]object.Object) object.Object {
+func applyUserFunction(function *object.Function, args []object.Object, namedArgs map[string]object.Object, typeArgs []string) object.Object {
 	extendedEnv := object.NewEnclosedEnvironment(function.Env)
 	typeArgMap := map[string]string{}
 	if len(function.TypeParams) > 0 {
-		for _, tp := range function.TypeParams {
-			typeArgMap[tp] = ""
+		if len(typeArgs) > 0 {
+			if len(typeArgs) != len(function.TypeParams) {
+				return newError("wrong number of generic type arguments: expected %d, got %d", len(function.TypeParams), len(typeArgs))
+			}
+			for i, tp := range function.TypeParams {
+				argType := typeArgs[i]
+				if !isKnownTypeName(argType, function.Env) {
+					return newError("unknown type: %s", argType)
+				}
+				typeArgMap[tp] = argType
+			}
+		} else {
+			for _, tp := range function.TypeParams {
+				typeArgMap[tp] = ""
+			}
 		}
+	} else if len(typeArgs) > 0 {
+		return newError("generic type arguments provided for non-generic function")
 	}
 
 	posIdx := 0
@@ -94,7 +112,7 @@ func applyUserFunction(function *object.Function, args []object.Object, namedArg
 		if len(typeArgMap) > 0 && targetType != "" {
 			if cur, ok := typeArgMap[targetType]; ok {
 				valType := runtimeTypeName(val)
-				if cur == "" {
+				if cur == "" && len(typeArgs) == 0 {
 					typeArgMap[targetType] = valType
 				} else if cur != valType {
 					return newError("cannot infer generic type %s from both %s and %s", targetType, cur, valType)

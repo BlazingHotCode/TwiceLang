@@ -181,7 +181,11 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) (out valueType) {
 					}
 					return typeUnknown
 				}
-				return cg.parseTypeName(fl.Literal.ReturnType)
+				retName := cg.resolveGenericCallReturnTypeName(fl, e)
+				if retName == "" {
+					return typeUnknown
+				}
+				return cg.parseTypeName(retName)
 			}
 			if key, ok := cg.funcByName[fn.Value]; ok {
 				fl := cg.functions[key]
@@ -191,7 +195,11 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) (out valueType) {
 					}
 					return typeUnknown
 				}
-				return cg.parseTypeName(fl.Literal.ReturnType)
+				retName := cg.resolveGenericCallReturnTypeName(fl, e)
+				if retName == "" {
+					return typeUnknown
+				}
+				return cg.parseTypeName(retName)
 			}
 		}
 		return typeUnknown
@@ -325,11 +333,46 @@ func (cg *CodeGen) inferExpressionTypeName(expr ast.Expression) (out string) {
 			}
 			return fl.ReturnType
 		}
+		if fn, ok := e.Function.(*ast.Identifier); ok {
+			if key, ok := cg.varFuncs[fn.Value]; ok {
+				retName := cg.resolveGenericCallReturnTypeName(cg.functions[key], e)
+				if retName != "" {
+					return retName
+				}
+			}
+			if key, ok := cg.funcByName[fn.Value]; ok {
+				retName := cg.resolveGenericCallReturnTypeName(cg.functions[key], e)
+				if retName != "" {
+					return retName
+				}
+			}
+		}
 		if fn, ok := e.Function.(*ast.Identifier); ok && (fn.Value == "int" || fn.Value == "float" || fn.Value == "string" || fn.Value == "char" || fn.Value == "bool" || fn.Value == "typeof" || fn.Value == "typeofValue" || fn.Value == "typeofvalue") {
 			return typeName(cg.inferExpressionType(e))
 		}
 	}
 	return typeName(cg.inferExpressionType(expr))
+}
+
+func (cg *CodeGen) resolveGenericCallReturnTypeName(fn *compiledFunction, ce *ast.CallExpression) string {
+	if fn == nil || fn.Literal == nil {
+		return ""
+	}
+	ret := fn.Literal.ReturnType
+	if ret == "" {
+		return ""
+	}
+	if len(fn.Literal.TypeParams) == 0 {
+		return ret
+	}
+	if len(ce.TypeArguments) != len(fn.Literal.TypeParams) {
+		return ""
+	}
+	mapping := map[string]string{}
+	for i, tp := range fn.Literal.TypeParams {
+		mapping[tp] = ce.TypeArguments[i]
+	}
+	return substituteTypeParams(ret, mapping)
 }
 
 func (cg *CodeGen) inferCurrentValueTypeName(expr ast.Expression) string {

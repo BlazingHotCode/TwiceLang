@@ -158,6 +158,19 @@ b[1] = 4;
 println(typeof(b)); // Box<int>
 ```
 
+Generic function calls with explicit type arguments are also supported:
+
+```tw
+fn id<T>(x: T) T { return x; }
+println(id<int>(12)); // 12
+```
+
+Notes:
+
+- Generic call syntax is `fnName<TypeArgs...>(...)`.
+- Wrong generic type-argument arity is a codegen/runtime error.
+- Generic type arguments on built-in functions are rejected.
+
 ### Assignment
 
 ```tw

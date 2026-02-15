@@ -23,6 +23,11 @@ func (p *Parser) parseExpression(precedence int) ast.Expression {
 	// While next token is an infix operator with higher precedence than ours,
 	// consume it and build the expression tree
 	for !p.peekTokenIs(token.SEMICOLON) && precedence < p.peekPrecedence() {
+		if p.peekTokenIs(token.LT) && p.canParseGenericCallSuffix() {
+			p.nextToken()
+			leftExp = p.parseGenericCallExpression(leftExp)
+			continue
+		}
 		infix := p.infixParseFns[p.peekToken.Type]
 		if infix == nil {
 			return leftExp
@@ -529,6 +534,94 @@ func (p *Parser) parseCallExpression(function ast.Expression) ast.Expression {
 	exp := &ast.CallExpression{Token: p.curToken, Function: function}
 	exp.Arguments = p.parseCallArguments()
 	return exp
+}
+
+func (p *Parser) parseGenericCallExpression(function ast.Expression) ast.Expression {
+	exp := &ast.CallExpression{
+		Token:    token.Token{Type: token.LPAREN, Literal: "("},
+		Function: function,
+	}
+	typeArgs, ok := p.parseCallTypeArgumentsFromCurrentLT()
+	if !ok {
+		return nil
+	}
+	exp.TypeArguments = typeArgs
+	if !p.expectPeek(token.LPAREN) {
+		return nil
+	}
+	exp.Arguments = p.parseCallArguments()
+	return exp
+}
+
+func (p *Parser) parseCallTypeArgumentsFromCurrentLT() ([]string, bool) {
+	if !p.curTokenIs(token.LT) {
+		return nil, false
+	}
+	if p.peekTokenIs(token.GT) {
+		p.addErrorPeek("generic argument list cannot be empty", p.peekToken.Literal)
+		return nil, false
+	}
+
+	args := []string{}
+	p.nextToken()
+	first, ok := p.parseTypeExpressionFromCurrent()
+	if !ok {
+		return nil, false
+	}
+	args = append(args, first)
+	for p.peekTokenIs(token.COMMA) {
+		p.nextToken()
+		p.nextToken()
+		next, ok := p.parseTypeExpressionFromCurrent()
+		if !ok {
+			return nil, false
+		}
+		args = append(args, next)
+	}
+	if !p.consumeTypeRightAngle() {
+		p.addErrorCurrent("expected '>' to close generic call type arguments", p.curToken.Literal)
+		return nil, false
+	}
+	return args, true
+}
+
+func (p *Parser) canParseGenericCallSuffix() bool {
+	// Support forms like: fnName<T>(...), including nested generic args.
+	// Use parser lookahead to avoid consuming tokens before deciding.
+	if !p.peekTokenIs(token.LT) {
+		return false
+	}
+	depth := 0
+	for i := 1; i <= 256; i++ {
+		tok := p.peekTokenN(i)
+		switch tok.Type {
+		case token.EOF, token.SEMICOLON, token.RPAREN, token.RBRACE:
+			return false
+		case token.LT:
+			depth++
+		case token.GT:
+			if depth == 0 {
+				return false
+			}
+			depth--
+			if depth == 0 {
+				return p.peekTokenN(i+1).Type == token.LPAREN
+			}
+		case token.SHR:
+			if depth == 0 {
+				return false
+			}
+			if depth >= 2 {
+				depth -= 2
+			} else {
+				depth = 0
+			}
+			if depth == 0 {
+				return p.peekTokenN(i+1).Type == token.LPAREN
+			}
+		}
+	}
+	return false
 }
 
 func (p *Parser) parseIndexExpression(left ast.Expression) ast.Expression {

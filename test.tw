@@ -366,6 +366,9 @@ fn demo_any_type() {
 fn demo_generics() {
   header("generics");
 
+  fn id<T>(x: T) T { return x; }
+  println(id<int>(12));
+
   type Pair<T, U> = (T, U);
   let p: Pair<int, string> = (7, "seven");
   println(typeof(p));
