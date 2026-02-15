@@ -1013,6 +1013,24 @@ func TestCodegenGenericFunctionMonomorphizesPerTypeArg(t *testing.T) {
 	}
 }
 
+func TestCodegenGenericFunctionSpecializationDedupByAliasNormalization(t *testing.T) {
+	asm, cg := generateAssembly(t, `
+type N = int;
+fn id<T>(x: T) T { return x; }
+print(id<int>(1));
+print(id<N>(2));
+`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors for alias-normalized specialization: %v", cg.Errors())
+	}
+	if strings.Count(asm, "fn_id__int:") != 1 {
+		t.Fatalf("expected exactly one int specialization, got:\n%s", asm)
+	}
+	if strings.Contains(asm, "fn_id__N:") {
+		t.Fatalf("did not expect alias-based duplicate specialization label, got:\n%s", asm)
+	}
+}
+
 func TestCodegenUnusedGenericFunctionTemplateNotEmitted(t *testing.T) {
 	asm, cg := generateAssembly(t, `fn id<T>(x: T) T { return x; } print(1);`)
 	if len(cg.Errors()) != 0 {

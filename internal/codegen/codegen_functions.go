@@ -516,7 +516,7 @@ func (cg *CodeGen) generateUserFunctionCall(fn *compiledFunction, ce *ast.CallEx
 					cg.emit("    mov $0, %%rax")
 					return
 				}
-				typeArgMap[tp] = ta
+				typeArgMap[tp] = cg.canonicalGenericTypeArg(ta)
 			}
 		} else {
 			for _, tp := range fn.Literal.TypeParams {
@@ -589,8 +589,13 @@ func (cg *CodeGen) generateUserFunctionCall(fn *compiledFunction, ce *ast.CallEx
 			if cur, ok := typeArgMap[wantName]; ok {
 				gotName := cg.inferExpressionTypeName(arg)
 				if cur == "" && gotName != "unknown" {
-					typeArgMap[wantName] = gotName
+					typeArgMap[wantName] = cg.canonicalGenericTypeArg(gotName)
 				} else if cur != "" && gotName != "unknown" && cur != gotName {
+					gotNorm := cg.canonicalGenericTypeArg(gotName)
+					if cur == gotNorm {
+						// Same concrete type after alias normalization.
+						continue
+					}
 					cg.addNodeError(fmt.Sprintf("cannot infer generic type %s from both %s and %s", wantName, cur, gotName), ce)
 					cg.emit("    mov $0, %%rax")
 					return
@@ -720,6 +725,13 @@ func mangleTypeForLabel(t string) string {
 		return "type"
 	}
 	return b.String()
+}
+
+func (cg *CodeGen) canonicalGenericTypeArg(t string) string {
+	if resolved, ok := cg.normalizeTypeName(t); ok && resolved != "" {
+		return resolved
+	}
+	return t
 }
 
 func copyScope(scope map[string]struct{}) map[string]struct{} {
