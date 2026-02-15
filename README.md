@@ -48,6 +48,7 @@ Notes:
 - Control flow with `if`/`elif`/`else`, `while`, `for`, `loop`, `break`, and `continue`
 - String indexing (`str[i]`) returning `char`
 - Named functions with typed/default parameters and typed returns
+- Function literals/anonymous functions in codegen and runtime
 - Function calls with positional, named, and mixed arguments
 - Function calls before declaration (resolved by codegen)
 - Arrays with typed declarations, literals, indexing, mutation, `length()`, and `.length`
@@ -324,6 +325,15 @@ Supported call styles:
 add(3);             // positional + default
 add(a = 3, b = 4);  // named arguments
 add(3, b = 10);     // mixed positional + named
+```
+
+Function literals are supported in codegen too:
+
+```tw
+let y = 3;
+let getY = fn() int { return y; };
+print((fn(a: int) int { return a + 1; })(2)); // 3
+print(getY()); // 3
 ```
 
 Call order is declaration-order independent:

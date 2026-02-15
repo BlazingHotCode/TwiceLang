@@ -31,6 +31,7 @@ func (cg *CodeGen) reset() {
 	cg.functions = make(map[string]*compiledFunction)
 	cg.funcByName = make(map[string]string)
 	cg.funcStmtKeys = make(map[*ast.FunctionStatement]string)
+	cg.funcLitKeys = make(map[*ast.FunctionLiteral]string)
 	cg.varFuncs = make(map[string]string)
 	cg.typeAliases = make(map[string]string)
 	cg.stackOffset = 0
@@ -197,6 +198,7 @@ func (cg *CodeGen) collectFunctionsInExpression(expr ast.Expression, scope map[s
 			Literal:  e,
 			Captures: captures,
 		}
+		cg.funcLitKeys[e] = key
 		childScope := copyScope(scope)
 		for _, p := range e.Parameters {
 			childScope[p.Name.Value] = struct{}{}

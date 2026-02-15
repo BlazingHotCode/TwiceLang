@@ -1,29 +1,23 @@
 # TODO
 
-## 1. Function Literals in Codegen
-
-- Add codegen support for function literals/anonymous functions.
-- Match existing parser/evaluator behavior.
-- Add tests for calls, captures, and failure cases.
-
-## 2. Empty Literal Support
+## 1. Empty Literal Support
 
 - Add support for empty array/tuple literals where type information is available.
 - Define clear typing rules for empty literals in declarations and assignments.
 - Keep evaluator and codegen parity.
 
-## 3. Remove Function Arity/Capture Hard Limit
+## 2. Remove Function Arity/Capture Hard Limit
 
 - Remove/raise the current codegen limit of 6 combined parameters/captures.
 - Implement a stable calling convention strategy for larger functions.
 - Add regression tests for higher arity and capture counts.
 
-## 4. String Formatting
+## 3. String Formatting
 
 - Add escape-sequence formatting in strings (for example `\n`, `\t`, and related escapes).
 - Add string interpolation with `${...}` expressions inside string literals.
 
-## 5. Any Type
+## 4. Any Type
 
 - Add `any` type support for values that can hold any runtime type.
 - `any` can hold `null` for variables/values.
@@ -44,7 +38,7 @@
 - Implement evaluator and codegen parity from day one.
 - Keep backward compatibility with existing array behavior while adding `any`.
 
-## 6. Runtime Errors
+## 5. Runtime Errors
 
 - Add a standardized runtime error format prefix: `Runtime error: ...`.
 - Use specific operation-level messages (not generic failures), for example cast/index/operator mismatch details.
@@ -54,7 +48,7 @@
 - Include a short context snippet for the failing operation.
 - Do not include stack traces in v1.
 
-## 7. Generics/Templates (Java-Style)
+## 6. Generics/Templates (Java-Style)
 
 - Add generic type syntax using angle brackets, like Java: `Type<T>`.
 - Support generic declarations for user-defined types/functions in v1.
@@ -73,7 +67,7 @@
 - Generic classes are supported by syntax plan, but are implemented together with class support.
 - Keep parser, evaluator, and codegen behavior aligned for generics.
 
-## 8. Lists (Dynamic Arrays)
+## 7. Lists (Dynamic Arrays)
 
 - Add generic list types as dynamic arrays without fixed compile-time length.
 - Use generic syntax for declarations, for example `let xs: List<int>;`.
@@ -108,7 +102,7 @@
 - codegen tests
 - CLI/runtime tests
 
-## 9. Structs
+## 8. Structs
 
 - Add struct declarations and typed struct values.
 - Use literal construction syntax for structs.
@@ -132,14 +126,14 @@
 - Pointer struct function usage syntax (auto-deref):
 - `ptr.methodName(args...)` (no `(*ptr).methodName(...)` required)
 
-## 10. Pointers
+## 9. Pointers
 
 - Pointer types are nullable only when explicitly declared nullable.
 - Add pointer operations (`&value`, `*ptr`, pointer assignment).
 - Pointer method calls auto-deref: allow `p.method()` without requiring `(*p).method()`.
 - Pointer + struct design should be combined, so references and mutation go through pointers.
 
-## 11. Custom Libraries
+## 10. Custom Libraries
 
 - Add `import ...` syntax.
 - Built-in libraries are imported with `twice.<lib>`.
@@ -152,7 +146,7 @@
 - Add member import alias syntax like:
 - `import twice.math.sqrt as sqrt`
 
-## 12. OOP and Type System Expansion
+## 11. OOP and Type System Expansion
 
 - Add class declarations and object instantiation.o
 - Structs stay public-focused; classes support explicit `public`/`private`.
@@ -175,7 +169,7 @@
 - `this` is valid in instance methods and constructors, and invalid in `static` methods.
 - Typed declarations without `new` remain `null` until initialized (for example `let s: Shape;`).
 
-## 13. Inheritance
+## 12. Inheritance
 
 - Add inheritance as a separate feature from base class/object support.
 - Define overriding and method resolution rules.

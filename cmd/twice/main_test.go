@@ -290,6 +290,37 @@ print(hasField("abc", "length"));
 	}
 }
 
+func TestCLIFunctionLiteralDirectCallAndCapture(t *testing.T) {
+	root := repoRoot(t)
+	ensureToolchain(t)
+
+	srcPath := filepath.Join(t.TempDir(), "fn_lit_call.tw")
+	source := `let y = 3;
+let getY = fn() int { return y; };
+print((fn(a: int) int { return a + 1; })(2));
+print(getY());
+`
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	outputName := "twice_cli_fn_lit_call_bin"
+	outputPath := filepath.Join(root, outputName)
+	_ = os.Remove(outputPath)
+	t.Cleanup(func() { _ = os.Remove(outputPath) })
+
+	cmd := exec.Command("go", "run", "./cmd/twice", "-run", "-o", outputName, srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("compile/run failed: %v\n%s", err, out)
+	}
+	output := string(out)
+	if !strings.Contains(output, "\n3\n3\n") {
+		t.Fatalf("unexpected function-literal runtime output. output:\n%s", output)
+	}
+}
+
 func TestCLICompileAndRunNewTypesTypeofAndCasts(t *testing.T) {
 	root := repoRoot(t)
 	ensureToolchain(t)

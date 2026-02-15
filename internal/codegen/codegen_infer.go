@@ -147,6 +147,15 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) (out valueType) {
 		}
 		return typeUnknown
 	case *ast.CallExpression:
+		if fl, ok := e.Function.(*ast.FunctionLiteral); ok {
+			if fl.ReturnType == "" {
+				if functionReturnsOnlyNull(fl.Body) {
+					return typeNull
+				}
+				return typeUnknown
+			}
+			return cg.parseTypeName(fl.ReturnType)
+		}
 		if fn, ok := e.Function.(*ast.Identifier); ok {
 			switch fn.Value {
 			case "typeof", "typeofValue", "typeofvalue":
@@ -299,6 +308,15 @@ func (cg *CodeGen) inferExpressionTypeName(expr ast.Expression) (out string) {
 		}
 		return elem
 	case *ast.CallExpression:
+		if fl, ok := e.Function.(*ast.FunctionLiteral); ok {
+			if fl.ReturnType == "" {
+				if functionReturnsOnlyNull(fl.Body) {
+					return "null"
+				}
+				return "unknown"
+			}
+			return fl.ReturnType
+		}
 		if fn, ok := e.Function.(*ast.Identifier); ok && (fn.Value == "int" || fn.Value == "float" || fn.Value == "string" || fn.Value == "char" || fn.Value == "bool" || fn.Value == "typeof" || fn.Value == "typeofValue" || fn.Value == "typeofvalue") {
 			return typeName(cg.inferExpressionType(e))
 		}

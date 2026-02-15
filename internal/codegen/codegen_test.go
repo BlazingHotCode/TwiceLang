@@ -762,7 +762,7 @@ func TestCodegenHasFieldBuiltin(t *testing.T) {
 }
 
 func TestCodegenUnsupportedCallTarget(t *testing.T) {
-	_, cg := generateAssembly(t, "(fn(x) { x; })(1);")
+	_, cg := generateAssembly(t, "(1)(2);")
 	if len(cg.Errors()) == 0 {
 		t.Fatalf("expected unsupported call target codegen error")
 	}
@@ -775,6 +775,29 @@ func TestCodegenUnsupportedCallTarget(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected unsupported call target error, got: %v", cg.Errors())
+	}
+}
+
+func TestCodegenFunctionLiteralDirectCall(t *testing.T) {
+	asm, cg := generateAssembly(t, "print((fn(x: int) int { return x + 1; })(2));")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "call fn_lit_") {
+		t.Fatalf("expected direct call to generated function-literal label, got:\n%s", asm)
+	}
+	if !strings.Contains(asm, "call print_int") {
+		t.Fatalf("expected function-literal result to print as int, got:\n%s", asm)
+	}
+}
+
+func TestCodegenFunctionLiteralAssignedCallWithCapture(t *testing.T) {
+	asm, cg := generateAssembly(t, "let y = 3; let getY = fn() int { return y; }; print(getY());")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "call fn_lit_") {
+		t.Fatalf("expected call to generated function-literal label, got:\n%s", asm)
 	}
 }
 

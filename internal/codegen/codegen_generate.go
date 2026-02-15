@@ -96,8 +96,19 @@ func (cg *CodeGen) generateExpression(expr ast.Expression) {
 	case *ast.TupleAccessExpression:
 		cg.generateTupleAccessExpression(e)
 	case *ast.FunctionLiteral:
-		cg.addNodeError("function literals are not supported in codegen yet", e)
-		cg.emit("    mov $0, %%rax")
+		key, ok := cg.funcLitKeys[e]
+		if !ok {
+			cg.addNodeError("function literal not registered for codegen", e)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		fn, ok := cg.functions[key]
+		if !ok || fn == nil {
+			cg.addNodeError("function literal not found in compiled set", e)
+			cg.emit("    mov $0, %%rax")
+			return
+		}
+		cg.emit("    lea %s(%%rip), %%rax", fn.Label)
 	case *ast.NamedArgument:
 		cg.addNodeError("named arguments are only valid inside function calls", e)
 		cg.emit("    mov $0, %%rax")
@@ -784,6 +795,17 @@ func (cg *CodeGen) generateLet(ls *ast.LetStatement) {
 	}
 	cg.varIsNull[name] = inferred == typeNull
 	cg.trackKnownValue(name, cg.varTypes[name], ls.Value)
+	delete(cg.varFuncs, name)
+	switch v := ls.Value.(type) {
+	case *ast.FunctionLiteral:
+		if key, ok := cg.funcLitKeys[v]; ok {
+			cg.varFuncs[name] = key
+		}
+	case *ast.Identifier:
+		if key, ok := cg.varFuncs[v.Value]; ok {
+			cg.varFuncs[name] = key
+		}
+	}
 
 	cg.emit("    mov %%rax, -%d(%%rbp)  # let %s", offset, name)
 }
@@ -834,6 +856,17 @@ func (cg *CodeGen) generateConst(cs *ast.ConstStatement) {
 	}
 	cg.varIsNull[name] = inferred == typeNull
 	cg.trackKnownValue(name, cg.varTypes[name], cs.Value)
+	delete(cg.varFuncs, name)
+	switch v := cs.Value.(type) {
+	case *ast.FunctionLiteral:
+		if key, ok := cg.funcLitKeys[v]; ok {
+			cg.varFuncs[name] = key
+		}
+	case *ast.Identifier:
+		if key, ok := cg.varFuncs[v.Value]; ok {
+			cg.varFuncs[name] = key
+		}
+	}
 
 	cg.emit("    mov %%rax, -%d(%%rbp)  # const %s", offset, name)
 }
@@ -922,6 +955,17 @@ func (cg *CodeGen) generateAssign(as *ast.AssignStatement) {
 	}
 	cg.varIsNull[as.Name.Value] = inferred == typeNull
 	cg.trackKnownValue(as.Name.Value, cg.varTypes[as.Name.Value], as.Value)
+	delete(cg.varFuncs, as.Name.Value)
+	switch v := as.Value.(type) {
+	case *ast.FunctionLiteral:
+		if key, ok := cg.funcLitKeys[v]; ok {
+			cg.varFuncs[as.Name.Value] = key
+		}
+	case *ast.Identifier:
+		if key, ok := cg.varFuncs[v.Value]; ok {
+			cg.varFuncs[as.Name.Value] = key
+		}
+	}
 }
 
 func (cg *CodeGen) generateIndexAssign(ias *ast.IndexAssignStatement) {
@@ -1171,6 +1215,20 @@ func (cg *CodeGen) currentContinueLabel() string {
 }
 
 func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
+	if fl, ok := ce.Function.(*ast.FunctionLiteral); ok {
+		key, ok := cg.funcLitKeys[fl]
+		if !ok {
+			cg.failNode("function literal not registered for call", ce)
+			return
+		}
+		fn, ok := cg.functions[key]
+		if !ok || fn == nil {
+			cg.failNode("function literal call target missing", ce)
+			return
+		}
+		cg.generateUserFunctionCall(fn, ce)
+		return
+	}
 	fn, ok := ce.Function.(*ast.Identifier)
 	if !ok {
 		cg.failNode("unsupported call target", ce)

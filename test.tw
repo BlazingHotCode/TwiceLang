@@ -200,6 +200,11 @@ fn demo_functions() {
     return;
   }
   print(noop());
+
+  let y = 3;
+  let getY = fn() int { return y; };
+  print((fn(a: int) int { return a + 1; })(2));
+  print(getY());
   return;
 }
 

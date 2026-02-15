@@ -33,6 +33,7 @@ type CodeGen struct {
 	functions        map[string]*compiledFunction
 	funcByName       map[string]string
 	funcStmtKeys     map[*ast.FunctionStatement]string
+	funcLitKeys      map[*ast.FunctionLiteral]string
 	varFuncs         map[string]string
 	typeAliases      map[string]string
 	currentFn        string
@@ -101,6 +102,7 @@ func New() *CodeGen {
 		functions:        make(map[string]*compiledFunction),
 		funcByName:       make(map[string]string),
 		funcStmtKeys:     make(map[*ast.FunctionStatement]string),
+		funcLitKeys:      make(map[*ast.FunctionLiteral]string),
 		varFuncs:         make(map[string]string),
 		typeAliases:      make(map[string]string),
 		stackOffset:      0,
