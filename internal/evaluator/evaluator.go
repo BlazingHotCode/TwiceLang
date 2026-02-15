@@ -55,6 +55,24 @@ var builtins = map[string]*object.Builtin{
 	"bool": {
 		Fn: func(args ...object.Object) object.Object { return castToBool(args) },
 	},
+	"hasField": {
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 2 {
+				return newError("hasField expects 2 arguments, got=%d", len(args))
+			}
+			field, ok := args[1].(*object.String)
+			if !ok {
+				return newError("hasField field must be string, got %s", runtimeTypeName(args[1]))
+			}
+
+			switch obj := args[0].(type) {
+			case *object.Array:
+				return nativeBoolToBooleanObject(field.Value == "length" && obj != nil)
+			default:
+				return FALSE
+			}
+		},
+	},
 }
 
 // Eval is the heart of the interpreter
@@ -311,6 +329,15 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			return left
 		}
 		return evalTupleAccessExpression(left, node.Index)
+	case *ast.NullSafeAccessExpression:
+		obj := Eval(node.Object, env)
+		if isError(obj) {
+			return obj
+		}
+		if obj == NULL {
+			return NULL
+		}
+		return newError("member access is only supported for methods")
 	}
 
 	return nil

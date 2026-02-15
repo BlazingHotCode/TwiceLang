@@ -140,8 +140,51 @@ func (p *Parser) parseInfixExpression(left ast.Expression) ast.Expression {
 	p.nextToken()
 	expression.Right = p.parseExpression(precedence)
 
+	p.validateNullishMixing(expression)
+
 	return expression
 }
+
+func directInfixOp(expr ast.Expression) (string, bool) {
+	infix, ok := expr.(*ast.InfixExpression)
+	if !ok || infix == nil {
+		return "", false
+	}
+	return infix.Operator, true
+}
+
+func (p *Parser) validateNullishMixing(infix *ast.InfixExpression) {
+	if infix == nil {
+		return
+	}
+
+	leftOp, leftIsInfix := directInfixOp(infix.Left)
+	rightOp, rightIsInfix := directInfixOp(infix.Right)
+	leftGrouped := p.isGroupedExpr(infix.Left)
+	rightGrouped := p.isGroupedExpr(infix.Right)
+
+	switch infix.Operator {
+	case "??":
+		if (leftIsInfix && !leftGrouped && (leftOp == "&&" || leftOp == "||")) ||
+			(rightIsInfix && !rightGrouped && (rightOp == "&&" || rightOp == "||")) {
+			p.addErrorCurrent("cannot mix ?? with &&/|| without parentheses", infix.Operator)
+		}
+	case "&&", "||":
+		if (leftIsInfix && !leftGrouped && leftOp == "??") ||
+			(rightIsInfix && !rightGrouped && rightOp == "??") {
+			p.addErrorCurrent("cannot mix ?? with &&/|| without parentheses", infix.Operator)
+		}
+	}
+}
+
+func (p *Parser) isGroupedExpr(expr ast.Expression) bool {
+	if expr == nil {
+		return false
+	}
+	_, ok := p.groupedExpr[expr]
+	return ok
+}
+
 
 // parseBoolean handles true/false
 func (p *Parser) parseBoolean() ast.Expression {
@@ -183,6 +226,7 @@ func (p *Parser) parseGroupedExpression() ast.Expression {
 	if !p.expectPeek(token.RPAREN) {
 		return nil
 	}
+	p.groupedExpr[first] = struct{}{}
 	return first
 }
 
@@ -376,7 +420,8 @@ func (p *Parser) parseIndexExpression(left ast.Expression) ast.Expression {
 }
 
 func (p *Parser) parseMethodCallExpression(left ast.Expression) ast.Expression {
-	if p.peekTokenIs(token.INT) {
+	isNullSafe := p.curTokenIs(token.QDOT)
+	if !isNullSafe && p.peekTokenIs(token.INT) {
 		p.nextToken()
 		idx, err := strconv.Atoi(p.curToken.Literal)
 		if err != nil || idx < 0 {
@@ -390,13 +435,34 @@ func (p *Parser) parseMethodCallExpression(left ast.Expression) ast.Expression {
 		}
 	}
 
-	exp := &ast.MethodCallExpression{Token: p.curToken, Object: left}
 	if !p.expectPeek(token.IDENT) {
 		return nil
 	}
-	exp.Method = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	prop := &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+
+	if !p.peekTokenIs(token.LPAREN) {
+		if isNullSafe {
+			return &ast.NullSafeAccessExpression{
+				Token: token.Token{Type: token.QDOT, Literal: "?."},
+				Object: left,
+				Property: prop,
+			}
+		}
+		// normal a.b without call not supported yet in your language
+		p.addErrorCurrent("member access without call is not supported", prop.Value)
+		return nil
+	}
+
+	// a.b(...) or a?.b(...)
 	if !p.expectPeek(token.LPAREN) {
 		return nil
+	}
+
+	exp := &ast.MethodCallExpression{
+		Token:    token.Token{Type: token.DOT, Literal: "."},
+		Object:   left,
+		Method:   prop,
+		NullSafe: isNullSafe,
 	}
 	exp.Arguments = p.parseCallArguments()
 	return exp

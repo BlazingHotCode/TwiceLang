@@ -85,10 +85,16 @@ func evalMethodCallExpression(node *ast.MethodCallExpression, env *object.Enviro
 	if node == nil || node.Method == nil {
 		return newError("invalid method call")
 	}
+
 	obj := Eval(node.Object, env)
 	if isError(obj) {
 		return obj
 	}
+
+	if node.NullSafe && obj == NULL {
+		return NULL
+	}
+
 	switch node.Method.Value {
 	case "length":
 		if len(node.Arguments) != 0 {

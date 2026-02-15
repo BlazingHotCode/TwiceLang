@@ -13,6 +13,7 @@ import (
 const (
 	_ int = iota // Start at 0, ignore this
 	LOWEST
+	NULLCOALESCE
 	LOGICOR     // ||
 	LOGICXOR    // ^^
 	LOGICAND    // &&
@@ -32,26 +33,28 @@ const (
 
 // precedence table maps token types to their precedence level
 var precedences = map[token.TokenType]int{
-	token.OR:       LOGICOR,
-	token.XOR:      LOGICXOR,
-	token.AND:      LOGICAND,
-	token.BIT_OR:   BITOR,
-	token.BIT_XOR:  BITXOR,
-	token.BIT_AND:  BITAND,
-	token.EQ:       EQUALS,
-	token.NOT_EQ:   EQUALS,
-	token.LT:       LESSGREATER,
-	token.GT:       LESSGREATER,
-	token.SHL:      SHIFT,
-	token.SHR:      SHIFT,
-	token.PLUS:     SUM,
-	token.MINUS:    SUM,
-	token.SLASH:    PRODUCT,
-	token.ASTERISK: PRODUCT,
-	token.PERCENT:  PRODUCT,
-	token.LPAREN:   CALL,
-	token.LBRACKET: INDEX,
-	token.DOT:      METHOD,
+	token.OR:        LOGICOR,
+	token.XOR:       LOGICXOR,
+	token.AND:       LOGICAND,
+	token.BIT_OR:    BITOR,
+	token.BIT_XOR:   BITXOR,
+	token.BIT_AND:   BITAND,
+	token.EQ:        EQUALS,
+	token.NOT_EQ:    EQUALS,
+	token.LT:        LESSGREATER,
+	token.GT:        LESSGREATER,
+	token.SHL:       SHIFT,
+	token.SHR:       SHIFT,
+	token.PLUS:      SUM,
+	token.MINUS:     SUM,
+	token.SLASH:     PRODUCT,
+	token.ASTERISK:  PRODUCT,
+	token.PERCENT:   PRODUCT,
+	token.LPAREN:    CALL,
+	token.LBRACKET:  INDEX,
+	token.DOT:       METHOD,
+	token.QDOT:      METHOD,
+	token.QCOALESCE: NULLCOALESCE,
 }
 
 type Parser struct {
@@ -65,6 +68,8 @@ type Parser struct {
 	// Pratt parser tables
 	prefixParseFns map[token.TokenType]prefixParseFn // Functions for tokens that start expressions
 	infixParseFns  map[token.TokenType]infixParseFn  // Functions for tokens that appear in the middle
+
+	groupedExpr map[ast.Expression]struct{}
 }
 
 // prefixParseFn parses expressions that start with a specific token
@@ -87,8 +92,9 @@ type ParseError struct {
 // New creates a new parser for the given lexer
 func New(l *lexer.Lexer) *Parser {
 	p := &Parser{
-		l:      l,
-		errors: []ParseError{},
+		l:           l,
+		errors:      []ParseError{},
+		groupedExpr: map[ast.Expression]struct{}{},
 	}
 
 	// Initialize function tables
@@ -132,6 +138,8 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerInfix(token.LPAREN, p.parseCallExpression)
 	p.registerInfix(token.LBRACKET, p.parseIndexExpression)
 	p.registerInfix(token.DOT, p.parseMethodCallExpression)
+	p.registerInfix(token.QCOALESCE, p.parseInfixExpression)
+	p.registerInfix(token.QDOT, p.parseMethodCallExpression)
 
 	// Read two tokens to set curToken and peekToken
 	p.nextToken()

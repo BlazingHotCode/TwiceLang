@@ -598,26 +598,35 @@ type MethodCallExpression struct {
 	Object    Expression
 	Method    *Identifier
 	Arguments []Expression
+	NullSafe  bool
 }
 
 func (mce *MethodCallExpression) expressionNode()      {}
 func (mce *MethodCallExpression) TokenLiteral() string { return mce.Token.Literal }
 func (mce *MethodCallExpression) String() string {
 	var out bytes.Buffer
-	args := make([]string, 0, len(mce.Arguments))
-	for _, a := range mce.Arguments {
-		args = append(args, a.String())
+	if mce.Object != nil {
+		out.WriteString(mce.Object.String())
 	}
-	out.WriteString(mce.Object.String())
-	out.WriteString(".")
+	if mce.NullSafe {
+		out.WriteString("?.")
+	} else {
+		out.WriteString(".")
+	}
 	if mce.Method != nil {
 		out.WriteString(mce.Method.String())
 	}
 	out.WriteString("(")
+
+	args := make([]string, 0, len(mce.Arguments))
+	for _, a := range mce.Arguments {
+		args = append(args, a.String())
+	}
 	out.WriteString(strings.Join(args, ", "))
 	out.WriteString(")")
 	return out.String()
 }
+
 
 // TupleAccessExpression represents <tupleExpr>.<index>
 type TupleAccessExpression struct {
@@ -647,3 +656,24 @@ func (na *NamedArgument) TokenLiteral() string { return na.Token.Literal }
 func (na *NamedArgument) String() string {
 	return na.Name + " = " + na.Value.String()
 }
+
+type NullSafeAccessExpression struct {
+	Token    token.Token
+	Object   Expression
+	Property *Identifier
+}
+
+func (nsae *NullSafeAccessExpression) expressionNode()      {}
+func (nsae *NullSafeAccessExpression) TokenLiteral() string { return nsae.Token.Literal }
+func (nsa *NullSafeAccessExpression) String() string {
+	var out bytes.Buffer
+	if nsa.Object != nil {
+		out.WriteString(nsa.Object.String())
+	}
+	out.WriteString("?.")
+	if nsa.Property != nil {
+		out.WriteString(nsa.Property.String())
+	}
+	return out.String()
+}
+

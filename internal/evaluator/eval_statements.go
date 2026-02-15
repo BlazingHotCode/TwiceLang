@@ -113,7 +113,13 @@ func evalMinusPrefixOperatorExpression(right object.Object) object.Object {
 
 // evalInfixExpression handles 5 + 3, true == false, etc.
 func evalInfixExpression(operator string, left, right object.Object) object.Object {
-	if operator == "&&" || operator == "||" || operator == "^^" {
+	if operator == "??" {
+		if left == NULL {
+			return right
+		}
+		return left
+	}
+	if operator == "&&" || operator == "||" || operator == "^^"{
 		if left.Type() != object.BOOLEAN_OBJ || right.Type() != object.BOOLEAN_OBJ {
 			return newError("type mismatch: %s %s %s", left.Type(), operator, right.Type())
 		}

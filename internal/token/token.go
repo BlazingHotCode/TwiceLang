@@ -65,6 +65,8 @@ const (
 	RBRACE    TokenType = "}"
 	LBRACKET  TokenType = "["
 	RBRACKET  TokenType = "]"
+	QDOT      TokenType = "?."
+	QCOALESCE TokenType = "??"
 
 	// Keywords
 	FUNCTION TokenType = "FUNCTION"
@@ -87,21 +89,21 @@ const (
 // keywords maps string identifiers to their token type
 // This lets us distinguish between "let" (keyword) and "x" (identifier)
 var keywords = map[string]TokenType{
-	"fn":     FUNCTION,
-	"let":    LET,
-	"const":  CONST,
-	"true":   TRUE,
-	"false":  FALSE,
-	"if":     IF,
-	"elif":   ELIF,
-	"else":   ELSE,
-	"for":    FOR,
-	"while":  WHILE,
-	"loop":   LOOP,
-	"break":  BREAK,
+	"fn":       FUNCTION,
+	"let":      LET,
+	"const":    CONST,
+	"true":     TRUE,
+	"false":    FALSE,
+	"if":       IF,
+	"elif":     ELIF,
+	"else":     ELSE,
+	"for":      FOR,
+	"while":    WHILE,
+	"loop":     LOOP,
+	"break":    BREAK,
 	"continue": CONTINUE,
-	"return": RETURN,
-	"null":   NULL,
+	"return":   RETURN,
+	"null":     NULL,
 }
 
 // LookupIdent checks if an identifier is a keyword
