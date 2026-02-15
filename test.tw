@@ -377,6 +377,9 @@ fn demo_generics() {
   b[0] = 3;
   b[1] = 4;
   println(typeof(b));
+  println(b[0]);
+  println(b[1]);
+  println(b[0] + b[1]);
   return;
 }
 

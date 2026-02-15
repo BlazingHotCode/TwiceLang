@@ -969,12 +969,15 @@ func TestCodegenGenericTypeAliases(t *testing.T) {
 		t.Fatalf("expected generic alias type name in typeof output, got:\n%s", asm)
 	}
 
-	asm, cg = generateAssembly(t, `type Box<T> = T[2]; let b: Box<int>; b[0] = 3; b[1] = 4; print(typeof(b));`)
+	asm, cg = generateAssembly(t, `type Box<T> = T[2]; let b: Box<int>; b[0] = 3; b[1] = 4; print(typeof(b)); print(b[0]); print(b[1]); print(b[0] + b[1]);`)
 	if len(cg.Errors()) != 0 {
 		t.Fatalf("unexpected codegen errors for generic alias array: %v", cg.Errors())
 	}
 	if !strings.Contains(asm, "Box<int>") {
 		t.Fatalf("expected generic alias type name in typeof output, got:\n%s", asm)
+	}
+	if strings.Count(asm, "call print_int") < 3 {
+		t.Fatalf("expected index/plus values to print as int, got:\n%s", asm)
 	}
 }
 

@@ -196,10 +196,14 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) (out valueType) {
 		}
 		return typeUnknown
 	case *ast.IndexExpression:
-		if cg.inferExpressionTypeName(e.Left) == "string" {
+		leftTypeName := cg.inferExpressionTypeName(e.Left)
+		if resolved, ok := cg.normalizeTypeName(leftTypeName); ok {
+			leftTypeName = resolved
+		}
+		if leftTypeName == "string" {
 			return typeChar
 		}
-		elemTypeName, _, ok := peelArrayType(cg.inferExpressionTypeName(e.Left))
+		elemTypeName, _, ok := peelArrayType(leftTypeName)
 		if !ok {
 			return typeUnknown
 		}
@@ -271,10 +275,14 @@ func (cg *CodeGen) inferExpressionTypeName(expr ast.Expression) (out string) {
 		}
 		return "(" + strings.Join(parts, ",") + ")"
 	case *ast.IndexExpression:
-		if cg.inferExpressionTypeName(e.Left) == "string" {
+		leftTypeName := cg.inferExpressionTypeName(e.Left)
+		if resolved, ok := cg.normalizeTypeName(leftTypeName); ok {
+			leftTypeName = resolved
+		}
+		if leftTypeName == "string" {
 			return "char"
 		}
-		elem, _, ok := peelArrayType(cg.inferExpressionTypeName(e.Left))
+		elem, _, ok := peelArrayType(leftTypeName)
 		if !ok {
 			return "unknown"
 		}
