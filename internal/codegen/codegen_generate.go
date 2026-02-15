@@ -108,6 +108,23 @@ func (cg *CodeGen) generateExpression(expr ast.Expression) {
 			cg.emit("    mov $0, %%rax")
 			return
 		}
+		for i, capName := range fn.Captures {
+			if i >= len(fn.CaptureTypeNames) {
+				break
+			}
+			typeName := "unknown"
+			if t, ok := cg.varTypeNames[capName]; ok && t != "" {
+				typeName = t
+			} else if t, ok := cg.varValueTypeName[capName]; ok && t != "" {
+				typeName = t
+			} else {
+				inferred := cg.inferCurrentValueTypeName(&ast.Identifier{Value: capName})
+				if inferred != "" {
+					typeName = inferred
+				}
+			}
+			fn.CaptureTypeNames[i] = typeName
+		}
 		cg.emit("    lea %s(%%rip), %%rax", fn.Label)
 	case *ast.NamedArgument:
 		cg.addNodeError("named arguments are only valid inside function calls", e)

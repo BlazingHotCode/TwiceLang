@@ -1,17 +1,11 @@
 # TODO
 
-## 1. Remove Function Arity/Capture Hard Limit
-
-- Remove/raise the current codegen limit of 6 combined parameters/captures.
-- Implement a stable calling convention strategy for larger functions.
-- Add regression tests for higher arity and capture counts.
-
-## 2. String Formatting
+## 1. String Formatting
 
 - Add escape-sequence formatting in strings (for example `\n`, `\t`, and related escapes).
 - Add string interpolation with `${...}` expressions inside string literals.
 
-## 3. Any Type
+## 2. Any Type
 
 - Add `any` type support for values that can hold any runtime type.
 - `any` can hold `null` for variables/values.
@@ -32,7 +26,7 @@
 - Implement evaluator and codegen parity from day one.
 - Keep backward compatibility with existing array behavior while adding `any`.
 
-## 4. Runtime Errors
+## 3. Runtime Errors
 
 - Add a standardized runtime error format prefix: `Runtime error: ...`.
 - Use specific operation-level messages (not generic failures), for example cast/index/operator mismatch details.
@@ -42,7 +36,7 @@
 - Include a short context snippet for the failing operation.
 - Do not include stack traces in v1.
 
-## 5. Generics/Templates (Java-Style)
+## 4. Generics/Templates (Java-Style)
 
 - Add generic type syntax using angle brackets, like Java: `Type<T>`.
 - Support generic declarations for user-defined types/functions in v1.
@@ -61,7 +55,7 @@
 - Generic classes are supported by syntax plan, but are implemented together with class support.
 - Keep parser, evaluator, and codegen behavior aligned for generics.
 
-## 6. Lists (Dynamic Arrays)
+## 5. Lists (Dynamic Arrays)
 
 - Add generic list types as dynamic arrays without fixed compile-time length.
 - Use generic syntax for declarations, for example `let xs: List<int>;`.
@@ -96,7 +90,7 @@
 - codegen tests
 - CLI/runtime tests
 
-## 7. Structs
+## 6. Structs
 
 - Add struct declarations and typed struct values.
 - Use literal construction syntax for structs.
@@ -120,14 +114,14 @@
 - Pointer struct function usage syntax (auto-deref):
 - `ptr.methodName(args...)` (no `(*ptr).methodName(...)` required)
 
-## 8. Pointers
+## 7. Pointers
 
 - Pointer types are nullable only when explicitly declared nullable.
 - Add pointer operations (`&value`, `*ptr`, pointer assignment).
 - Pointer method calls auto-deref: allow `p.method()` without requiring `(*p).method()`.
 - Pointer + struct design should be combined, so references and mutation go through pointers.
 
-## 9. Custom Libraries
+## 8. Custom Libraries
 
 - Add `import ...` syntax.
 - Built-in libraries are imported with `twice.<lib>`.
@@ -140,7 +134,7 @@
 - Add member import alias syntax like:
 - `import twice.math.sqrt as sqrt`
 
-## 10. OOP and Type System Expansion
+## 9. OOP and Type System Expansion
 
 - Add class declarations and object instantiation.o
 - Structs stay public-focused; classes support explicit `public`/`private`.
@@ -163,7 +157,7 @@
 - `this` is valid in instance methods and constructors, and invalid in `static` methods.
 - Typed declarations without `new` remain `null` until initialized (for example `let s: Shape;`).
 
-## 11. Inheritance
+## 10. Inheritance
 
 - Add inheritance as a separate feature from base class/object support.
 - Define overriding and method resolution rules.

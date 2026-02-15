@@ -534,6 +534,47 @@ func TestCodegenFunctionCallBeforeDeclaration(t *testing.T) {
 	}
 }
 
+func TestCodegenFunctionCallSupportsMoreThanSixParameters(t *testing.T) {
+	asm, cg := generateAssembly(t, `
+fn sum7(a: int, b: int, c: int, d: int, e: int, f: int, g: int) int {
+  return a + b + c + d + e + f + g;
+}
+print(sum7(1, 2, 3, 4, 5, 6, 7));
+`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "call fn_sum7") {
+		t.Fatalf("expected call to compiled sum7 function, got:\n%s", asm)
+	}
+	if !strings.Contains(asm, "add $56, %rsp") {
+		t.Fatalf("expected stack cleanup for 7 call arguments, got:\n%s", asm)
+	}
+}
+
+func TestCodegenFunctionCallSupportsMoreThanSixParamsAndCaptures(t *testing.T) {
+	asm, cg := generateAssembly(t, `
+let a = 1;
+let b = 2;
+let c = 3;
+let d = 4;
+let e = 5;
+let f = fn(x: int, y: int) int {
+  return a + b + c + d + e + x + y;
+};
+print(f(6, 7));
+`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "call fn_lit_") {
+		t.Fatalf("expected call to compiled function literal, got:\n%s", asm)
+	}
+	if !strings.Contains(asm, "add $56, %rsp") {
+		t.Fatalf("expected stack cleanup for 7 total params/captures, got:\n%s", asm)
+	}
+}
+
 func TestCodegenArrayIndexGetAndSet(t *testing.T) {
 	asm, cg := generateAssembly(t, "let arr = {1, 2, 3}; print(arr[1]); arr[1] = 9; print(arr[1]);")
 	if len(cg.Errors()) != 0 {

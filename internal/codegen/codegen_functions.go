@@ -3,6 +3,7 @@ package codegen
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"twice/internal/ast"
@@ -92,11 +93,12 @@ func (cg *CodeGen) collectFunctionsInStatement(stmt ast.Statement, scope map[str
 			captures = cg.computeCaptures(s.Function, scope)
 		}
 		cg.functions[key] = &compiledFunction{
-			Key:      key,
-			Name:     s.Name.Value,
-			Label:    "fn_" + s.Name.Value,
-			Literal:  s.Function,
-			Captures: captures,
+			Key:              key,
+			Name:             s.Name.Value,
+			Label:            "fn_" + s.Name.Value,
+			Literal:          s.Function,
+			Captures:         captures,
+			CaptureTypeNames: make([]string, len(captures)),
 		}
 		cg.funcStmtKeys[s] = key
 		if topLevel {
@@ -193,10 +195,11 @@ func (cg *CodeGen) collectFunctionsInExpression(expr ast.Expression, scope map[s
 		cg.nextAnonFn++
 		captures := cg.computeCaptures(e, scope)
 		cg.functions[key] = &compiledFunction{
-			Key:      key,
-			Label:    "fn_" + key,
-			Literal:  e,
-			Captures: captures,
+			Key:              key,
+			Label:            "fn_" + key,
+			Literal:          e,
+			Captures:         captures,
+			CaptureTypeNames: make([]string, len(captures)),
 		}
 		cg.funcLitKeys[e] = key
 		childScope := copyScope(scope)
@@ -261,14 +264,36 @@ func (cg *CodeGen) collectFunctionsInExpression(expr ast.Expression, scope map[s
 }
 
 func (cg *CodeGen) generateFunctionDefinitions() {
-	keys := make([]string, 0, len(cg.functions))
+	named := make([]string, 0, len(cg.functions))
+	literals := make([]string, 0, len(cg.functions))
 	for k := range cg.functions {
-		keys = append(keys, k)
+		if strings.HasPrefix(k, "lit_") {
+			literals = append(literals, k)
+		} else {
+			named = append(named, k)
+		}
 	}
-	sort.Strings(keys) // deterministic output for tests
-	for _, key := range keys {
+	sort.Strings(named)
+	sort.Slice(literals, func(i, j int) bool {
+		return literalFnIndex(literals[i]) < literalFnIndex(literals[j])
+	})
+	for _, key := range named {
 		cg.generateOneFunction(cg.functions[key])
 	}
+	for _, key := range literals {
+		cg.generateOneFunction(cg.functions[key])
+	}
+}
+
+func literalFnIndex(key string) int {
+	if !strings.HasPrefix(key, "lit_") {
+		return -1
+	}
+	n, err := strconv.Atoi(strings.TrimPrefix(key, "lit_"))
+	if err != nil {
+		return -1
+	}
+	return n
 }
 
 type cgState struct {
@@ -361,20 +386,12 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 	cg.emit("    mov %%rsp, %%rbp")
 	cg.emit("__STACK_ALLOC_FUNC__")
 
-	paramRegs := []string{"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"}
-	totalParams := len(fn.Literal.Parameters) + len(fn.Captures)
-	if totalParams > len(paramRegs) {
-		cg.addNodeError("functions with more than 6 total parameters/captures are not supported in codegen", fn.Literal)
-	}
-
 	for idx, p := range fn.Literal.Parameters {
-		if idx >= len(paramRegs) {
-			break
-		}
 		offset := cg.allocateSlots(1)
 		cg.variables[p.Name.Value] = offset
 		cg.markDeclaredInCurrentScope(p.Name.Value)
-		cg.emit("    mov %s, -%d(%%rbp)  # param %s", paramRegs[idx], offset, p.Name.Value)
+		cg.emit("    mov %d(%%rbp), %%rax  # param %s", 16+idx*8, p.Name.Value)
+		cg.emit("    mov %%rax, -%d(%%rbp)", offset)
 		pt := cg.parseTypeName(p.TypeName)
 		cg.varTypes[p.Name.Value] = pt
 		cg.varDeclared[p.Name.Value] = pt
@@ -390,19 +407,47 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 	}
 
 	for idx, name := range fn.Captures {
-		regIdx := len(fn.Literal.Parameters) + idx
-		if regIdx >= len(paramRegs) {
-			break
-		}
+		argIdx := len(fn.Literal.Parameters) + idx
 		offset := cg.allocateSlots(1)
 		cg.variables[name] = offset
 		cg.markDeclaredInCurrentScope(name)
-		cg.emit("    mov %s, -%d(%%rbp)  # capture %s", paramRegs[regIdx], offset, name)
-		cg.varTypes[name] = typeUnknown
-		cg.varDeclared[name] = typeUnknown
+		cg.emit("    mov %d(%%rbp), %%rax  # capture %s", 16+argIdx*8, name)
+		cg.emit("    mov %%rax, -%d(%%rbp)", offset)
 		cg.varTypeNames[name] = "unknown"
-		cg.varValueTypeName[name] = "unknown"
+		if idx < len(fn.CaptureTypeNames) && fn.CaptureTypeNames[idx] != "" {
+			cg.varTypeNames[name] = fn.CaptureTypeNames[idx]
+		} else if t, ok := state.lexical.varTypeNames[name]; ok && t != "" {
+			cg.varTypeNames[name] = t
+		}
+		cg.varTypes[name] = cg.parseTypeName(cg.varTypeNames[name])
+		cg.varDeclared[name] = cg.varTypes[name]
+		cg.varDeclaredNames[name] = cg.varTypeNames[name]
+		if t, ok := state.lexical.varDeclaredNames[name]; ok && t != "" {
+			cg.varDeclaredNames[name] = t
+		}
+		cg.varValueTypeName[name] = cg.varTypeNames[name]
+		if t, ok := state.lexical.varValueTypeName[name]; ok && t != "" {
+			cg.varValueTypeName[name] = t
+		}
 		cg.varIsNull[name] = false
+		if n, ok := state.lexical.varIsNull[name]; ok {
+			cg.varIsNull[name] = n
+		}
+		if n, ok := state.lexical.varArrayLen[name]; ok {
+			cg.varArrayLen[name] = n
+		}
+		if v, ok := state.lexical.intVals[name]; ok {
+			cg.intVals[name] = v
+		}
+		if v, ok := state.lexical.floatVals[name]; ok {
+			cg.floatVals[name] = v
+		}
+		if v, ok := state.lexical.charVals[name]; ok {
+			cg.charVals[name] = v
+		}
+		if v, ok := state.lexical.stringVals[name]; ok {
+			cg.stringVals[name] = v
+		}
 	}
 
 	for _, st := range fn.Literal.Body.Statements {
@@ -427,14 +472,6 @@ func (cg *CodeGen) generateOneFunction(fn *compiledFunction) {
 }
 
 func (cg *CodeGen) generateUserFunctionCall(fn *compiledFunction, ce *ast.CallExpression) {
-	paramRegs := []string{"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"}
-	totalParams := len(fn.Literal.Parameters) + len(fn.Captures)
-	if totalParams > len(paramRegs) {
-		cg.addNodeError("functions with more than 6 total parameters/captures are not supported in codegen", ce)
-		cg.emit("    mov $0, %%rax")
-		return
-	}
-
 	finalArgs := make([]ast.Expression, len(fn.Literal.Parameters))
 	namedMode := false
 	posIdx := 0
@@ -488,6 +525,7 @@ func (cg *CodeGen) generateUserFunctionCall(fn *compiledFunction, ce *ast.CallEx
 		finalArgs[i] = p.DefaultValue
 	}
 
+	passedArgs := make([]ast.Expression, 0, len(finalArgs)+len(fn.Captures))
 	for i, arg := range finalArgs {
 		want := cg.parseTypeName(fn.Literal.Parameters[i].TypeName)
 		got := cg.inferExpressionType(arg)
@@ -506,20 +544,22 @@ func (cg *CodeGen) generateUserFunctionCall(fn *compiledFunction, ce *ast.CallEx
 			cg.emit("    mov $0, %%rax")
 			return
 		}
-		cg.generateExpression(arg)
-		cg.emit("    mov %%rax, %s", paramRegs[i])
+		passedArgs = append(passedArgs, arg)
 	}
 
-	for idx, capName := range fn.Captures {
-		regIdx := len(fn.Literal.Parameters) + idx
-		if regIdx >= len(paramRegs) {
-			break
-		}
-		cg.generateExpression(&ast.Identifier{Value: capName})
-		cg.emit("    mov %%rax, %s", paramRegs[regIdx])
+	for _, capName := range fn.Captures {
+		passedArgs = append(passedArgs, &ast.Identifier{Value: capName})
+	}
+
+	for i := len(passedArgs) - 1; i >= 0; i-- {
+		cg.generateExpression(passedArgs[i])
+		cg.emit("    push %%rax")
 	}
 
 	cg.emit("    call %s", fn.Label)
+	if len(passedArgs) > 0 {
+		cg.emit("    add $%d, %%rsp", len(passedArgs)*8)
+	}
 }
 
 func copyScope(scope map[string]struct{}) map[string]struct{} {

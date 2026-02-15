@@ -54,11 +54,12 @@ type CodeGen struct {
 }
 
 type compiledFunction struct {
-	Key      string
-	Name     string
-	Label    string
-	Literal  *ast.FunctionLiteral
-	Captures []string
+	Key              string
+	Name             string
+	Label            string
+	Literal          *ast.FunctionLiteral
+	Captures         []string
+	CaptureTypeNames []string
 }
 
 type valueType int

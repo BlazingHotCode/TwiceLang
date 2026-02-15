@@ -336,6 +336,23 @@ print((fn(a: int) int { return a + 1; })(2)); // 3
 print(getY()); // 3
 ```
 
+Higher-arity functions and capture-heavy closures are supported:
+
+```tw
+fn sum7(a: int, b: int, c: int, d: int, e: int, f: int, g: int) int {
+  return a + b + c + d + e + f + g;
+}
+print(sum7(1, 2, 3, 4, 5, 6, 7)); // 28
+
+let a1 = 1;
+let a2 = 2;
+let a3 = 3;
+let a4 = 4;
+let a5 = 5;
+let addCaps = fn(x: int, y: int) int { return a1 + a2 + a3 + a4 + a5 + x + y; };
+print(addCaps(6, 7)); // 28
+```
+
 Call order is declaration-order independent:
 
 ```tw
@@ -359,6 +376,7 @@ Notes:
 - If `main` returns `int`, that value is used as the process exit code.
 - If `main` has no return type, process exits with code `0`.
 - If `main` has return type `int||null`, returning `null` also exits with code `0`.
+- User-defined function calls are not limited to six combined parameters/captures.
 
 Example no-return function:
 
