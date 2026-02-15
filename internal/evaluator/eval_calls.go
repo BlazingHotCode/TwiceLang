@@ -110,12 +110,10 @@ func applyUserFunction(function *object.Function, args []object.Object, namedArg
 
 		targetType := param.TypeName
 		if len(typeArgMap) > 0 && targetType != "" {
-			if cur, ok := typeArgMap[targetType]; ok {
-				valType := runtimeTypeName(val)
-				if cur == "" && len(typeArgs) == 0 {
-					typeArgMap[targetType] = valType
-				} else if cur != valType {
-					return newError("cannot infer generic type %s from both %s and %s", targetType, cur, valType)
+			valType := runtimeTypeName(val)
+			if valType != "unknown" {
+				if msg, ok := inferGenericTypeArgsFromTypes(targetType, valType, typeArgMap, function.Env); !ok {
+					return newError("%s", msg)
 				}
 			}
 			targetType = typesys.SubstituteTypeParams(targetType, typeArgMap)
@@ -216,6 +214,123 @@ func containsTypeToken(typeName, tokenName string) bool {
 		i++
 	}
 	return false
+}
+
+func inferGenericTypeArgsFromTypes(paramType, argType string, typeArgMap map[string]string, env *object.Environment) (string, bool) {
+	paramType = stripOuterGroupingParens(paramType)
+	argType = stripOuterGroupingParens(argType)
+
+	if cur, ok := typeArgMap[paramType]; ok {
+		argNorm := canonicalGenericTypeArg(argType, env)
+		if cur == "" {
+			typeArgMap[paramType] = argNorm
+			return "", true
+		}
+		if cur == argNorm {
+			return "", true
+		}
+		return "cannot infer generic type " + paramType + " from both " + cur + " and " + argNorm, false
+	}
+
+	pbase, pdims, pok := parseTypeName(paramType)
+	abase, adims, aok := parseTypeName(argType)
+	if pok && aok && len(pdims) > 0 && len(adims) > 0 && len(pdims) == len(adims) {
+		for i := range pdims {
+			if pdims[i] >= 0 && adims[i] >= 0 && pdims[i] != adims[i] {
+				return "", true
+			}
+		}
+		return inferGenericTypeArgsFromTypes(pbase, abase, typeArgMap, env)
+	}
+
+	if pmembers, isTuple := splitTopLevelTuple(paramType); isTuple {
+		amembers, argTuple := splitTopLevelTuple(argType)
+		if !argTuple || len(pmembers) != len(amembers) {
+			return "", true
+		}
+		for i := range pmembers {
+			if msg, ok := inferGenericTypeArgsFromTypes(pmembers[i], amembers[i], typeArgMap, env); !ok {
+				return msg, false
+			}
+		}
+		return "", true
+	}
+
+	if pbase, pargs, isGen := typesys.SplitGenericType(paramType); isGen {
+		abase, aargs, argGen := typesys.SplitGenericType(argType)
+		if argGen && pbase == abase && len(pargs) == len(aargs) {
+			for i := range pargs {
+				if msg, ok := inferGenericTypeArgsFromTypes(pargs[i], aargs[i], typeArgMap, env); !ok {
+					return msg, false
+				}
+			}
+			return "", true
+		}
+		if alias, ok := env.GenericTypeAlias(pbase); ok && len(alias.TypeParams) == len(pargs) {
+			mapping := make(map[string]string, len(alias.TypeParams))
+			for i, tp := range alias.TypeParams {
+				mapping[tp] = pargs[i]
+			}
+			inst := typesys.SubstituteTypeParams(alias.TypeName, mapping)
+			if msg, ok := inferGenericTypeArgsFromTypes(inst, argType, typeArgMap, env); !ok {
+				return msg, false
+			}
+			return "", true
+		}
+	}
+
+	if members, isUnion := splitTopLevelUnion(paramType); isUnion {
+		unique := 0
+		var last map[string]string
+		for _, m := range members {
+			if !isAssignableToType(m, argType, env) {
+				continue
+			}
+			candidate := make(map[string]string, len(typeArgMap))
+			for k, v := range typeArgMap {
+				candidate[k] = v
+			}
+			if _, ok := inferGenericTypeArgsFromTypes(m, argType, candidate, env); !ok {
+				continue
+			}
+			unique++
+			last = candidate
+			if unique > 1 {
+				return "", true
+			}
+		}
+		if unique == 1 && last != nil {
+			for k, v := range last {
+				typeArgMap[k] = v
+			}
+		}
+		return "", true
+	}
+
+	return "", true
+}
+
+func canonicalGenericTypeArg(t string, env *object.Environment) string {
+	if resolved, ok := typesys.NormalizeTypeName(t, typeAliasResolver(env)); ok && resolved != "" {
+		return resolved
+	}
+	return t
+}
+
+func stripOuterGroupingParens(s string) string {
+	out := s
+	for len(out) >= 2 && out[0] == '(' && out[len(out)-1] == ')' {
+		inner := out[1 : len(out)-1]
+		if inner == "" {
+			break
+		}
+		parts, isTuple := splitTopLevelTuple(out)
+		if isTuple && len(parts) > 0 {
+			break
+		}
+		out = inner
+	}
+	return out
 }
 
 func functionHasParam(fn *object.Function, name string) bool {

@@ -337,6 +337,44 @@ fn main() int {
 	}
 }
 
+func TestCLICompileAndRunGenericFunctionNestedInference(t *testing.T) {
+	root := repoRoot(t)
+	ensureToolchain(t)
+
+	srcPath := filepath.Join(t.TempDir(), "generic_nested_infer.tw")
+	source := `
+type Box<T> = T[2];
+fn first<T>(b: Box<T>) T { return b[0]; }
+fn main() int {
+  let b: Box<int>;
+  b[0] = 4;
+  b[1] = 9;
+  println(first(b));
+  return 0;
+}
+`
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	outputName := "twice_cli_generic_nested_infer_bin"
+	outputPath := filepath.Join(root, outputName)
+	_ = os.Remove(outputPath)
+	t.Cleanup(func() { _ = os.Remove(outputPath) })
+
+	cmd := exec.Command("go", "run", "./cmd/twice", "-run", "-o", outputName, srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("compile/run failed: %v\n%s", err, out)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "\n4\n") {
+		t.Fatalf("expected nested generic inference output. output:\n%s", output)
+	}
+}
+
 func TestCLICompileAndRunUnusedGenericFunctionTemplate(t *testing.T) {
 	root := repoRoot(t)
 	ensureToolchain(t)

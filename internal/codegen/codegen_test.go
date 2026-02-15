@@ -1059,6 +1059,7 @@ func TestCodegenGenericFunctionTypeArgArityErrors(t *testing.T) {
 }
 
 func TestCodegenGenericFunctionInferenceRequiresUnambiguousUse(t *testing.T) {
+	var asm string
 	_, cg := generateAssembly(t, `fn passthrough<T>(x: int) int { return x; } print(passthrough(5));`)
 	if len(cg.Errors()) == 0 {
 		t.Fatalf("expected codegen errors for unresolved generic inference")
@@ -1077,6 +1078,21 @@ func TestCodegenGenericFunctionInferenceRequiresUnambiguousUse(t *testing.T) {
 	_, cg = generateAssembly(t, `fn passthrough<T>(x: int) int { return x; } print(passthrough<int>(5));`)
 	if len(cg.Errors()) != 0 {
 		t.Fatalf("unexpected codegen errors for explicit generic passthrough: %v", cg.Errors())
+	}
+
+	asm, cg = generateAssembly(t, `
+type Box<T> = T[2];
+fn first<T>(b: Box<T>) T { return b[0]; }
+let b: Box<int>;
+b[0] = 4;
+b[1] = 9;
+print(first(b));
+`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors for nested generic inference: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "call fn_first__int") {
+		t.Fatalf("expected inferred specialization call fn_first__int, got:\n%s", asm)
 	}
 }
 

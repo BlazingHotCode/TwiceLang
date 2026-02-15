@@ -365,12 +365,38 @@ func (cg *CodeGen) resolveGenericCallReturnTypeName(fn *compiledFunction, ce *as
 	if len(fn.Literal.TypeParams) == 0 {
 		return ret
 	}
-	if len(ce.TypeArguments) != len(fn.Literal.TypeParams) {
-		return ""
-	}
 	mapping := map[string]string{}
-	for i, tp := range fn.Literal.TypeParams {
-		mapping[tp] = ce.TypeArguments[i]
+	if len(ce.TypeArguments) > 0 {
+		if len(ce.TypeArguments) != len(fn.Literal.TypeParams) {
+			return ""
+		}
+		for i, tp := range fn.Literal.TypeParams {
+			mapping[tp] = ce.TypeArguments[i]
+		}
+		return substituteTypeParams(ret, mapping)
+	}
+	for _, tp := range fn.Literal.TypeParams {
+		mapping[tp] = ""
+	}
+	for i, p := range fn.Literal.Parameters {
+		if i >= len(ce.Arguments) {
+			break
+		}
+		if _, ok := ce.Arguments[i].(*ast.NamedArgument); ok {
+			return ""
+		}
+		argType := cg.inferExpressionTypeName(ce.Arguments[i])
+		if argType == "unknown" {
+			continue
+		}
+		if _, ok := cg.inferGenericTypeArgsFromTypes(p.TypeName, argType, mapping); !ok {
+			return ""
+		}
+	}
+	for _, tp := range fn.Literal.TypeParams {
+		if mapping[tp] == "" {
+			return ""
+		}
 	}
 	return substituteTypeParams(ret, mapping)
 }

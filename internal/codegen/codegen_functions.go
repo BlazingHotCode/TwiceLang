@@ -586,17 +586,10 @@ func (cg *CodeGen) generateUserFunctionCall(fn *compiledFunction, ce *ast.CallEx
 	for i, arg := range finalArgs {
 		wantName := fn.Literal.Parameters[i].TypeName
 		if len(typeArgMap) > 0 && wantName != "" {
-			if cur, ok := typeArgMap[wantName]; ok {
-				gotName := cg.inferExpressionTypeName(arg)
-				if cur == "" && gotName != "unknown" {
-					typeArgMap[wantName] = cg.canonicalGenericTypeArg(gotName)
-				} else if cur != "" && gotName != "unknown" && cur != gotName {
-					gotNorm := cg.canonicalGenericTypeArg(gotName)
-					if cur == gotNorm {
-						// Same concrete type after alias normalization.
-						continue
-					}
-					cg.addNodeError(fmt.Sprintf("cannot infer generic type %s from both %s and %s", wantName, cur, gotName), ce)
+			gotName := cg.inferExpressionTypeName(arg)
+			if gotName != "unknown" {
+				if errMsg, ok := cg.inferGenericTypeArgsFromTypes(wantName, gotName, typeArgMap); !ok {
+					cg.addNodeError(errMsg, ce)
 					cg.emit("    mov $0, %%rax")
 					return
 				}
@@ -732,6 +725,99 @@ func (cg *CodeGen) canonicalGenericTypeArg(t string) string {
 		return resolved
 	}
 	return t
+}
+
+func (cg *CodeGen) inferGenericTypeArgsFromTypes(paramType, argType string, typeArgMap map[string]string) (string, bool) {
+	paramType = stripOuterGroupingParens(paramType)
+	argType = stripOuterGroupingParens(cg.canonicalGenericTypeArg(argType))
+
+	if cur, ok := typeArgMap[paramType]; ok {
+		if cur == "" {
+			typeArgMap[paramType] = argType
+			return "", true
+		}
+		if cur == argType {
+			return "", true
+		}
+		return fmt.Sprintf("cannot infer generic type %s from both %s and %s", paramType, cur, argType), false
+	}
+
+	pbase, pdims, pok := parseTypeDescriptor(paramType)
+	abase, adims, aok := parseTypeDescriptor(argType)
+	if pok && aok && len(pdims) > 0 && len(adims) > 0 && len(pdims) == len(adims) {
+		for i := range pdims {
+			if pdims[i] >= 0 && adims[i] >= 0 && pdims[i] != adims[i] {
+				return "", true
+			}
+		}
+		return cg.inferGenericTypeArgsFromTypes(pbase, abase, typeArgMap)
+	}
+
+	if pmembers, isTuple := splitTopLevelTuple(paramType); isTuple {
+		amembers, argTuple := splitTopLevelTuple(argType)
+		if !argTuple || len(pmembers) != len(amembers) {
+			return "", true
+		}
+		for i := range pmembers {
+			if msg, ok := cg.inferGenericTypeArgsFromTypes(pmembers[i], amembers[i], typeArgMap); !ok {
+				return msg, false
+			}
+		}
+		return "", true
+	}
+
+	if pbase, pargs, isGen := splitGenericType(paramType); isGen {
+		abase, aargs, argGen := splitGenericType(argType)
+		if argGen && pbase == abase && len(pargs) == len(aargs) {
+			for i := range pargs {
+				if msg, ok := cg.inferGenericTypeArgsFromTypes(pargs[i], aargs[i], typeArgMap); !ok {
+					return msg, false
+				}
+			}
+			return "", true
+		}
+		if alias, ok := cg.genericTypeAliases[pbase]; ok && len(alias.TypeParams) == len(pargs) {
+			mapping := make(map[string]string, len(alias.TypeParams))
+			for i, tp := range alias.TypeParams {
+				mapping[tp] = pargs[i]
+			}
+			inst := substituteTypeParams(alias.TypeName, mapping)
+			if msg, ok := cg.inferGenericTypeArgsFromTypes(inst, argType, typeArgMap); !ok {
+				return msg, false
+			}
+			return "", true
+		}
+	}
+
+	if members, isUnion := splitTopLevelUnion(paramType); isUnion {
+		unique := 0
+		var last map[string]string
+		for _, m := range members {
+			if !cg.isAssignableTypeName(m, argType) {
+				continue
+			}
+			candidate := make(map[string]string, len(typeArgMap))
+			for k, v := range typeArgMap {
+				candidate[k] = v
+			}
+			if _, ok := cg.inferGenericTypeArgsFromTypes(m, argType, candidate); !ok {
+				continue
+			}
+			unique++
+			last = candidate
+			if unique > 1 {
+				return "", true
+			}
+		}
+		if unique == 1 && last != nil {
+			for k, v := range last {
+				typeArgMap[k] = v
+			}
+		}
+		return "", true
+	}
+
+	return "", true
 }
 
 func copyScope(scope map[string]struct{}) map[string]struct{} {
