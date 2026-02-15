@@ -448,6 +448,18 @@ func TestStringConcatWithNumericAndCharEval(t *testing.T) {
 	}
 }
 
+func TestEscapedAndTemplateStringsEval(t *testing.T) {
+	evaluated := testEval(`"line1\nline2\tend"`)
+	if got := unwrapReturn(evaluated).Inspect(); got != "line1\nline2\tend" {
+		t.Fatalf("wrong escaped string value: got=%q", got)
+	}
+
+	evaluated = testEval("let name = \"Twice\"; `Hello ${name}\\n`;")
+	if got := unwrapReturn(evaluated).Inspect(); got != "Hello Twice\n" {
+		t.Fatalf("wrong template string value: got=%q", got)
+	}
+}
+
 func TestArrayLiteralAndTypedArrayEval(t *testing.T) {
 	evaluated := testEval("let arr = {1, 2, 3}; typeof(arr)")
 	if evaluated.Type() != object.TYPE_OBJ || evaluated.Inspect() != "int[3]" {

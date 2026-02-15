@@ -1,11 +1,6 @@
 # TODO
 
-## 1. String Formatting
-
-- Add escape-sequence formatting in strings (for example `\n`, `\t`, and related escapes).
-- Add string interpolation with `${...}` expressions inside string literals.
-
-## 2. Any Type
+## 1. Any Type
 
 - Add `any` type support for values that can hold any runtime type.
 - `any` can hold `null` for variables/values.
@@ -26,7 +21,7 @@
 - Implement evaluator and codegen parity from day one.
 - Keep backward compatibility with existing array behavior while adding `any`.
 
-## 3. Runtime Errors
+## 2. Runtime Errors
 
 - Add a standardized runtime error format prefix: `Runtime error: ...`.
 - Use specific operation-level messages (not generic failures), for example cast/index/operator mismatch details.
@@ -36,7 +31,7 @@
 - Include a short context snippet for the failing operation.
 - Do not include stack traces in v1.
 
-## 4. Generics/Templates (Java-Style)
+## 3. Generics/Templates (Java-Style)
 
 - Add generic type syntax using angle brackets, like Java: `Type<T>`.
 - Support generic declarations for user-defined types/functions in v1.
@@ -55,7 +50,7 @@
 - Generic classes are supported by syntax plan, but are implemented together with class support.
 - Keep parser, evaluator, and codegen behavior aligned for generics.
 
-## 5. Lists (Dynamic Arrays)
+## 4. Lists (Dynamic Arrays)
 
 - Add generic list types as dynamic arrays without fixed compile-time length.
 - Use generic syntax for declarations, for example `let xs: List<int>;`.
@@ -90,7 +85,7 @@
 - codegen tests
 - CLI/runtime tests
 
-## 6. Structs
+## 5. Structs
 
 - Add struct declarations and typed struct values.
 - Use literal construction syntax for structs.
@@ -114,14 +109,14 @@
 - Pointer struct function usage syntax (auto-deref):
 - `ptr.methodName(args...)` (no `(*ptr).methodName(...)` required)
 
-## 7. Pointers
+## 6. Pointers
 
 - Pointer types are nullable only when explicitly declared nullable.
 - Add pointer operations (`&value`, `*ptr`, pointer assignment).
 - Pointer method calls auto-deref: allow `p.method()` without requiring `(*p).method()`.
 - Pointer + struct design should be combined, so references and mutation go through pointers.
 
-## 8. Custom Libraries
+## 7. Custom Libraries
 
 - Add `import ...` syntax.
 - Built-in libraries are imported with `twice.<lib>`.
@@ -134,7 +129,7 @@
 - Add member import alias syntax like:
 - `import twice.math.sqrt as sqrt`
 
-## 9. OOP and Type System Expansion
+## 8. OOP and Type System Expansion
 
 - Add class declarations and object instantiation.o
 - Structs stay public-focused; classes support explicit `public`/`private`.
@@ -157,7 +152,7 @@
 - `this` is valid in instance methods and constructors, and invalid in `static` methods.
 - Typed declarations without `new` remain `null` until initialized (for example `let s: Shape;`).
 
-## 10. Inheritance
+## 9. Inheritance
 
 - Add inheritance as a separate feature from base class/object support.
 - Define overriding and method resolution rules.

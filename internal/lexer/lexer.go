@@ -214,6 +214,12 @@ func (l *Lexer) NextToken() token.Token {
 		tok.Line = startLine
 		tok.Column = startCol
 		return tok
+	case '`':
+		tok.Type = token.TEMPLATE
+		tok.Literal = l.readTemplateString()
+		tok.Line = startLine
+		tok.Column = startCol
+		return tok
 	case '\'':
 		tok.Type = token.CHAR
 		tok.Literal = l.readCharLiteral()

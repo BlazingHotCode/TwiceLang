@@ -20,11 +20,12 @@ const (
 	EOF     TokenType = "EOF"     // End of file, tells parser we're done
 
 	// Identifiers and literals
-	IDENT  TokenType = "IDENT"  // Variable names: x, y, foo
-	INT    TokenType = "INT"    // Integers: 1, 42, 999
-	FLOAT  TokenType = "FLOAT"  // Floating-point: 3.14
-	STRING TokenType = "STRING" // Strings: "hello"
-	CHAR   TokenType = "CHAR"   // Char literals: 'a'
+	IDENT    TokenType = "IDENT"    // Variable names: x, y, foo
+	INT      TokenType = "INT"      // Integers: 1, 42, 999
+	FLOAT    TokenType = "FLOAT"    // Floating-point: 3.14
+	STRING   TokenType = "STRING"   // Strings: "hello"
+	TEMPLATE TokenType = "TEMPLATE" // Template strings: `hello ${x}`
+	CHAR     TokenType = "CHAR"     // Char literals: 'a'
 
 	// Operators
 	ASSIGN   TokenType = "="

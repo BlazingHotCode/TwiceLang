@@ -45,6 +45,10 @@ fn demo_operators() {
   print("x:" + 7);
   print("x:" + 3.5);
   print("x:" + 'A');
+  print("line1\nline2\tend");
+
+  let who = "Twice";
+  print(`Hello ${who}\n`);
 
   print("Twice"[2]);
   let word = "array";

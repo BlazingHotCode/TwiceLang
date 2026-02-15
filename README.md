@@ -47,6 +47,7 @@ Notes:
 - Numeric, string, char, boolean, modulo, and bitwise operators
 - Control flow with `if`/`elif`/`else`, `while`, `for`, `loop`, `break`, and `continue`
 - String indexing (`str[i]`) returning `char`
+- String escapes (`\n`, `\t`, `\r`, `\\`, `\"`, etc.) and template strings using backticks with `${...}`
 - Named functions with typed/default parameters and typed returns
 - Function literals/anonymous functions in codegen and runtime
 - Function calls with positional, named, and mixed arguments
@@ -222,6 +223,14 @@ String indexing example:
 
 ```tw
 print("Twice"[2]); // 'i'
+```
+
+Escapes and template strings:
+
+```tw
+let who = "Twice";
+print("line1\nline2\tend");
+print(`Hello ${who}\n`);
 ```
 
 Null-safe and coalescing examples:

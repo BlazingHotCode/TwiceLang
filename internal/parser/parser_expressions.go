@@ -3,8 +3,10 @@ package parser
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"twice/internal/ast"
+	"twice/internal/lexer"
 	"twice/internal/token"
 )
 
@@ -73,6 +75,114 @@ func (p *Parser) parseFloatLiteral() ast.Expression {
 
 func (p *Parser) parseStringLiteral() ast.Expression {
 	return &ast.StringLiteral{Token: p.curToken, Value: p.curToken.Literal}
+}
+
+func (p *Parser) parseTemplateStringLiteral() ast.Expression {
+	parts, err := splitTemplateParts(p.curToken.Literal)
+	if err != nil {
+		p.addErrorCurrent("invalid template literal", err.Error())
+		return nil
+	}
+	if len(parts) == 0 {
+		return &ast.StringLiteral{Token: p.curToken, Value: ""}
+	}
+
+	var expr ast.Expression
+	appendPart := func(part ast.Expression) {
+		if expr == nil {
+			expr = part
+			return
+		}
+		expr = &ast.InfixExpression{
+			Token:    token.Token{Type: token.PLUS, Literal: "+"},
+			Operator: "+",
+			Left:     expr,
+			Right:    part,
+		}
+	}
+
+	for _, part := range parts {
+		if !part.isExpr {
+			appendPart(&ast.StringLiteral{Token: p.curToken, Value: part.value})
+			continue
+		}
+		interpolated, ok := parseTemplateInterpolationExpression(part.value)
+		if !ok {
+			p.addErrorCurrent("invalid template interpolation", part.value)
+			return nil
+		}
+		appendPart(interpolated)
+	}
+
+	if expr == nil {
+		return &ast.StringLiteral{Token: p.curToken, Value: ""}
+	}
+	return expr
+}
+
+type templatePart struct {
+	value  string
+	isExpr bool
+}
+
+func splitTemplateParts(input string) ([]templatePart, error) {
+	parts := []templatePart{}
+	var text strings.Builder
+
+	for i := 0; i < len(input); i++ {
+		ch := input[i]
+		if ch == '$' && i+1 < len(input) && input[i+1] == '{' {
+			if text.Len() > 0 {
+				parts = append(parts, templatePart{value: text.String()})
+				text.Reset()
+			}
+			i += 2
+			start := i
+			depth := 1
+			for i < len(input) {
+				switch input[i] {
+				case '{':
+					depth++
+				case '}':
+					depth--
+					if depth == 0 {
+						expr := strings.TrimSpace(input[start:i])
+						if expr == "" {
+							return nil, fmt.Errorf("empty ${} expression")
+						}
+						parts = append(parts, templatePart{value: expr, isExpr: true})
+						goto next
+					}
+				}
+				i++
+			}
+			return nil, fmt.Errorf("unterminated ${...} expression")
+		}
+		text.WriteByte(ch)
+	next:
+	}
+
+	if text.Len() > 0 {
+		parts = append(parts, templatePart{value: text.String()})
+	}
+	return parts, nil
+}
+
+func parseTemplateInterpolationExpression(src string) (ast.Expression, bool) {
+	lp := lexer.New(src + ";")
+	pp := New(lp)
+	program := pp.ParseProgram()
+	if len(pp.Errors()) != 0 {
+		return nil, false
+	}
+	if program == nil || len(program.Statements) != 1 {
+		return nil, false
+	}
+	stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+	if !ok || stmt.Expression == nil {
+		return nil, false
+	}
+	return stmt.Expression, true
 }
 
 func (p *Parser) parseCharLiteral() ast.Expression {

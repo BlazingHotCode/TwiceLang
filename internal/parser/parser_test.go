@@ -480,6 +480,31 @@ func TestAdditionalLiteralParsing(t *testing.T) {
 	}
 }
 
+func TestTemplateLiteralParsesToConcat(t *testing.T) {
+	p := New(lexer.New("`hi ${name}`;"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+	if !ok {
+		t.Fatalf("expected expression statement, got=%T", program.Statements[0])
+	}
+	infix, ok := stmt.Expression.(*ast.InfixExpression)
+	if !ok || infix.Operator != "+" {
+		t.Fatalf("expected + infix expression, got=%T (%v)", stmt.Expression, stmt.Expression)
+	}
+	left, ok := infix.Left.(*ast.StringLiteral)
+	if !ok || left.Value != "hi " {
+		t.Fatalf("expected left string literal \"hi \", got=%T (%v)", infix.Left, infix.Left)
+	}
+	if _, ok := infix.Right.(*ast.Identifier); !ok {
+		t.Fatalf("expected right interpolation expression identifier, got=%T", infix.Right)
+	}
+}
+
 func TestBooleanOperatorPrecedenceParsing(t *testing.T) {
 	p := New(lexer.New("true || false && true ^^ false;"))
 	program := p.ParseProgram()

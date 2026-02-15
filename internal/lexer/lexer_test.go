@@ -353,6 +353,57 @@ func TestArrayTokensAndVarIdentifier(t *testing.T) {
 	}
 }
 
+func TestStringAndCharEscapes(t *testing.T) {
+	input := `let s = "a\nb\tc\\\""; let c = '\n';`
+	tests := []struct {
+		typ token.TokenType
+		lit string
+	}{
+		{token.LET, "let"},
+		{token.IDENT, "s"},
+		{token.ASSIGN, "="},
+		{token.STRING, "a\nb\tc\\\""},
+		{token.SEMICOLON, ";"},
+		{token.LET, "let"},
+		{token.IDENT, "c"},
+		{token.ASSIGN, "="},
+		{token.CHAR, "\n"},
+		{token.SEMICOLON, ";"},
+		{token.EOF, ""},
+	}
+
+	l := New(input)
+	for i, tt := range tests {
+		tok := l.NextToken()
+		if tok.Type != tt.typ || tok.Literal != tt.lit {
+			t.Fatalf("tests[%d] got=(%q,%q) want=(%q,%q)", i, tok.Type, tok.Literal, tt.typ, tt.lit)
+		}
+	}
+}
+
+func TestTemplateToken(t *testing.T) {
+	input := "let s = `hello ${name}\\n`; "
+	tests := []struct {
+		typ token.TokenType
+		lit string
+	}{
+		{token.LET, "let"},
+		{token.IDENT, "s"},
+		{token.ASSIGN, "="},
+		{token.TEMPLATE, "hello ${name}\n"},
+		{token.SEMICOLON, ";"},
+		{token.EOF, ""},
+	}
+
+	l := New(input)
+	for i, tt := range tests {
+		tok := l.NextToken()
+		if tok.Type != tt.typ || tok.Literal != tt.lit {
+			t.Fatalf("tests[%d] got=(%q,%q) want=(%q,%q)", i, tok.Type, tok.Literal, tt.typ, tt.lit)
+		}
+	}
+}
+
 func TestArrayLengthMethodTokens(t *testing.T) {
 	input := `let arr = {1,2,3}; arr.length();`
 	tests := []struct {

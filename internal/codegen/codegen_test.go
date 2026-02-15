@@ -517,6 +517,22 @@ fn main() { header("ok"); return; }
 	}
 }
 
+func TestCodegenTemplateStringConcat(t *testing.T) {
+	asm, cg := generateAssembly(t, `
+fn main() {
+  let name = "Twice";
+  print(`+"`"+`Hello ${name}\n`+"`"+`);
+  return;
+}
+`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors for template concat: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "call concat_cstr_cstr") && !strings.Contains(asm, "Hello Twice\\n\\n") {
+		t.Fatalf("expected template string lowering via concat helper or folded literal, got:\n%s", asm)
+	}
+}
+
 func TestCodegenNamedArgumentsCall(t *testing.T) {
 	_, cg := generateAssembly(t, "fn sub(a: int, b: int) int { return a - b; } print(sub(b = 2, a = 7));")
 	if len(cg.Errors()) != 0 {
