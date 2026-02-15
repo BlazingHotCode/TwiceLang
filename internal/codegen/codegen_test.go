@@ -1045,6 +1045,21 @@ func TestCodegenGenericAliasTypeArgArityErrors(t *testing.T) {
 	if !found {
 		t.Fatalf("expected generic alias arity error, got: %v", cg.Errors())
 	}
+
+	_, cg = generateAssembly(t, `type N = int; let x: N<string> = 1;`)
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen errors for non-generic alias type arguments")
+	}
+	found = false
+	for _, err := range cg.Errors() {
+		if strings.Contains(err, "wrong number of generic type arguments for N: expected 0, got 1") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected non-generic alias type-arg arity error, got: %v", cg.Errors())
+	}
 }
 
 func TestCodegenTupleTypesAndAccess(t *testing.T) {

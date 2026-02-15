@@ -327,6 +327,31 @@ let p: Pair<int> = (1, "x");
 	}
 }
 
+func TestCLICodegenErrorForNonGenericAliasTypeArgs(t *testing.T) {
+	root := repoRoot(t)
+
+	srcPath := filepath.Join(t.TempDir(), "bad_non_generic_alias_type_args.tw")
+	source := `
+type N = int;
+let x: N<string> = 1;
+`
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	cmd := exec.Command("go", "run", "./cmd/twice", srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected codegen failure, got success. output:\n%s", out)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "Codegen error: wrong number of generic type arguments for N: expected 0, got 1") {
+		t.Fatalf("missing non-generic alias type-arg arity diagnostic. output:\n%s", output)
+	}
+}
+
 func TestCLICodegenErrorForUnresolvedGenericInference(t *testing.T) {
 	root := repoRoot(t)
 

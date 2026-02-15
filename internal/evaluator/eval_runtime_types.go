@@ -594,7 +594,7 @@ func genericTypeArityError(typeName string, env *object.Environment, typeParams 
 	}
 	if gb, args, ok := typesys.SplitGenericType(base); ok {
 		if _, exists := env.TypeAlias(gb); exists {
-			// Non-generic alias with this name is valid; Pair<int> will fail later as unknown type.
+			return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", gb, 0, len(args)), true
 		} else if alias, exists := env.GenericTypeAlias(gb); exists {
 			if len(alias.TypeParams) != len(args) {
 				return fmt.Sprintf("wrong number of generic type arguments for %s: expected %d, got %d", gb, len(alias.TypeParams), len(args)), true

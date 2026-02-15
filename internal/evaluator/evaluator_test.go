@@ -1072,6 +1072,15 @@ func TestGenericTypeAliasArityErrorsEval(t *testing.T) {
 	if errObj.Message != "wrong number of generic type arguments for Pair: expected 2, got 1" {
 		t.Fatalf("wrong error message: %q", errObj.Message)
 	}
+
+	evaluated = testEval(`type N = int; let x: N<string> = 1;`)
+	errObj, ok = evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "wrong number of generic type arguments for N: expected 0, got 1" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
 }
 
 func TestGenericFunctionEval(t *testing.T) {
