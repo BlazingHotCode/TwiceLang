@@ -273,6 +273,15 @@ func (cg *CodeGen) generateFunctionDefinitions() {
 			if _, done := generated[k]; done {
 				continue
 			}
+			fn := cg.functions[k]
+			if fn == nil || fn.Literal == nil {
+				continue
+			}
+			if len(fn.Literal.TypeParams) > 0 && !strings.Contains(k, "<") {
+				// Generic base functions are templates; emit only concrete specializations.
+				generated[k] = struct{}{}
+				continue
+			}
 			if strings.HasPrefix(k, "lit_") {
 				literals = append(literals, k)
 			} else {

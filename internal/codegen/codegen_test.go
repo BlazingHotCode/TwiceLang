@@ -1008,6 +1008,19 @@ func TestCodegenGenericFunctionMonomorphizesPerTypeArg(t *testing.T) {
 	if !strings.Contains(asm, "call fn_id__int") || !strings.Contains(asm, "call fn_id__string") {
 		t.Fatalf("expected calls to per-instantiation specialized labels, got:\n%s", asm)
 	}
+	if strings.Contains(asm, "fn_id:") {
+		t.Fatalf("did not expect unspecialized generic base body emission, got:\n%s", asm)
+	}
+}
+
+func TestCodegenUnusedGenericFunctionTemplateNotEmitted(t *testing.T) {
+	asm, cg := generateAssembly(t, `fn id<T>(x: T) T { return x; } print(1);`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors for unused generic template: %v", cg.Errors())
+	}
+	if strings.Contains(asm, "fn_id:") || strings.Contains(asm, "fn_id__") {
+		t.Fatalf("did not expect generic function template/specialization when unused, got:\n%s", asm)
+	}
 }
 
 func TestCodegenGenericFunctionTypeArgArityErrors(t *testing.T) {

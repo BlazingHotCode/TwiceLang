@@ -337,6 +337,40 @@ fn main() int {
 	}
 }
 
+func TestCLICompileAndRunUnusedGenericFunctionTemplate(t *testing.T) {
+	root := repoRoot(t)
+	ensureToolchain(t)
+
+	srcPath := filepath.Join(t.TempDir(), "unused_generic_template.tw")
+	source := `
+fn id<T>(x: T) T { return x; }
+fn main() int {
+  println(1);
+  return 0;
+}
+`
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	outputName := "twice_cli_unused_generic_template_bin"
+	outputPath := filepath.Join(root, outputName)
+	_ = os.Remove(outputPath)
+	t.Cleanup(func() { _ = os.Remove(outputPath) })
+
+	cmd := exec.Command("go", "run", "./cmd/twice", "-run", "-o", outputName, srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("compile/run failed: %v\n%s", err, out)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "\n1\n") {
+		t.Fatalf("expected runtime output with unused generic template present. output:\n%s", output)
+	}
+}
+
 func TestCLICodegenErrorForGenericAliasArity(t *testing.T) {
 	root := repoRoot(t)
 
