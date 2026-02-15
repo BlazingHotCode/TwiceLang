@@ -152,6 +152,25 @@ func TestContinueInForEval(t *testing.T) {
 	testIntegerObject(t, evaluated, 8)
 }
 
+func TestForeachArrayAndListEval(t *testing.T) {
+	evaluated := testEval("let sum = 0; foreach (let v : {1,2,3}) { sum = sum + v; }; sum")
+	testIntegerObject(t, evaluated, 6)
+
+	evaluated = testEval("let xs: List<int> = new List<int>(2,3,4); let sum = 0; foreach (let x : xs) { sum = sum + x; }; sum")
+	testIntegerObject(t, evaluated, 9)
+}
+
+func TestForeachIterableTypeErrorEval(t *testing.T) {
+	evaluated := testEval("foreach (let v : 1) { v; };")
+	errObj, ok := evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("expected error object, got=%T", evaluated)
+	}
+	if errObj.Message != "foreach expects array or list iterable, got int" {
+		t.Fatalf("wrong error message: %q", errObj.Message)
+	}
+}
+
 func TestBreakContinueOutsideLoopEval(t *testing.T) {
 	evaluated := testEval("break;")
 	errObj, ok := evaluated.(*object.Error)

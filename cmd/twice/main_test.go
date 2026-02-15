@@ -229,6 +229,49 @@ fn main() int {
 	}
 }
 
+func TestCLICompileAndRunForeachFeature(t *testing.T) {
+	root := repoRoot(t)
+	ensureToolchain(t)
+
+	srcPath := filepath.Join(t.TempDir(), "foreach.tw")
+	source := `
+fn main() int {
+  let sum = 0;
+  foreach (let v : {1, 2, 3}) {
+    sum = sum + v;
+  };
+  println(sum);
+
+  let xs: List<int> = new List<int>(2, 3, 4);
+  foreach (let x : xs) {
+    sum = sum + x;
+  };
+  println(sum);
+  return 0;
+}
+`
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	outputName := "twice_cli_foreach_bin"
+	outputPath := filepath.Join(root, outputName)
+	_ = os.Remove(outputPath)
+	t.Cleanup(func() { _ = os.Remove(outputPath) })
+
+	cmd := exec.Command("go", "run", "./cmd/twice", "-run", "-o", outputName, srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("compile/run failed: %v\n%s", err, out)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "\n6\n15\n") {
+		t.Fatalf("expected foreach runtime output. output:\n%s", output)
+	}
+}
+
 func TestCLIListRuntimeErrorFormatting(t *testing.T) {
 	root := repoRoot(t)
 	ensureToolchain(t)

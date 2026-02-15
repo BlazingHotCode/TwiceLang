@@ -229,7 +229,7 @@ func TestIdentifierWithDigits(t *testing.T) {
 }
 
 func TestLoopKeywords(t *testing.T) {
-	l := New("for while loop break continue")
+	l := New("for while loop foreach break continue")
 	tests := []struct {
 		typ token.TokenType
 		lit string
@@ -237,6 +237,7 @@ func TestLoopKeywords(t *testing.T) {
 		{token.FOR, "for"},
 		{token.WHILE, "while"},
 		{token.LOOP, "loop"},
+		{token.FOREACH, "foreach"},
 		{token.BREAK, "break"},
 		{token.CONTINUE, "continue"},
 		{token.EOF, ""},

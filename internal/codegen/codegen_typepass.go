@@ -87,6 +87,13 @@ func (cg *CodeGen) annotateStatementTypes(stmt ast.Statement) {
 		if s.Body != nil {
 			cg.annotateStatementTypes(s.Body)
 		}
+	case *ast.ForeachStatement:
+		if s.Iterable != nil {
+			cg.annotateExpressionTypes(s.Iterable)
+		}
+		if s.Body != nil {
+			cg.annotateStatementTypes(s.Body)
+		}
 	case *ast.FunctionStatement:
 		if s.Function != nil && s.Function.Body != nil {
 			cg.annotateStatementTypes(s.Function.Body)

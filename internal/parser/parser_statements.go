@@ -112,6 +112,8 @@ func (p *Parser) parseStatement() ast.Statement {
 		return p.parseWhileStatement()
 	case token.LOOP:
 		return p.parseLoopStatement()
+	case token.FOREACH:
+		return p.parseForeachStatement()
 	case token.FUNCTION:
 		stmt := p.parseFunctionStatement()
 		if stmt == nil {
@@ -558,6 +560,39 @@ func (p *Parser) parseForStatement() ast.Statement {
 		}
 	}
 
+	if !p.expectPeek(token.LBRACE) {
+		return nil
+	}
+	stmt.Body = p.parseBlockStatement()
+	if p.peekTokenIs(token.SEMICOLON) {
+		p.nextToken()
+	}
+	return stmt
+}
+
+func (p *Parser) parseForeachStatement() ast.Statement {
+	stmt := &ast.ForeachStatement{Token: p.curToken}
+	if !p.expectPeek(token.LPAREN) {
+		return nil
+	}
+	if !p.expectPeek(token.LET) {
+		return nil
+	}
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	if !p.expectPeek(token.COLON) {
+		return nil
+	}
+	p.nextToken()
+	stmt.Iterable = p.parseExpression(LOWEST)
+	if stmt.Iterable == nil {
+		return nil
+	}
+	if !p.expectPeek(token.RPAREN) {
+		return nil
+	}
 	if !p.expectPeek(token.LBRACE) {
 		return nil
 	}

@@ -241,6 +241,8 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		return evalLoopStatement(node, env)
 	case *ast.ForStatement:
 		return evalForStatement(node, env)
+	case *ast.ForeachStatement:
+		return evalForeachStatement(node, env)
 	case *ast.ImportStatement:
 		return annotateErrorWithNode(evalImportStatement(node, env), node)
 	case *ast.LetStatement:

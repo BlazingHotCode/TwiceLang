@@ -177,6 +177,20 @@ func (cg *CodeGen) symbolCheckStatement(stmt ast.Statement, scopes *[]symbolScop
 			}
 		}
 		cg.popSymbolScope(scopes)
+	case *ast.ForeachStatement:
+		cg.pushSymbolScope(scopes)
+		if s.Name != nil {
+			cg.declareValue(s.Name.Value, false, s, scopes)
+		}
+		if s.Iterable != nil {
+			cg.symbolCheckExpression(s.Iterable, scopes)
+		}
+		if s.Body != nil {
+			for _, st := range s.Body.Statements {
+				cg.symbolCheckStatement(st, scopes)
+			}
+		}
+		cg.popSymbolScope(scopes)
 	}
 }
 

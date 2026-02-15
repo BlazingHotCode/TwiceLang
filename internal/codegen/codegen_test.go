@@ -266,6 +266,41 @@ func TestCodegenBreakContinueOutsideLoop(t *testing.T) {
 	}
 }
 
+func TestCodegenForeachArrayAndList(t *testing.T) {
+	asm, cg := generateAssembly(t, "let sum = 0; foreach (let v : {1,2,3}) { sum = sum + v; }; print(sum);")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "call print_int") {
+		t.Fatalf("expected foreach array sum to print int, got:\n%s", asm)
+	}
+
+	asm, cg = generateAssembly(t, "let xs: List<int> = new List<int>(2,3,4); let sum = 0; foreach (let x : xs) { sum = sum + x; }; print(sum);")
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "call list_get") {
+		t.Fatalf("expected foreach list path to use list_get, got:\n%s", asm)
+	}
+}
+
+func TestCodegenForeachTypeError(t *testing.T) {
+	_, cg := generateAssembly(t, "foreach (let v : 1) { print(v); };")
+	if len(cg.Errors()) == 0 {
+		t.Fatalf("expected codegen error for non-iterable foreach target")
+	}
+	found := false
+	for _, err := range cg.Errors() {
+		if strings.Contains(err, "foreach expects array or list iterable") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected foreach iterable type error, got: %v", cg.Errors())
+	}
+}
+
 func TestCodegenStringConcatAndFloatAdd(t *testing.T) {
 	asm, cg := generateAssembly(t, `let greeting = "Hello, " + "Twice!"; let pi = 1.25 + 2.75; print(greeting); print(pi);`)
 	if len(cg.Errors()) != 0 {

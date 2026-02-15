@@ -45,7 +45,7 @@ Notes:
 - CLI compiler/runner (`cmd/twice`)
 - Typed declarations with inference and null-default initialization
 - Numeric, string, char, boolean, modulo, and bitwise operators
-- Control flow with `if`/`elif`/`else`, `while`, `for`, `loop`, `break`, and `continue`
+- Control flow with `if`/`elif`/`else`, `while`, `for`, `foreach`, `loop`, `break`, and `continue`
 - String indexing (`str[i]`) returning `char`
 - String escapes (`\n`, `\t`, `\r`, `\\`, `\"`, etc.) and template strings using backticks with `${...}`
 - Named functions with typed/default parameters and typed returns
@@ -341,11 +341,23 @@ for (let k = 0; k < 6; k++) {
 loop {
   if (control > 0) { break; };
 };
+
+let arr_sum = 0;
+foreach (let v : {1, 2, 3}) {
+  arr_sum = arr_sum + v;
+};
+
+let xs: List<int> = new List<int>(4, 5);
+foreach (let x : xs) {
+  arr_sum = arr_sum + x;
+};
 ```
 
 Notes:
 
 - `for` form is `for (<init>; <check>; <periodic>) {}`.
+- `foreach` form is `foreach (let <item> : <iterable>) {}`.
+- `foreach` currently supports array and `List<T>` iterables.
 - `while` form is `while (<bool>) {}`.
 - `loop {}` is equivalent to `while (true) {}`.
 - `break;` exits the nearest loop.

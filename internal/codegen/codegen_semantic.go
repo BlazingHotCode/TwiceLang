@@ -63,6 +63,13 @@ func collectStructDecls(node ast.Node, out map[string]*ast.StructStatement) {
 		if n.Body != nil {
 			collectStructDecls(n.Body, out)
 		}
+	case *ast.ForeachStatement:
+		if n.Iterable != nil {
+			collectStructDecls(n.Iterable, out)
+		}
+		if n.Body != nil {
+			collectStructDecls(n.Body, out)
+		}
 	}
 }
 
@@ -100,6 +107,13 @@ func collectTypeAliases(node ast.Node, aliases map[string]string) {
 		}
 		if n.Periodic != nil {
 			collectTypeAliases(n.Periodic, aliases)
+		}
+		if n.Body != nil {
+			collectTypeAliases(n.Body, aliases)
+		}
+	case *ast.ForeachStatement:
+		if n.Iterable != nil {
+			collectTypeAliases(n.Iterable, aliases)
 		}
 		if n.Body != nil {
 			collectTypeAliases(n.Body, aliases)
@@ -145,6 +159,13 @@ func collectGenericAliasArities(node ast.Node, arities map[string]int) {
 		if n.Body != nil {
 			collectGenericAliasArities(n.Body, arities)
 		}
+	case *ast.ForeachStatement:
+		if n.Iterable != nil {
+			collectGenericAliasArities(n.Iterable, arities)
+		}
+		if n.Body != nil {
+			collectGenericAliasArities(n.Body, arities)
+		}
 	}
 }
 
@@ -180,6 +201,13 @@ func collectNonGenericAliasNames(node ast.Node, names map[string]struct{}) {
 		}
 		if n.Periodic != nil {
 			collectNonGenericAliasNames(n.Periodic, names)
+		}
+		if n.Body != nil {
+			collectNonGenericAliasNames(n.Body, names)
+		}
+	case *ast.ForeachStatement:
+		if n.Iterable != nil {
+			collectNonGenericAliasNames(n.Iterable, names)
 		}
 		if n.Body != nil {
 			collectNonGenericAliasNames(n.Body, names)
@@ -435,6 +463,15 @@ func (cg *CodeGen) semanticCheckStatement(stmt ast.Statement, aliases map[string
 		}
 		if s.Periodic != nil {
 			cg.semanticCheckStatement(s.Periodic, aliases, genericArities, nonGenericAliases)
+		}
+		if s.Body != nil {
+			for _, nested := range s.Body.Statements {
+				cg.semanticCheckStatement(nested, aliases, genericArities, nonGenericAliases)
+			}
+		}
+	case *ast.ForeachStatement:
+		if s.Iterable != nil {
+			cg.semanticCheckExpression(s.Iterable, aliases, genericArities, nonGenericAliases)
 		}
 		if s.Body != nil {
 			for _, nested := range s.Body.Statements {

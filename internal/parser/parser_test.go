@@ -946,6 +946,28 @@ func TestForStatementParses(t *testing.T) {
 	}
 }
 
+func TestForeachStatementParses(t *testing.T) {
+	p := New(lexer.New("foreach (let item : arr) { println(item); }"))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	fs, ok := program.Statements[0].(*ast.ForeachStatement)
+	if !ok {
+		t.Fatalf("expected foreach statement, got=%T", program.Statements[0])
+	}
+	if fs.Name == nil || fs.Name.Value != "item" {
+		t.Fatalf("unexpected foreach variable: %#v", fs.Name)
+	}
+	if id, ok := fs.Iterable.(*ast.Identifier); !ok || id.Value != "arr" {
+		t.Fatalf("expected iterable identifier arr, got=%T (%v)", fs.Iterable, fs.Iterable)
+	}
+	if fs.Body == nil || len(fs.Body.Statements) != 1 {
+		t.Fatalf("expected foreach body with 1 statement")
+	}
+}
+
 func TestBreakAndContinueStatementsParse(t *testing.T) {
 	p := New(lexer.New("while (true) { continue; break; }"))
 	program := p.ParseProgram()

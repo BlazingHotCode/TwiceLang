@@ -507,6 +507,35 @@ func (fs *ForStatement) String() string {
 	return out.String()
 }
 
+// ForeachStatement represents foreach (let <name> : <iterable>) { <body> }.
+type ForeachStatement struct {
+	Token    token.Token
+	Name     *Identifier
+	Iterable Expression
+	Body     *BlockStatement
+}
+
+func (fs *ForeachStatement) statementNode()       {}
+func (fs *ForeachStatement) TokenLiteral() string { return fs.Token.Literal }
+func (fs *ForeachStatement) String() string {
+	var out bytes.Buffer
+	out.WriteString("foreach (let ")
+	if fs.Name != nil {
+		out.WriteString(fs.Name.String())
+	}
+	out.WriteString(" : ")
+	if fs.Iterable != nil {
+		out.WriteString(fs.Iterable.String())
+	}
+	out.WriteString(") ")
+	if fs.Body != nil {
+		out.WriteString("{")
+		out.WriteString(fs.Body.String())
+		out.WriteString("}")
+	}
+	return out.String()
+}
+
 // BreakStatement represents break;
 type BreakStatement struct {
 	Token token.Token

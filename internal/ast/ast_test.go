@@ -47,6 +47,7 @@ func TestProgramAndNodeStrings(t *testing.T) {
 		&WhileStatement{Token: tok(token.WHILE, "while"), Condition: idX, Body: blk},
 		&LoopStatement{Token: tok(token.LOOP, "loop"), Body: blk},
 		&ForStatement{Token: tok(token.FOR, "for"), Init: &LetStatement{Token: tok(token.LET, "let"), Name: idX, Value: int1}, Condition: idX, Periodic: &AssignStatement{Token: tok(token.IDENT, "x"), Name: idX, Value: infx}, Body: blk},
+		&ForeachStatement{Token: tok(token.FOREACH, "foreach"), Name: idX, Iterable: arr, Body: blk},
 		&BreakStatement{Token: tok(token.BREAK, "break")},
 		&ContinueStatement{Token: tok(token.CONTINUE, "continue")},
 		fnStmt,

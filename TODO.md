@@ -10,10 +10,14 @@
 - adding snippet to [test.tw](./test.tw) and running using binary to test the code
 - adding guide/points to show the feature in [README](./README.md)
 
-## 1. Foreach Loop
+## 1. Lambda Functions
 
-- Add foreach syntax:
-- `foreach (let a : b) {}`
+- Add lambda function syntax: `(var1: type1) returnType => { ... }`
+- Allow assigning lambdas to constants/variables:
+- `const mylambda = (a: int) int => { return a * a; };`
+- Allow direct invocation of lambda values:
+- `mylambda(2)`
+- Support parser/evaluator/codegen parity for lambda declaration, typing, and invocation.
 
 ## 2. OOP and Type System Expansion
 

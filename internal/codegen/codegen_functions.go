@@ -242,6 +242,20 @@ func (cg *CodeGen) collectFunctionsInStatement(stmt ast.Statement, scope map[str
 				cg.collectFunctionsInStatement(st, childScope, false)
 			}
 		}
+	case *ast.ForeachStatement:
+		if s != nil && s.Iterable != nil {
+			cg.collectFunctionsInExpression(s.Iterable, scope)
+		}
+		if s != nil && s.Body != nil {
+			childScope := copyScope(scope)
+			if s.Name != nil {
+				childScope[s.Name.Value] = struct{}{}
+			}
+			collectDeclaredNames(s.Body, childScope)
+			for _, st := range s.Body.Statements {
+				cg.collectFunctionsInStatement(st, childScope, false)
+			}
+		}
 	case *ast.ReturnStatement:
 		if s != nil && s.ReturnValue != nil {
 			cg.collectFunctionsInExpression(s.ReturnValue, scope)
@@ -925,6 +939,10 @@ func collectDeclaredNames(block *ast.BlockStatement, scope map[string]struct{}) 
 					scope[init.Name.Value] = struct{}{}
 				}
 			}
+		case *ast.ForeachStatement:
+			if s != nil && s.Name != nil {
+				scope[s.Name.Value] = struct{}{}
+			}
 		}
 	}
 }
@@ -1049,6 +1067,13 @@ func collectUsedNamesInStatement(stmt ast.Statement, used map[string]struct{}) {
 		}
 		if s != nil && s.Periodic != nil {
 			collectUsedNamesInStatement(s.Periodic, used)
+		}
+		if s != nil && s.Body != nil {
+			collectUsedNamesInBlock(s.Body, used)
+		}
+	case *ast.ForeachStatement:
+		if s != nil && s.Iterable != nil {
+			collectUsedNamesInExpression(s.Iterable, used)
 		}
 		if s != nil && s.Body != nil {
 			collectUsedNamesInBlock(s.Body, used)

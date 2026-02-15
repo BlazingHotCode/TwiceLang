@@ -494,6 +494,64 @@ func evalForStatement(fs *ast.ForStatement, env *object.Environment) object.Obje
 	}
 }
 
+func evalForeachStatement(fs *ast.ForeachStatement, env *object.Environment) object.Object {
+	if fs == nil || fs.Name == nil || fs.Iterable == nil {
+		return newError("invalid foreach statement")
+	}
+	iterObj := Eval(fs.Iterable, env)
+	if isError(iterObj) {
+		return iterObj
+	}
+	if deref, err := derefPointerObject(iterObj); err != nil {
+		return err
+	} else {
+		iterObj = deref
+	}
+
+	loopEnv := object.NewEnclosedEnvironment(env)
+	var elems []object.Object
+	var elemType string
+	switch it := iterObj.(type) {
+	case *object.Array:
+		elems = it.Elements
+		elemType = it.ElementType
+	case *object.List:
+		elems = it.Elements
+		elemType = it.ElementType
+	default:
+		return newError("foreach expects array or list iterable, got %s", runtimeTypeName(iterObj))
+	}
+
+	var result object.Object = NULL
+	for _, el := range elems {
+		if loopEnv.HasInCurrentScope(fs.Name.Value) {
+			loopEnv.Assign(fs.Name.Value, el)
+		} else {
+			loopEnv.Set(fs.Name.Value, el)
+		}
+		if elemType != "" {
+			loopEnv.SetType(fs.Name.Value, elemType)
+		} else {
+			loopEnv.SetType(fs.Name.Value, runtimeTypeName(el))
+		}
+
+		result = Eval(fs.Body, loopEnv)
+		if result != nil {
+			rt := result.Type()
+			if rt == object.RETURN_VALUE_OBJ || rt == object.ERROR_OBJ {
+				return result
+			}
+			if rt == object.BREAK_OBJ {
+				return NULL
+			}
+			if rt == object.CONTINUE_OBJ {
+				continue
+			}
+		}
+	}
+	return result
+}
+
 // isTruthy determines what counts as "true" in conditionals
 // Only false and null are falsy, everything else is truthy
 func isTruthy(obj object.Object) bool {

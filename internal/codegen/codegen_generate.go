@@ -40,6 +40,8 @@ func (cg *CodeGen) generateStatement(stmt ast.Statement) {
 		cg.generateLoopStatement(s)
 	case *ast.ForStatement:
 		cg.generateForStatement(s)
+	case *ast.ForeachStatement:
+		cg.generateForeachStatement(s)
 	case *ast.BreakStatement:
 		cg.generateBreakStatement(s)
 	case *ast.ContinueStatement:
@@ -2542,6 +2544,107 @@ func (cg *CodeGen) generateForStatement(fs *ast.ForStatement) {
 	if fs.Periodic != nil {
 		cg.generateStatement(fs.Periodic)
 	}
+	cg.emit("    jmp %s", startLabel)
+	cg.emit("%s:", endLabel)
+}
+
+func (cg *CodeGen) generateForeachStatement(fs *ast.ForeachStatement) {
+	if fs == nil || fs.Name == nil || fs.Iterable == nil {
+		cg.addNodeError("invalid foreach statement", fs)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+
+	scope := cg.enterScope()
+	defer cg.exitScope(scope)
+
+	iterType := cg.inferExpressionTypeName(fs.Iterable)
+	if resolved, ok := cg.normalizeTypeName(iterType); ok {
+		iterType = resolved
+	}
+	if inner, ok := peelPointerType(iterType); ok {
+		iterType = inner
+	}
+
+	elemTypeName := ""
+	arrayLen := -1
+	isList := false
+	if elem, n, ok := peelArrayType(iterType); ok {
+		elemTypeName = elem
+		arrayLen = n
+	} else if elem, ok := peelListType(iterType); ok {
+		elemTypeName = elem
+		isList = true
+	} else {
+		cg.addNodeError("foreach expects array or list iterable", fs.Iterable)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+
+	name := fs.Name.Value
+	if cg.isDeclaredInCurrentScope(name) {
+		cg.addNodeError("identifier already declared: "+name, fs)
+		cg.emit("    mov $0, %%rax")
+		return
+	}
+
+	iterOffset := cg.allocateSlots(1)
+	idxOffset := cg.allocateSlots(1)
+	valueOffset := cg.allocateSlots(1)
+
+	cg.variables[name] = valueOffset
+	cg.markDeclaredInCurrentScope(name)
+	cg.varTypes[name] = cg.parseTypeName(elemTypeName)
+	cg.varDeclared[name] = cg.varTypes[name]
+	cg.varTypeNames[name] = elemTypeName
+	cg.varDeclaredNames[name] = elemTypeName
+	cg.varValueTypeName[name] = elemTypeName
+	cg.varIsNull[name] = cg.typeAllowsNullTypeName(elemTypeName)
+	delete(cg.varFuncs, name)
+	cg.trackKnownValue(name, cg.varTypes[name], nil)
+
+	cg.generateExpression(fs.Iterable)
+	cg.emit("    mov %%rax, -%d(%%rbp)", iterOffset)
+	cg.emit("    mov $0, %%rax")
+	cg.emit("    mov %%rax, -%d(%%rbp)", idxOffset)
+
+	startLabel := cg.newLabel()
+	stepLabel := cg.newLabel()
+	endLabel := cg.newLabel()
+	cg.pushLoopLabels(endLabel, stepLabel)
+	defer cg.popLoopLabels()
+
+	cg.emit("%s:", startLabel)
+	cg.emit("    mov -%d(%%rbp), %%rax", idxOffset)
+	if isList {
+		cg.emit("    mov -%d(%%rbp), %%rdi", iterOffset)
+		okLabel := cg.newLabel()
+		cg.emit("    lea null_lit(%%rip), %%rcx")
+		cg.emit("    cmp %%rcx, %%rdi")
+		cg.emit("    jne %s", okLabel)
+		cg.emit("    lea runtime_err_null_deref(%%rip), %%rax")
+		cg.emit("    call runtime_fail")
+		cg.emit("%s:", okLabel)
+		cg.emit("    mov (%%rdi), %%rcx")
+		cg.emit("    cmp %%rcx, %%rax")
+		cg.emit("    jge %s", endLabel)
+		cg.emit("    mov %%rax, %%rsi")
+		cg.emit("    call list_get")
+	} else {
+		cg.emit("    cmp $%d, %%rax", arrayLen)
+		cg.emit("    jge %s", endLabel)
+		cg.emit("    imul $8, %%rax, %%rax")
+		cg.emit("    mov -%d(%%rbp), %%rcx", iterOffset)
+		cg.emit("    mov (%%rcx,%%rax), %%rax")
+	}
+	cg.emit("    mov %%rax, -%d(%%rbp)", valueOffset)
+
+	cg.generateBlockStatement(fs.Body)
+
+	cg.emit("%s:", stepLabel)
+	cg.emit("    mov -%d(%%rbp), %%rax", idxOffset)
+	cg.emit("    add $1, %%rax")
+	cg.emit("    mov %%rax, -%d(%%rbp)", idxOffset)
 	cg.emit("    jmp %s", startLabel)
 	cg.emit("%s:", endLabel)
 }

@@ -188,6 +188,18 @@ fn demo_loops() {
     loop_arr_i++;
   };
   println(loop_arr_sum);
+
+  let foreach_sum = 0;
+  foreach (let v : {1, 2, 3}) {
+    foreach_sum += v;
+  };
+  println(foreach_sum);
+
+  let foreach_list: List<int> = new List<int>(4, 5);
+  foreach (let x : foreach_list) {
+    foreach_sum += x;
+  };
+  println(foreach_sum);
   return;
 }
 

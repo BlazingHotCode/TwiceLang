@@ -72,6 +72,8 @@ func tokenFromNode(node ast.Node) (token.Token, bool) {
 		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
 	case *ast.ForStatement:
 		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
+	case *ast.ForeachStatement:
+		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
 	case *ast.BreakStatement:
 		return n.Token, n.Token.Line > 0 && n.Token.Column > 0
 	case *ast.ContinueStatement:
