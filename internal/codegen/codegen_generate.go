@@ -141,12 +141,12 @@ func (cg *CodeGen) generateInteger(il *ast.IntegerLiteral) {
 }
 
 func (cg *CodeGen) generateFloat(fl *ast.FloatLiteral) {
-	label := cg.stringLabel(fmt.Sprintf("%g\n", fl.Value))
+	label := cg.stringLabel(fmt.Sprintf("%g", fl.Value))
 	cg.emit("    lea %s(%%rip), %%rax", label)
 }
 
 func (cg *CodeGen) generateString(sl *ast.StringLiteral) {
-	label := cg.stringLabel(sl.Value + "\n")
+	label := cg.stringLabel(sl.Value)
 	cg.emit("    lea %s(%%rip), %%rax", label)
 }
 
@@ -679,7 +679,7 @@ func (cg *CodeGen) generateInfix(ie *ast.InfixExpression) {
 			cg.emit("    mov $0, %%rax")
 			return
 		}
-		label := cg.stringLabel(combined + "\n")
+		label := cg.stringLabel(combined)
 		cg.emit("    lea %s(%%rip), %%rax", label)
 		return
 	}
@@ -701,7 +701,7 @@ func (cg *CodeGen) generateInfix(ie *ast.InfixExpression) {
 			cg.emit("    mov $0, %%rax")
 			return
 		}
-		label := cg.stringLabel(fmt.Sprintf("%g\n", v))
+		label := cg.stringLabel(fmt.Sprintf("%g", v))
 		cg.emit("    lea %s(%%rip), %%rax", label)
 		return
 	}
@@ -832,7 +832,7 @@ func (cg *CodeGen) generateIdentifier(i *ast.Identifier) {
 	offset, ok := cg.variables[i.Value]
 	if !ok {
 		if isTypeLiteralIdentifier(i.Value) {
-			label := cg.stringLabel(i.Value + "\n")
+			label := cg.stringLabel(i.Value)
 			cg.emit("    lea %s(%%rip), %%rax", label)
 			return
 		}
@@ -1458,13 +1458,13 @@ func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 	}
 
 	switch fn.Value {
-	case "print":
+	case "print", "println":
 		if len(ce.Arguments) != 1 {
-			cg.failNode("print expects exactly 1 argument", ce)
+			cg.failNodef(ce, "%s expects exactly 1 argument", fn.Value)
 			return
 		}
 		if _, ok := ce.Arguments[0].(*ast.NamedArgument); ok {
-			cg.failNode("named arguments are not supported for print", ce.Arguments[0])
+			cg.failNodef(ce.Arguments[0], "named arguments are not supported for %s", fn.Value)
 			return
 		}
 		argType := cg.inferExpressionType(ce.Arguments[0])
@@ -1476,15 +1476,31 @@ func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 		}
 		switch argType {
 		case typeBool:
-			cg.emit("    call print_bool")
+			if fn.Value == "println" {
+				cg.emit("    call println_bool")
+			} else {
+				cg.emit("    call print_bool")
+			}
 		case typeInt:
-			cg.emit("    call print_int")
+			if fn.Value == "println" {
+				cg.emit("    call println_int")
+			} else {
+				cg.emit("    call print_int")
+			}
 		case typeChar:
-			cg.emit("    call print_char")
+			if fn.Value == "println" {
+				cg.emit("    call println_char")
+			} else {
+				cg.emit("    call print_char")
+			}
 		case typeString, typeFloat, typeType, typeNull:
-			cg.emit("    call print_cstr")
+			if fn.Value == "println" {
+				cg.emit("    call println_cstr")
+			} else {
+				cg.emit("    call print_cstr")
+			}
 		default:
-			cg.failNode("print supports only int, bool, float, string, char, null, and type arguments", ce.Arguments[0])
+			cg.failNodef(ce.Arguments[0], "%s supports only int, bool, float, string, char, null, and type arguments", fn.Value)
 		}
 	case "typeof":
 		if len(ce.Arguments) != 1 {
@@ -1501,7 +1517,7 @@ func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 				typeNameStr = declared
 			}
 		}
-		label := cg.stringLabel(typeNameStr + "\n")
+		label := cg.stringLabel(typeNameStr)
 		cg.emit("    lea %s(%%rip), %%rax", label)
 	case "typeofValue", "typeofvalue":
 		if len(ce.Arguments) != 1 {
@@ -1516,7 +1532,7 @@ func (cg *CodeGen) generateCallExpression(ce *ast.CallExpression) {
 		if typeNameStr == "array" {
 			typeNameStr = cg.inferExpressionTypeName(ce.Arguments[0])
 		}
-		label := cg.stringLabel(typeNameStr + "\n")
+		label := cg.stringLabel(typeNameStr)
 		cg.emit("    lea %s(%%rip), %%rax", label)
 	case "hasField":
 		if len(ce.Arguments) != 2 {

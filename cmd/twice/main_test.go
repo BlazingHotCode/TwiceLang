@@ -39,7 +39,7 @@ func TestCLICompileAndRunPrint(t *testing.T) {
 	ensureToolchain(t)
 
 	srcPath := filepath.Join(t.TempDir(), "ok.tw")
-	source := "print(42);\n"
+	source := "println(42);\n"
 	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
 		t.Fatalf("write source: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestCLICompileAndRunPrintWithAbsoluteOutputPath(t *testing.T) {
 	ensureToolchain(t)
 
 	srcPath := filepath.Join(t.TempDir(), "ok_abs.tw")
-	source := "print(9);\n"
+	source := "println(9);\n"
 	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
 		t.Fatalf("write source: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestCLICompileAndRunPrintNegativeNumber(t *testing.T) {
 	ensureToolchain(t)
 
 	srcPath := filepath.Join(t.TempDir(), "neg.tw")
-	source := "print(-17);\n"
+	source := "println(-17);\n"
 	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
 		t.Fatalf("write source: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestCLICompileAndRunPrintBoolean(t *testing.T) {
 	ensureToolchain(t)
 
 	srcPath := filepath.Join(t.TempDir(), "print_bool.tw")
-	source := "print(true);\nprint(false);\n"
+	source := "println(true);\nprintln(false);\n"
 	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
 		t.Fatalf("write source: %v", err)
 	}
@@ -159,9 +159,9 @@ func TestCLICompileAndRunEmptyTypedLiterals(t *testing.T) {
 	source := `
 fn main() {
   let arr: int[3] = {};
-  print(arr.length());
+  println(arr.length());
   let t: (int, string) = ();
-  print(t.0 ?? 7);
+  println(t.0 ?? 7);
   return;
 }
 `
@@ -261,7 +261,7 @@ func TestCLIStringConcatPrintsSingleLine(t *testing.T) {
 	srcPath := filepath.Join(t.TempDir(), "concat_header.tw")
 	source := `
 fn header(name: string) {
-  print("--- " + name + " ---");
+  println("--- " + name + " ---");
   return;
 }
 fn main() {
@@ -301,8 +301,8 @@ func TestCLIEscapedAndTemplateStrings(t *testing.T) {
 	source := `
 fn main() {
   let name = "Twice";
-  print("line1\nline2\tend");
-  print(` + "`" + `Hello ${name}\n` + "`" + `);
+  println("line1\nline2\tend");
+  println(` + "`" + `Hello ${name}\n` + "`" + `);
   return;
 }
 `
@@ -338,10 +338,10 @@ func TestCLIHasFieldRuntimeFieldName(t *testing.T) {
 	srcPath := filepath.Join(t.TempDir(), "hasfield_runtime.tw")
 	source := `let arr = {1,2,3};
 let f: string = "length";
-print(hasField(arr, f));
+println(hasField(arr, f));
 f = "missing";
-print(hasField(arr, f));
-print(hasField("abc", "length"));
+println(hasField(arr, f));
+println(hasField("abc", "length"));
 `
 	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
 		t.Fatalf("write source: %v", err)
@@ -371,8 +371,8 @@ func TestCLIFunctionLiteralDirectCallAndCapture(t *testing.T) {
 	srcPath := filepath.Join(t.TempDir(), "fn_lit_call.tw")
 	source := `let y = 3;
 let getY = fn() int { return y; };
-print((fn(a: int) int { return a + 1; })(2));
-print(getY());
+println((fn(a: int) int { return a + 1; })(2));
+println(getY());
 `
 	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
 		t.Fatalf("write source: %v", err)
@@ -404,12 +404,12 @@ func TestCLICompileAndRunNewTypesTypeofAndCasts(t *testing.T) {
 let c = 'A';
 let f = 3.14;
 let n: string;
-print(s);
-print(c);
-print(f);
-print(n);
-print(typeof(c));
-print(int(true));
+println(s);
+println(c);
+println(f);
+println(n);
+println(typeof(c));
+println(int(true));
 `
 	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
 		t.Fatalf("write source: %v", err)
@@ -440,7 +440,7 @@ func TestCLICompileAndRunConstValue(t *testing.T) {
 	ensureToolchain(t)
 
 	srcPath := filepath.Join(t.TempDir(), "const_ok.tw")
-	source := "const x = 8;\nprint(x);\n"
+	source := "const x = 8;\nprintln(x);\n"
 	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
 		t.Fatalf("write source: %v", err)
 	}
@@ -490,7 +490,7 @@ func TestCLICompileAndRunVariableReassignment(t *testing.T) {
 	ensureToolchain(t)
 
 	srcPath := filepath.Join(t.TempDir(), "assign_ok.tw")
-	source := "let x = 1;\nx = 4;\nprint(x);\n"
+	source := "let x = 1;\nx = 4;\nprintln(x);\n"
 	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
 		t.Fatalf("write source: %v", err)
 	}

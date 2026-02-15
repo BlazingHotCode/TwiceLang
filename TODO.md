@@ -116,7 +116,7 @@
 - Pointer method calls auto-deref: allow `p.method()` without requiring `(*p).method()`.
 - Pointer + struct design should be combined, so references and mutation go through pointers.
 
-## 7. Custom Libraries
+## 8. Custom Libraries
 
 - Add `import ...` syntax.
 - Built-in libraries are imported with `twice.<lib>`.
@@ -129,7 +129,7 @@
 - Add member import alias syntax like:
 - `import twice.math.sqrt as sqrt`
 
-## 8. OOP and Type System Expansion
+## 9. OOP and Type System Expansion
 
 - Add class declarations and object instantiation.o
 - Structs stay public-focused; classes support explicit `public`/`private`.
@@ -152,7 +152,7 @@
 - `this` is valid in instance methods and constructors, and invalid in `static` methods.
 - Typed declarations without `new` remain `null` until initialized (for example `let s: Shape;`).
 
-## 9. Inheritance
+## 10. Inheritance
 
 - Add inheritance as a separate feature from base class/object support.
 - Define overriding and method resolution rules.

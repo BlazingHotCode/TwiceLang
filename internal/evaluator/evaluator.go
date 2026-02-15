@@ -1,6 +1,7 @@
 package evaluator
 
 import (
+	"fmt"
 	"twice/internal/ast"
 	"twice/internal/object"
 	"twice/internal/token"
@@ -16,6 +17,24 @@ var (
 )
 
 var builtins = map[string]*object.Builtin{
+	"print": {
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 1 {
+				return newError("print expects 1 argument, got=%d", len(args))
+			}
+			fmt.Print(args[0].Inspect())
+			return NULL
+		},
+	},
+	"println": {
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 1 {
+				return newError("println expects 1 argument, got=%d", len(args))
+			}
+			fmt.Println(args[0].Inspect())
+			return NULL
+		},
+	},
 	"typeof": {
 		Fn: func(args ...object.Object) object.Object {
 			if len(args) != 1 {

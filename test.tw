@@ -1,7 +1,7 @@
 // Twice feature showcase (grouped output)
 
 fn header(name: string) {
-  print("--- " + name + " ---");
+  println("--- " + name + " ---");
   return;
 }
 
@@ -19,21 +19,21 @@ fn demo_types_and_casts() {
   let alias_value: NumOrText = "alias works";
   let alias_grid: Grid = {{1, 2}, {3, 4}};
 
-  print(s);
-  print(c);
-  print(f);
-  print(n);
+  println(s);
+  println(c);
+  println(f);
+  println(n);
 
-  print(typeof(s));
-  print(typeof(c));
-  print(typeof(f));
-  print(typeof(n));
-  print(typeof(alias_value));
-  print(typeof(alias_grid));
+  println(typeof(s));
+  println(typeof(c));
+  println(typeof(f));
+  println(typeof(n));
+  println(typeof(alias_value));
+  println(typeof(alias_grid));
 
-  print(int(true));
-  print(bool(0));
-  print(char(66));
+  println(int(true));
+  println(bool(0));
+  println(char(66));
   return;
 }
 
@@ -41,62 +41,62 @@ fn demo_operators() {
   header("operators");
 
   let greeting = "Hello, " + "Twice!";
-  print(greeting);
-  print("x:" + 7);
-  print("x:" + 3.5);
-  print("x:" + 'A');
-  print("line1\nline2\tend");
+  println(greeting);
+  println("x:" + 7);
+  println("x:" + 3.5);
+  println("x:" + 'A');
+  println("line1\nline2\tend");
 
   let who = "Twice";
-  print(`Hello ${who}\n`);
+  println(`Hello ${who}\n`);
 
-  print("Twice"[2]);
+  println("Twice"[2]);
   let word = "array";
-  print(word[0]);
+  println(word[0]);
 
   let n1 = 1 + 2.5;
   let n2 = 6 - 2.5;
   let n3 = 3 * 2.0;
   let n4 = 7 / 2.0;
-  print(n1);
-  print(n2);
-  print(n3);
-  print(n4);
+  println(n1);
+  println(n2);
+  println(n3);
+  println(n4);
 
   let mod_i = 7 % 4;
   let mod_f = 7.5 % 2.0;
   let mod_assign = 9;
   mod_assign %= 4;
-  print(mod_i);
-  print(mod_f);
-  print(mod_assign);
+  println(mod_i);
+  println(mod_f);
+  println(mod_assign);
 
   let acc = 10;
   acc += 2;
   acc -= 1;
   acc *= 3;
   acc /= 11;
-  print(acc);
+  println(acc);
 
   let i = 3;
   i++;
-  print(i);
+  println(i);
   i--;
-  print(i);
+  println(i);
 
   let char_sum = 'A' + '1';
   let char_next = 'A' + 1;
-  print(char_sum);
-  print(char_next);
+  println(char_sum);
+  println(char_next);
 
-  print(true && false);
-  print(true || false);
-  print(true ^^ false);
-  print(5 & 3);
-  print(5 | 2);
-  print(5 ^ 1);
-  print(5 << 1);
-  print(5 >> 1);
+  println(true && false);
+  println(true || false);
+  println(true ^^ false);
+  println(5 & 3);
+  println(5 | 2);
+  println(5 ^ 1);
+  println(5 << 1);
+  println(5 >> 1);
   return;
 }
 
@@ -105,33 +105,33 @@ fn demo_control_flow_and_scopes() {
 
   let score = 10;
   if (score > 10) {
-    print("big");
+    println("big");
   } elif (score == 10) {
-    print("equal");
+    println("equal");
   } else {
-    print("small");
+    println("small");
   };
 
   let scoped = 1;
   if (true) {
     let scoped = 2;
-    print(scoped);
+    println(scoped);
   };
-  print(scoped);
+  println(scoped);
 
   if (true) {
     scoped = 9;
   };
-  print(scoped);
+  println(scoped);
 
   {
     let temp = 77;
-    print(temp);
+    println(temp);
 
     fn tempFn(x: int) int {
       return x + 1;
     }
-    print(tempFn(10));
+    println(tempFn(10));
   }
   return;
 }
@@ -143,17 +143,17 @@ fn demo_loops() {
   while (while_i < 3) {
     while_i++;
   };
-  print(while_i);
+  println(while_i);
 
   let for_sum = 0;
   for (let j = 0; j < 4; j++) {
     for_sum = for_sum + j;
   };
-  print(for_sum);
+  println(for_sum);
 
   for (let scoped_i = 0; scoped_i < 2; scoped_i++) {
     let loop_local = scoped_i;
-    print(loop_local);
+    println(loop_local);
   };
 
   let control_sum = 0;
@@ -166,7 +166,7 @@ fn demo_loops() {
     };
     control_sum = control_sum + k;
   };
-  print(control_sum);
+  println(control_sum);
 
   let loop_count = 0;
   loop {
@@ -175,7 +175,7 @@ fn demo_loops() {
       break;
     };
   };
-  print(loop_count + " loop count");
+  println(loop_count + " loop count");
 
   let loop_arr_sum = 0;
   let loop_arr_i = 0;
@@ -184,7 +184,7 @@ fn demo_loops() {
     loop_arr_sum += local_arr[0];
     loop_arr_i++;
   };
-  print(loop_arr_sum);
+  println(loop_arr_sum);
   return;
 }
 
@@ -199,15 +199,15 @@ fn sum7(a: int, b: int, c: int, d: int, e: int, f: int, g: int) int {
 fn demo_functions() {
   header("functions");
 
-  print(add(5));
-  print(add(3));
-  print(add(a = 3, b = 4));
-  print(add(3, b = 10));
+  println(add(5));
+  println(add(3));
+  println(add(a = 3, b = 4));
+  println(add(3, b = 10));
 
   fn noop() {
     return;
   }
-  print(noop());
+  println(noop());
 
   let y = 3;
   let getY = fn() int { return y; };
@@ -218,10 +218,10 @@ fn demo_functions() {
   let a5 = 5;
   let addCaps = fn(x: int, y: int) int { return a1 + a2 + a3 + a4 + a5 + x + y; };
 
-  print((fn(a: int) int { return a + 1; })(2));
-  print(getY());
-  print(sum7(1, 2, 3, 4, 5, 6, 7));
-  print(addCaps(6, 7));
+  println((fn(a: int) int { return a + 1; })(2));
+  println(getY());
+  println(sum7(1, 2, 3, 4, 5, 6, 7));
+  println(addCaps(6, 7));
   return;
 }
 
@@ -229,52 +229,52 @@ fn demo_arrays_unions_tuples() {
   header("arrays unions tuples");
 
   let arr = {1, 2, 3};
-  print(arr.length);
-  print(arr.length());
-  print(arr[1]);
+  println(arr.length);
+  println(arr.length());
+  println(arr[1]);
   arr[1] = 99;
-  print(arr[1]);
+  println(arr[1]);
 
   let typed: int[3] = {4, 5, 6};
-  print(typeof(typed));
-  print(typed.length);
-  print(typed.length());
+  println(typeof(typed));
+  println(typed.length);
+  println(typed.length());
 
   let fixed: int[3] = {7, 8, 9};
-  print(typeof(fixed));
+  println(typeof(fixed));
 
   let grid: int[2][2] = {{1, 2}, {2, 3}};
-  print(typeof(grid));
-  print(grid.length);
-  print(grid.length());
+  println(typeof(grid));
+  println(grid.length);
+  println(grid.length());
 
   let value: int||string = 1;
-  print(typeof(value));
+  println(typeof(value));
   value = "twice";
-  print(typeof(value));
+  println(typeof(value));
   value = 3;
   if (value == 3) {
-    print("union if works");
+    println("union if works");
   };
 
   let gate: string||int = "x";
   gate = 5;
   if (gate == 5) {
-    print("union reassign if works");
+    println("union reassign if works");
   };
   if (typeofValue(gate) == int) {
-    print("typeofValue works");
+    println("typeofValue works");
   };
 
   let arr_or_text: int[3]||string = {1, 2, 3};
-  print(typeof(arr_or_text));
+  println(typeof(arr_or_text));
   arr_or_text = "array or text";
-  print(typeof(arr_or_text));
+  println(typeof(arr_or_text));
 
   let tri: int||string||bool = 1;
   tri = "ok";
   tri = true;
-  print(typeof(tri));
+  println(typeof(tri));
 
   fn maybe_name(flag: bool) string||null {
     if (flag) {
@@ -286,28 +286,28 @@ fn demo_arrays_unions_tuples() {
   maybe_name(true);
 
   let tup: (int, string, bool) = (7, "seven", true);
-  print(typeof(tup));
-  print(tup.0);
-  print(tup.1);
-  print(tup.2);
+  println(typeof(tup));
+  println(tup.0);
+  println(tup.1);
+  println(tup.2);
 
   type Pair = (int, string);
   type MaybePair = Pair||string;
   let maybe_pair: MaybePair = (1, "one");
-  print(typeof(maybe_pair));
-  print(maybe_pair.0);
+  println(typeof(maybe_pair));
+  println(maybe_pair.0);
   maybe_pair = "no pair";
-  print(typeof(maybe_pair));
+  println(typeof(maybe_pair));
 
   let mixed = {1, "two", 3};
-  print(typeof(mixed));
-  print(mixed.length());
+  println(typeof(mixed));
+  println(mixed.length());
 
   let empty_arr: int[3] = {};
-  print(empty_arr.length());
+  println(empty_arr.length());
 
   let empty_pair: (int, string) = ();
-  print(empty_pair.0 ?? 7);
+  println(empty_pair.0 ?? 7);
   return;
 }
 
@@ -315,32 +315,32 @@ fn demo_null_safe_and_coalesce() {
   header("null-safe and coalesce");
 
   let maybe_arr: int[3];
-  print(maybe_arr?.length);
-  print(maybe_arr?.length());
-  print(maybe_arr?.length ?? 0);
-  print(maybe_arr?.length() ?? 0);
+  println(maybe_arr?.length);
+  println(maybe_arr?.length());
+  println(maybe_arr?.length ?? 0);
+  println(maybe_arr?.length() ?? 0);
 
   let arr = {1, 2, 3};
-  print(arr?.length);
-  print(arr?.length());
-  print(arr?.length ?? 0);
-  print(arr?.length() ?? 0);
-  print(arr?.missing);
-  print(arr?.missing());
-  print(arr?.missing ?? "no member");
-  print(arr?.missing() ?? "no method");
+  println(arr?.length);
+  println(arr?.length());
+  println(arr?.length ?? 0);
+  println(arr?.length() ?? 0);
+  println(arr?.missing);
+  println(arr?.missing());
+  println(arr?.missing ?? "no member");
+  println(arr?.missing() ?? "no method");
 
-  print(hasField(arr, "length"));
+  println(hasField(arr, "length"));
   let field_name: string = "length";
-  print(hasField(arr, field_name));
+  println(hasField(arr, field_name));
   field_name = "missing";
-  print(hasField(arr, field_name));
-  print(hasField("abc", "length"));
-  print(hasField(1, "length"));
+  println(hasField(arr, field_name));
+  println(hasField("abc", "length"));
+  println(hasField(1, "length"));
 
   let a: int;
-  print(a ?? 42);
-  print(7 ?? 42);
+  println(a ?? 42);
+  println(7 ?? 42);
   return;
 }
 

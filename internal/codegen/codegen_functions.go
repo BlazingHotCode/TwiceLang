@@ -639,7 +639,7 @@ func (cg *CodeGen) computeCaptures(fn *ast.FunctionLiteral, outerScope map[strin
 
 func isBuiltinName(name string) bool {
 	switch name {
-	case "print", "typeof", "typeofValue", "typeofvalue", "int", "float", "string", "char", "bool":
+	case "print", "println", "typeof", "typeofValue", "typeofvalue", "int", "float", "string", "char", "bool":
 		return true
 	default:
 		return false

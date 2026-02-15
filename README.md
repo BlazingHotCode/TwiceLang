@@ -80,7 +80,7 @@ go build -o twice ./cmd/twice
 ### 4. Run from stdin
 
 ```bash
-echo 'print(123);' | ./twice -run -
+echo 'println(123);' | ./twice -run -
 ```
 
 Note: `-run` executes `./<output>`, so prefer a relative `-o` value when using `-run`.
@@ -116,10 +116,10 @@ let value: int||string = 1;
 value = "twice";
 value = 3;
 if (value == 3) {
-  print("union if works");
+  println("union if works");
 };
 if (typeofValue(value) == int) {
-  print("runtime value is int");
+  println("runtime value is int");
 };
 
 let mixed: (int||string)[3] = {1, "two", 3};
@@ -127,7 +127,7 @@ let mixed: (int||string)[3] = {1, "two", 3};
 let tri: int||string||bool = 1;
 tri = "ok";
 tri = true;
-print(typeof(tri)); // int||string||bool
+println(typeof(tri)); // int||string||bool
 ```
 
 Type declarations (aliases) are also supported:
@@ -139,7 +139,7 @@ type Grid = Row[2];
 
 let value: NumOrText = "ok";
 let g: Grid = {{1, 2}, {3, 4}};
-print(typeof(value)); // NumOrText
+println(typeof(value)); // NumOrText
 ```
 
 ### Assignment
@@ -168,14 +168,14 @@ Example:
 let x = 1;
 if (true) {
   let x = 2;
-  print(x); // 2
+  println(x); // 2
 };
-print(x);   // 1
+println(x);   // 1
 
 if (true) {
   x = 5;
 };
-print(x);   // 5
+println(x);   // 5
 ```
 
 Temporary scope example:
@@ -184,7 +184,7 @@ Temporary scope example:
 {
   let temp = 123;
   fn tempFn(x: int) int { return x + 1; }
-  print(tempFn(temp));
+  println(tempFn(temp));
 }
 // temp and tempFn are not visible here
 ```
@@ -222,45 +222,45 @@ Current mixed-type behavior includes:
 String indexing example:
 
 ```tw
-print("Twice"[2]); // 'i'
+println("Twice"[2]); // 'i'
 ```
 
 Escapes and template strings:
 
 ```tw
 let who = "Twice";
-print("line1\nline2\tend");
-print(`Hello ${who}\n`);
+println("line1\nline2\tend");
+println(`Hello ${who}\n`);
 ```
 
 Null-safe and coalescing examples:
 
 ```tw
 let arr: int[3];
-print(arr?.length);   // 3
-print(arr?.length()); // 3
+println(arr?.length);   // 3
+println(arr?.length()); // 3
 
 let fallback2 = arr?.length ?? 0;
-print(fallback2); // 3
+println(fallback2); // 3
 
 let fallback = arr?.length() ?? 0;
-print(fallback); // 3
+println(fallback); // 3
 
 let arr2 = {1, 2, 3};
-print(arr2.length);    // 3
-print(arr2?.length);   // 3
-print(arr2?.length()); // 3
+println(arr2.length);    // 3
+println(arr2?.length);   // 3
+println(arr2?.length()); // 3
 
-print(arr2?.missing);          // null
-print(arr2?.missing());        // null
-print(arr2?.missing ?? "n/a"); // "n/a"
+println(arr2?.missing);          // null
+println(arr2?.missing());        // null
+println(arr2?.missing ?? "n/a"); // "n/a"
 
-print(hasField(arr2, "length")); // true
+println(hasField(arr2, "length")); // true
 let f: string = "length";
-print(hasField(arr2, f));        // true
+println(hasField(arr2, f));        // true
 f = "missing";
-print(hasField(arr2, f));        // false
-print(hasField("abc", "length"));// true
+println(hasField(arr2, f));        // false
+println(hasField("abc", "length"));// true
 ```
 
 Notes:
@@ -275,11 +275,11 @@ Notes:
 
 ```tw
 if (x > 10) {
-  print("big");
+  println("big");
 } elif (x == 10) {
-  print("equal");
+  println("equal");
 } else {
-  print("small");
+  println("small");
 };
 ```
 
@@ -341,8 +341,8 @@ Function literals are supported in codegen too:
 ```tw
 let y = 3;
 let getY = fn() int { return y; };
-print((fn(a: int) int { return a + 1; })(2)); // 3
-print(getY()); // 3
+println((fn(a: int) int { return a + 1; })(2)); // 3
+println(getY()); // 3
 ```
 
 Higher-arity functions and capture-heavy closures are supported:
@@ -351,7 +351,7 @@ Higher-arity functions and capture-heavy closures are supported:
 fn sum7(a: int, b: int, c: int, d: int, e: int, f: int, g: int) int {
   return a + b + c + d + e + f + g;
 }
-print(sum7(1, 2, 3, 4, 5, 6, 7)); // 28
+println(sum7(1, 2, 3, 4, 5, 6, 7)); // 28
 
 let a1 = 1;
 let a2 = 2;
@@ -359,13 +359,13 @@ let a3 = 3;
 let a4 = 4;
 let a5 = 5;
 let addCaps = fn(x: int, y: int) int { return a1 + a2 + a3 + a4 + a5 + x + y; };
-print(addCaps(6, 7)); // 28
+println(addCaps(6, 7)); // 28
 ```
 
 Call order is declaration-order independent:
 
 ```tw
-print(add(3));
+println(add(3));
 
 fn add(a: int, b: int = 2) int {
   return a + b;
@@ -391,7 +391,7 @@ Example no-return function:
 
 ```tw
 fn logValue(x: int) {
-  print(x);
+  println(x);
   return;
 }
 
@@ -407,7 +407,7 @@ Example auto-entrypoint `main`:
 
 ```tw
 fn main() int {
-  print("hello from main");
+  println("hello from main");
   return 7; // process exit code
 }
 ```
@@ -428,21 +428,21 @@ Indexing and mutation:
 
 ```tw
 let arr = {1, 2, 3};
-print(arr[1]); // 2
+println(arr[1]); // 2
 arr[1] = 99;
-print(arr[1]); // 99
+println(arr[1]); // 99
 
 let mixed = {1, "two", 3}; // inferred as (int||string)[3]
-print(typeof(mixed));
+println(typeof(mixed));
 
-print(c.length());      // 3
-print(pair.0 ?? 7);     // 7
+println(c.length());      // 3
+println(pair.0 ?? 7);     // 7
 ```
 
 Array length method:
 
 ```tw
-print(arr.length()); // 3
+println(arr.length()); // 3
 ```
 
 Note: array type annotations require explicit sizes in every dimension (for example `int[3]`, `int[2][2]`, `(int||string)[3]`). Empty literals (`{}` / `()`) require type context.
@@ -458,9 +458,9 @@ let a: (int, string, bool) = (1, "x", true);
 Tuple element access uses numeric dot indices:
 
 ```tw
-print(a.0); // 1
-print(a.1); // "x"
-print(a.2); // true
+println(a.0); // 1
+println(a.1); // "x"
+println(a.2); // true
 ```
 
 Tuples also work with unions and aliases:
@@ -470,14 +470,16 @@ type Pair = (int, string);
 type MaybePair = Pair||string;
 
 let v: MaybePair = (1, "x");
-print(v.0);      // 1
+println(v.0);      // 1
 v = "fallback";
-print(typeof(v)); // MaybePair
+println(typeof(v)); // MaybePair
 ```
 
 ### Builtins
 
-- `print(expr)` supports: `int`, `bool`, `float`, `string`, `char`, `null`, `type`
+- `print(expr)` writes without a trailing newline
+- `println(expr)` writes with a trailing newline
+- `print(expr)` and `println(expr)` both support: `int`, `bool`, `float`, `string`, `char`, `null`, `type`
 - `typeof(expr)` returns the type name
 - `typeofValue(expr)` returns the current value type name (useful for union-typed variables)
 - Casts:
@@ -517,33 +519,33 @@ let c = 'A';
 let f = 3.14;
 let n: string;
 
-print(s);
-print(c);
-print(f);
-print(n);
-print(typeof(n));
-print(int(true));
-print(char(66));
+println(s);
+println(c);
+println(f);
+println(n);
+println(typeof(n));
+println(int(true));
+println(char(66));
 
-print("x:" + 7);
-print(7 % 4);
-print(7.5 % 2.0);
-print("Twice"[2]);
-print(true ^^ false);
-print(5 << 1);
-print('A' + 1);
+println("x:" + 7);
+println(7 % 4);
+println(7.5 % 2.0);
+println("Twice"[2]);
+println(true ^^ false);
+println(5 << 1);
+println('A' + 1);
 
 let i = 0;
 while (i < 3) {
   i++;
 };
-print(i);
+println(i);
 
 let sum = 0;
 for (let j = 0; j < 4; j++) {
   sum = sum + j;
 };
-print(sum);
+println(sum);
 
 let control = 0;
 for (let k = 0; k < 6; k++) {
@@ -551,37 +553,37 @@ for (let k = 0; k < 6; k++) {
   if (k == 5) { break; };
   control = control + k;
 };
-print(control);
+println(control);
 
-print(add(5)); // call before declaration
+println(add(5)); // call before declaration
 
 fn add(a: int, b: int = 2) int {
   return a + b;
 }
 
-print(add(3));
-print(add(a = 3, b = 4));
-print(add(3, b = 10));
+println(add(3));
+println(add(a = 3, b = 4));
+println(add(3, b = 10));
 
 let arr = {1, 2, 3};
-print(arr.length());
-print(arr[1]);
+println(arr.length());
+println(arr[1]);
 arr[1] = 99;
-print(arr[1]);
+println(arr[1]);
 
 let value: int||string = 1;
 value = "twice";
 value = 3;
 if (value == 3) {
-  print("union if works");
+  println("union if works");
 };
 if (typeofValue(value) == int) {
-  print("runtime value is int");
+  println("runtime value is int");
 };
 
 let grid: int[2][2] = {{1, 2}, {2, 3}};
-print(typeof(grid));
-print(grid.length());
+println(typeof(grid));
+println(grid.length());
 ```
 
 See `test.tw` for a fuller feature walkthrough.
