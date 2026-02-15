@@ -72,7 +72,7 @@ func (cg *CodeGen) symbolCheckStatement(stmt ast.Statement, scopes *[]symbolScop
 			cg.symbolCheckExpression(s.Value, scopes)
 		}
 	case *ast.FunctionStatement:
-		if s != nil && s.Name != nil {
+		if s != nil && s.Name != nil && s.Receiver == nil {
 			cg.declareValue(s.Name.Value, false, s, scopes)
 		}
 		if s != nil && s.Function != nil && s.Function.Body != nil {

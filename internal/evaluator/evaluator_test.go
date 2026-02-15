@@ -904,6 +904,20 @@ func TestPointerEvalErrors(t *testing.T) {
 	}
 }
 
+func TestStructMethodEvalWithPointerIntegration(t *testing.T) {
+	src := `
+struct Point { x: int, y: int }
+fn (self: Point) sum() int { return self.x + self.y; }
+fn (self: *Point) setX(v: int) { self.x = v; return; }
+let p: Point = new Point(1, 2);
+let pp: *Point = &p;
+pp.setX(9);
+pp.sum()
+`
+	evaluated := testEval(src)
+	testIntegerObject(t, evaluated, 11)
+}
+
 func TestIndexOperatorTypeErrorsEval(t *testing.T) {
 	evaluated := testEval(`1[0]`)
 	errObj, ok := evaluated.(*object.Error)

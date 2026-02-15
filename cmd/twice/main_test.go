@@ -303,6 +303,46 @@ fn main() int {
 	}
 }
 
+func TestCLICompileAndRunStructMethodsWithPointers(t *testing.T) {
+	root := repoRoot(t)
+	ensureToolchain(t)
+
+	srcPath := filepath.Join(t.TempDir(), "struct_methods.tw")
+	source := `
+struct Point { x: int, y: int }
+fn (self: Point) sum() int { return self.x + self.y; }
+fn (self: *Point) setX(v: int) { self.x = v; return; }
+
+fn main() int {
+  let p: Point = new Point(1, 2);
+  let pp: *Point = &p;
+  pp.setX(9);
+  println(pp.sum());
+  return 0;
+}
+`
+	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	outputName := "twice_cli_struct_methods_bin"
+	outputPath := filepath.Join(root, outputName)
+	_ = os.Remove(outputPath)
+	t.Cleanup(func() { _ = os.Remove(outputPath) })
+
+	cmd := exec.Command("go", "run", "./cmd/twice", "-run", "-o", outputName, srcPath)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("compile/run failed: %v\n%s", err, out)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "\n11\n") {
+		t.Fatalf("expected method runtime output. output:\n%s", output)
+	}
+}
+
 func TestCLICompileAndRunStructFeature(t *testing.T) {
 	root := repoRoot(t)
 	ensureToolchain(t)

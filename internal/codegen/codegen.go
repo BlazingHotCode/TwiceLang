@@ -35,6 +35,7 @@ type CodeGen struct {
 	funcStmtKeys       map[*ast.FunctionStatement]string
 	funcLitKeys        map[*ast.FunctionLiteral]string
 	varFuncs           map[string]string
+	structMethods      map[string]string
 	typeAliases        map[string]string
 	genericTypeAliases map[string]genericTypeAlias
 	structDecls        map[string]*ast.StructStatement
@@ -60,6 +61,7 @@ type compiledFunction struct {
 	Name             string
 	Label            string
 	Literal          *ast.FunctionLiteral
+	ReceiverType     string
 	Captures         []string
 	CaptureTypeNames []string
 	TypeArgMap       map[string]string
@@ -112,9 +114,10 @@ func New() *CodeGen {
 		functions:          make(map[string]*compiledFunction),
 		funcByName:         make(map[string]string),
 		funcStmtKeys:       make(map[*ast.FunctionStatement]string),
-		funcLitKeys:        make(map[*ast.FunctionLiteral]string),
-		varFuncs:           make(map[string]string),
-		typeAliases:        make(map[string]string),
+			funcLitKeys:        make(map[*ast.FunctionLiteral]string),
+			varFuncs:           make(map[string]string),
+			structMethods:      make(map[string]string),
+			typeAliases:        make(map[string]string),
 		genericTypeAliases: make(map[string]genericTypeAlias),
 		structDecls:        make(map[string]*ast.StructStatement),
 		stackOffset:        0,

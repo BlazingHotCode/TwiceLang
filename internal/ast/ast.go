@@ -663,16 +663,57 @@ func (fl *FunctionLiteral) String() string {
 type FunctionStatement struct {
 	Token    token.Token
 	Name     *Identifier
+	Receiver *FunctionParameter
 	Function *FunctionLiteral
 }
 
 func (fs *FunctionStatement) statementNode()       {}
 func (fs *FunctionStatement) TokenLiteral() string { return fs.Token.Literal }
 func (fs *FunctionStatement) String() string {
-	if fs.Function != nil {
-		return fs.Function.String()
+	if fs == nil || fs.Function == nil {
+		return ""
 	}
-	return ""
+	var out bytes.Buffer
+	params := []string{}
+	for _, p := range fs.Function.Parameters {
+		param := p.Name.String()
+		if p.TypeName != "" {
+			param += ": " + p.TypeName
+		}
+		if p.DefaultValue != nil {
+			param += " = " + p.DefaultValue.String()
+		}
+		params = append(params, param)
+	}
+	out.WriteString("fn ")
+	if fs.Receiver != nil {
+		out.WriteString("(")
+		if fs.Receiver.Name != nil {
+			out.WriteString(fs.Receiver.Name.String())
+		}
+		if fs.Receiver.TypeName != "" {
+			out.WriteString(": ")
+			out.WriteString(fs.Receiver.TypeName)
+		}
+		out.WriteString(") ")
+	}
+	if fs.Function.Name != nil {
+		out.WriteString(fs.Function.Name.String())
+	}
+	if len(fs.Function.TypeParams) > 0 {
+		out.WriteString("<")
+		out.WriteString(strings.Join(fs.Function.TypeParams, ", "))
+		out.WriteString(">")
+	}
+	out.WriteString("(")
+	out.WriteString(strings.Join(params, ", "))
+	out.WriteString(") ")
+	if fs.Function.ReturnType != "" {
+		out.WriteString(fs.Function.ReturnType)
+		out.WriteString(" ")
+	}
+	out.WriteString(fs.Function.Body.String())
+	return out.String()
 }
 
 // NewExpression represents: new <TypeName>(<arguments>)

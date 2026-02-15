@@ -700,6 +700,36 @@ func TestNamedFunctionSyntaxParses(t *testing.T) {
 	}
 }
 
+func TestMethodFunctionSyntaxParses(t *testing.T) {
+	input := `fn (self: *Point) move(dx: int, dy: int) { return; }`
+	p := New(lexer.New(input))
+	program := p.ParseProgram()
+	checkNoParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got=%d", len(program.Statements))
+	}
+	stmt, ok := program.Statements[0].(*ast.FunctionStatement)
+	if !ok {
+		t.Fatalf("expected function statement, got=%T", program.Statements[0])
+	}
+	if stmt.Receiver == nil {
+		t.Fatalf("expected method receiver")
+	}
+	if stmt.Receiver.Name == nil || stmt.Receiver.Name.Value != "self" {
+		t.Fatalf("expected receiver name self, got=%#v", stmt.Receiver)
+	}
+	if stmt.Receiver.TypeName != "*Point" {
+		t.Fatalf("expected receiver type *Point, got=%q", stmt.Receiver.TypeName)
+	}
+	if len(stmt.Function.Parameters) != 3 {
+		t.Fatalf("expected receiver + 2 params, got=%d", len(stmt.Function.Parameters))
+	}
+	if stmt.Function.Parameters[0].Name.Value != "self" {
+		t.Fatalf("expected first function parameter to be receiver self, got=%q", stmt.Function.Parameters[0].Name.Value)
+	}
+}
+
 func TestGenericFunctionSyntaxParses(t *testing.T) {
 	input := `fn id<T>(x: T) T { return x; }`
 	p := New(lexer.New(input))

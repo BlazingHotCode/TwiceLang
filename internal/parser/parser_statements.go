@@ -185,6 +185,33 @@ func (p *Parser) parseFunctionStatement() *ast.FunctionStatement {
 	fnToken := p.curToken
 	stmt := &ast.FunctionStatement{Token: fnToken}
 
+	if p.peekTokenIs(token.LPAREN) {
+		if !p.expectPeek(token.LPAREN) {
+			return nil
+		}
+		if p.peekTokenIs(token.RPAREN) {
+			p.addErrorPeek("method receiver cannot be empty", p.peekToken.Literal)
+			return nil
+		}
+		p.nextToken()
+		recv := p.parseFunctionParameter()
+		if recv == nil {
+			return nil
+		}
+		if recv.TypeName == "" {
+			p.addErrorCurrent("method receiver must include a type annotation", p.curToken.Literal)
+			return nil
+		}
+		if recv.DefaultValue != nil {
+			p.addErrorCurrent("method receiver cannot have a default value", p.curToken.Literal)
+			return nil
+		}
+		if !p.expectPeek(token.RPAREN) {
+			return nil
+		}
+		stmt.Receiver = recv
+	}
+
 	if !p.expectPeek(token.IDENT) {
 		return nil
 	}
@@ -206,6 +233,9 @@ func (p *Parser) parseFunctionStatement() *ast.FunctionStatement {
 	lit.Parameters = p.parseFunctionParameters()
 	if lit.Parameters == nil {
 		return nil
+	}
+	if stmt.Receiver != nil {
+		lit.Parameters = append([]*ast.FunctionParameter{stmt.Receiver}, lit.Parameters...)
 	}
 
 	if p.peekTokenIs(token.IDENT) || p.peekTokenIs(token.LPAREN) || p.peekTokenIs(token.NULL) {

@@ -443,6 +443,32 @@ fn demo_pointers() {
   return;
 }
 
+struct Vec2 {
+  x: int,
+  y: int
+}
+
+fn (self: Vec2) sum() int {
+  return self.x + self.y;
+}
+
+fn (self: *Vec2) setX(v: int) {
+  self.x = v;
+  return;
+}
+
+fn demo_struct_methods() {
+  header("struct methods");
+
+  let v: Vec2 = new Vec2(1, 2);
+  println(v.sum());
+  let pv: *Vec2 = &v;
+  pv.setX(9);
+  println(v.sum());
+  println(pv.sum());
+  return;
+}
+
 fn demo_generics() {
   header("generics");
 
@@ -479,6 +505,7 @@ fn main() {
   demo_maps();
   demo_structs();
   demo_pointers();
+  demo_struct_methods();
   demo_generics();
   return;
 }

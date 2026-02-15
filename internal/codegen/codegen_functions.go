@@ -9,6 +9,30 @@ import (
 	"twice/internal/ast"
 )
 
+func methodFunctionKey(receiverType, methodName string) string {
+	return "method::" + receiverType + "::" + methodName
+}
+
+func splitMethodFunctionKey(key string) (receiverType, methodName string, ok bool) {
+	const prefix = "method::"
+	if !strings.HasPrefix(key, prefix) {
+		return "", "", false
+	}
+	rest := strings.TrimPrefix(key, prefix)
+	parts := strings.SplitN(rest, "::", 2)
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
+}
+
+func receiverTypeName(stmt *ast.FunctionStatement) string {
+	if stmt == nil || stmt.Receiver == nil {
+		return ""
+	}
+	return stmt.Receiver.TypeName
+}
+
 func (cg *CodeGen) reset() {
 	cg.output = strings.Builder{}
 	cg.funcDefs = strings.Builder{}
@@ -34,6 +58,7 @@ func (cg *CodeGen) reset() {
 	cg.funcStmtKeys = make(map[*ast.FunctionStatement]string)
 	cg.funcLitKeys = make(map[*ast.FunctionLiteral]string)
 	cg.varFuncs = make(map[string]string)
+	cg.structMethods = make(map[string]string)
 	cg.typeAliases = make(map[string]string)
 	cg.genericTypeAliases = make(map[string]genericTypeAlias)
 	cg.structDecls = make(map[string]*ast.StructStatement)
@@ -61,7 +86,7 @@ func (cg *CodeGen) collectFunctions(program *ast.Program) {
 	for _, stmt := range program.Statements {
 		switch s := stmt.(type) {
 		case *ast.FunctionStatement:
-			if s != nil && s.Name != nil {
+			if s != nil && s.Name != nil && s.Receiver == nil {
 				globalScope[s.Name.Value] = struct{}{}
 			}
 		case *ast.LetStatement:
@@ -86,6 +111,9 @@ func (cg *CodeGen) collectFunctionsInStatement(stmt ast.Statement, scope map[str
 			return
 		}
 		key := s.Name.Value
+		if s.Receiver != nil {
+			key = methodFunctionKey(s.Receiver.TypeName, s.Name.Value)
+		}
 		if _, exists := cg.functions[key]; exists {
 			cg.addNodeError("duplicate function declaration: "+key, s)
 			return
@@ -97,14 +125,18 @@ func (cg *CodeGen) collectFunctionsInStatement(stmt ast.Statement, scope map[str
 		cg.functions[key] = &compiledFunction{
 			Key:              key,
 			Name:             s.Name.Value,
-			Label:            "fn_" + s.Name.Value,
+			Label:            "fn_" + mangleTypeForLabel(key),
 			Literal:          s.Function,
+			ReceiverType:     receiverTypeName(s),
 			Captures:         captures,
 			CaptureTypeNames: make([]string, len(captures)),
 		}
 		cg.funcStmtKeys[s] = key
-		if topLevel {
+		if topLevel && s.Receiver == nil {
 			cg.funcByName[s.Name.Value] = key
+		}
+		if s.Receiver != nil {
+			cg.structMethods[methodFunctionKey(s.Receiver.TypeName, s.Name.Value)] = key
 		}
 
 		childScope := copyScope(scope)
@@ -865,7 +897,7 @@ func collectDeclaredNames(block *ast.BlockStatement, scope map[string]struct{}) 
 				scope[s.Name.Value] = struct{}{}
 			}
 		case *ast.FunctionStatement:
-			if s != nil && s.Name != nil {
+			if s != nil && s.Name != nil && s.Receiver == nil {
 				scope[s.Name.Value] = struct{}{}
 			}
 		case *ast.ForStatement:

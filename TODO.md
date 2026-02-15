@@ -10,19 +10,7 @@
 - adding snippet to [test.tw](./test.tw) and running using binary to test the code
 - adding guide/points to show the feature in [README](./README.md)
 
-## 1. Struct Methods + Pointer Integration
-
-- Keep struct methods tied to pointer behavior and references.
-- Explicit struct function declaration syntax:
-- `fn (self: StructName) methodName(args...) ReturnType { ... }`
-- Explicit mutating struct function declaration syntax (with pointers):
-- `fn (self: *StructName) methodName(args...) { ... }`
-- Struct function usage syntax:
-- `value.methodName(args...)`
-- Pointer struct function usage syntax (auto-deref):
-- `ptr.methodName(args...)` (no `(*ptr).methodName(...)` required)
-
-## 2. Custom Libraries
+## 1. Custom Libraries
 
 - Add `import ...` syntax.
 - Built-in libraries are imported with `twice.<lib>`.
@@ -36,7 +24,7 @@
 - `import twice.math.sqrt as sqrt`
 - Support cross-module generic specialization in v1 (imports included).
 
-## 3. OOP and Type System Expansion
+## 2. OOP and Type System Expansion
 
 - Add class declarations and object instantiation.o
 - Structs stay public-focused; classes support explicit `public`/`private`.
@@ -60,7 +48,7 @@
 - Typed declarations without `new` remain `null` until initialized (for example `let s: Shape;`).
 - Generic classes are supported by syntax plan, but are implemented together with class support.
 
-## 4. Inheritance
+## 3. Inheritance
 
 - Add inheritance as a separate feature from base class/object support.
 - Define overriding and method resolution rules.

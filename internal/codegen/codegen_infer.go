@@ -256,6 +256,9 @@ func (cg *CodeGen) inferExpressionType(expr ast.Expression) (out valueType) {
 		}
 		return cg.parseTypeName(elemTypeName)
 	case *ast.MethodCallExpression:
+		if retName, ok := cg.structMethodReturnTypeName(e); ok {
+			return cg.parseTypeName(retName)
+		}
 		if e.Method != nil && e.Method.Value == "length" {
 			return typeInt
 		}
@@ -411,6 +414,9 @@ func (cg *CodeGen) inferExpressionTypeName(expr ast.Expression) (out string) {
 		}
 		return elem
 	case *ast.MethodCallExpression:
+		if retName, ok := cg.structMethodReturnTypeName(e); ok {
+			return retName
+		}
 		if e.Method != nil && e.Method.Value == "length" {
 			return "int"
 		}
@@ -576,6 +582,62 @@ func removeNullMember(typeName string) (string, bool) {
 		return "null", true
 	}
 	return strings.Join(out, "||"), true
+}
+
+func (cg *CodeGen) structMethodReturnTypeName(mce *ast.MethodCallExpression) (string, bool) {
+	if mce == nil || mce.Method == nil {
+		return "", false
+	}
+	objType := cg.inferExpressionTypeName(mce.Object)
+	if resolved, ok := cg.normalizeTypeName(objType); ok {
+		objType = resolved
+	}
+	if noNull, changed := removeNullMember(objType); changed {
+		objType = noNull
+	}
+	if objType == "" || objType == "unknown" || objType == "null" {
+		return "", false
+	}
+	lookupReturn := func(receiverType string) (string, bool) {
+		key, ok := cg.structMethods[methodFunctionKey(receiverType, mce.Method.Value)]
+		if ok {
+			fn, ok := cg.functions[key]
+			if !ok || fn == nil || fn.Literal == nil || fn.Literal.ReturnType == "" {
+				return "null", true
+			}
+			return fn.Literal.ReturnType, true
+		}
+		want := receiverType
+		if resolved, ok := cg.normalizeTypeName(want); ok {
+			want = resolved
+		}
+		for methodKey, fnKey := range cg.structMethods {
+			recvType, methodName, ok := splitMethodFunctionKey(methodKey)
+			if !ok || methodName != mce.Method.Value {
+				continue
+			}
+			got := recvType
+			if resolved, ok := cg.normalizeTypeName(got); ok {
+				got = resolved
+			}
+			if got != want {
+				continue
+			}
+			fn, ok := cg.functions[fnKey]
+			if !ok || fn == nil || fn.Literal == nil || fn.Literal.ReturnType == "" {
+				return "null", true
+			}
+			return fn.Literal.ReturnType, true
+		}
+		return "", false
+	}
+	if pointee, ok := peelPointerType(objType); ok {
+		if ret, ok := lookupReturn("*" + pointee); ok {
+			return ret, true
+		}
+		return lookupReturn(pointee)
+	}
+	return lookupReturn(objType)
 }
 
 func (cg *CodeGen) resolveGenericCallReturnTypeName(fn *compiledFunction, ce *ast.CallExpression) string {

@@ -879,6 +879,24 @@ func TestCodegenPointerValidation(t *testing.T) {
 	}
 }
 
+func TestCodegenStructMethodWithPointerIntegration(t *testing.T) {
+	asm, cg := generateAssembly(t, `
+struct Point { x: int, y: int }
+fn (self: Point) sum() int { return self.x + self.y; }
+fn (self: *Point) setX(v: int) { self.x = v; return; }
+let p: Point = new Point(1, 2);
+let pp: *Point = &p;
+pp.setX(9);
+print(pp.sum());
+`)
+	if len(cg.Errors()) != 0 {
+		t.Fatalf("unexpected codegen errors: %v", cg.Errors())
+	}
+	if !strings.Contains(asm, "call fn_method") {
+		t.Fatalf("expected generated method function calls, got:\n%s", asm)
+	}
+}
+
 func TestCodegenListConstructorAndMethods(t *testing.T) {
 	asm, cg := generateAssembly(t, "let xs: List<int> = new List<int>(1,2); xs.append(3); xs.insert(1,7); print(xs.length()); print(xs[1]); print(xs.remove(2)); print(xs.pop()); print(xs.contains(1)); xs.clear(); print(xs.length());")
 	if len(cg.Errors()) != 0 {

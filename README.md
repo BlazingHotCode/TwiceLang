@@ -576,6 +576,32 @@ Notes:
 - Fields with `= value` have constructor defaults.
 - Required fields (no `?:` and no default) must be provided.
 
+Struct methods with explicit receiver syntax:
+
+```tw
+struct Vec2 { x: int, y: int }
+
+fn (self: Vec2) sum() int {
+  return self.x + self.y;
+}
+
+fn (self: *Vec2) setX(v: int) {
+  self.x = v;
+  return;
+}
+```
+
+Usage:
+
+```tw
+let v: Vec2 = new Vec2(1, 2);
+let pv: *Vec2 = &v;
+
+println(v.sum()); // value receiver
+pv.setX(9);       // pointer receiver
+println(pv.sum()); // pointer auto-deref to value receiver
+```
+
 ### Pointers
 
 Pointer types use `*`:
@@ -599,7 +625,8 @@ Notes:
 
 - Non-null pointer declarations require an initializer.
 - `&` currently takes an identifier target.
-- Pointer receivers auto-deref for member/method/index access in codegen/evaluator paths.
+- Pointer receiver calls are supported with `ptr.method(...)`.
+- Value receiver calls also work from pointer values via auto-deref.
 
 ### Tuples
 

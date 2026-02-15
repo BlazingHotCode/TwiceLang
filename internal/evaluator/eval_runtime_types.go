@@ -189,6 +189,14 @@ func evalMethodCallExpression(node *ast.MethodCallExpression, env *object.Enviro
 	if node.NullSafe && obj == NULL {
 		return NULL
 	}
+	if methodFn, receiverArg, ok := resolveStructMethodTarget(node, obj, env); ok {
+		args, namedArgs, argErr := evalCallArguments(node.Arguments, env)
+		if argErr != nil {
+			return argErr
+		}
+		args = append([]object.Object{receiverArg}, args...)
+		return applyFunction(methodFn, args, namedArgs, nil)
+	}
 	if deref, err := derefPointerObject(obj); err != nil {
 		return err
 	} else {
@@ -465,6 +473,33 @@ func evalMethodCallExpression(node *ast.MethodCallExpression, env *object.Enviro
 		}
 		return newError("unknown method: %s", node.Method.Value)
 	}
+}
+
+func resolveStructMethodTarget(node *ast.MethodCallExpression, obj object.Object, env *object.Environment) (object.Object, object.Object, bool) {
+	if node == nil || node.Method == nil || env == nil || obj == nil || obj == NULL {
+		return nil, nil, false
+	}
+	// Prefer pointer receiver methods when the caller is a pointer.
+	if ptr, ok := obj.(*object.Pointer); ok {
+		targetType := normalizeTypeName(ptr.TargetType, env)
+		if targetType != "" && targetType != "unknown" {
+			if fn, ok := env.StructMethod("*"+targetType, node.Method.Value); ok {
+				return fn, obj, true
+			}
+		}
+	}
+	deref, err := derefPointerObject(obj)
+	if err != nil {
+		return nil, nil, false
+	}
+	st, ok := deref.(*object.Struct)
+	if !ok || st == nil {
+		return nil, nil, false
+	}
+	if fn, ok := env.StructMethod(normalizeTypeName(st.TypeName, env), node.Method.Value); ok {
+		return fn, deref, true
+	}
+	return nil, nil, false
 }
 
 func evalMemberAccess(obj object.Object, property *ast.Identifier, nullSafe bool) object.Object {

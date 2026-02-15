@@ -381,16 +381,17 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		if left == nil || left.Object == nil || left.Property == nil {
 			return newError("invalid member assignment")
 		}
-		id, ok := left.Object.(*ast.Identifier)
-		if !ok {
-			return newError("member assignment target must be an identifier")
-		}
-		if env.IsConst(id.Value) {
+		if id, ok := left.Object.(*ast.Identifier); ok && env.IsConst(id.Value) {
 			return newError("cannot reassign const: %s", id.Value)
 		}
-		objVal, ok := env.Get(id.Value)
-		if !ok {
-			return newError("identifier not found: %s", id.Value)
+		objVal := Eval(left.Object, env)
+		if isError(objVal) {
+			return objVal
+		}
+		if deref, err := derefPointerObject(objVal); err != nil {
+			return err
+		} else {
+			objVal = deref
 		}
 		st, ok := objVal.(*object.Struct)
 		if !ok {
@@ -451,6 +452,11 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		fnObj := Eval(node.Function, env)
 		if isError(fnObj) {
 			return fnObj
+		}
+		if node.Receiver != nil {
+			receiverType := normalizeTypeName(node.Receiver.TypeName, env)
+			env.SetStructMethod(receiverType, node.Name.Value, fnObj)
+			return nil
 		}
 		env.Set(node.Name.Value, fnObj)
 		env.SetType(node.Name.Value, "unknown")

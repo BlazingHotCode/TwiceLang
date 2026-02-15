@@ -360,6 +360,15 @@ func (cg *CodeGen) semanticCheckStatement(stmt ast.Statement, aliases map[string
 	case *ast.FunctionStatement:
 		if s.Function != nil {
 			typeParamSet := toTypeParamSet(s.Function.TypeParams)
+			if s.Receiver != nil {
+				if s.Receiver.TypeName == "" {
+					cg.addNodeError("method receiver must include a type annotation", s)
+				} else if msg, ok := semanticGenericTypeArityError(s.Receiver.TypeName, genericArities, nonGenericAliases, typeParamSet); ok {
+					cg.addNodeError(msg, s)
+				} else if !cg.semanticKnownTypeWithParams(s.Receiver.TypeName, aliases, typeParamSet) {
+					cg.addNodeError("unknown type: "+s.Receiver.TypeName, s)
+				}
+			}
 			if s.Function.ReturnType != "" {
 				if msg, ok := semanticGenericTypeArityError(s.Function.ReturnType, genericArities, nonGenericAliases, typeParamSet); ok {
 					cg.addNodeError(msg, s.Function)

@@ -46,6 +46,9 @@ func (cg *CodeGen) generateStatement(stmt ast.Statement) {
 		if s == nil || s.Name == nil {
 			return
 		}
+		if s.Receiver != nil {
+			return
+		}
 		key, ok := cg.funcStmtKeys[s]
 		if !ok {
 			if top, exists := cg.funcByName[s.Name.Value]; exists {
@@ -638,6 +641,9 @@ func (cg *CodeGen) generateMethodCallExpression(mce *ast.MethodCallExpression) {
 }
 
 func (cg *CodeGen) generateMethodByName(mce *ast.MethodCallExpression, nullSafe bool) {
+	if cg.generateStructMethodCall(mce) {
+		return
+	}
 	switch mce.Method.Value {
 	case "length":
 		cg.generateArrayLengthMethod(mce, nullSafe)
@@ -660,6 +666,83 @@ func (cg *CodeGen) generateMethodByName(mce *ast.MethodCallExpression, nullSafe 
 	default:
 		cg.generateUnknownMethodError(mce, nullSafe)
 	}
+}
+
+func (cg *CodeGen) generateStructMethodCall(mce *ast.MethodCallExpression) bool {
+	if mce == nil || mce.Method == nil {
+		return false
+	}
+	objType := cg.inferExpressionTypeName(mce.Object)
+	if resolved, ok := cg.normalizeTypeName(objType); ok {
+		objType = resolved
+	}
+	if noNull, changed := removeNullMember(objType); changed {
+		objType = noNull
+	}
+	if objType == "" || objType == "unknown" || objType == "null" {
+		return false
+	}
+
+	findMethod := func(receiverType string) (*compiledFunction, bool) {
+		key, ok := cg.structMethods[methodFunctionKey(receiverType, mce.Method.Value)]
+		if ok {
+			fn, ok := cg.functions[key]
+			return fn, ok && fn != nil
+		}
+		want := receiverType
+		if resolved, ok := cg.normalizeTypeName(want); ok {
+			want = resolved
+		}
+		for methodKey, fnKey := range cg.structMethods {
+			recvType, methodName, ok := splitMethodFunctionKey(methodKey)
+			if !ok || methodName != mce.Method.Value {
+				continue
+			}
+			got := recvType
+			if resolved, ok := cg.normalizeTypeName(got); ok {
+				got = resolved
+			}
+			if got != want {
+				continue
+			}
+			fn, ok := cg.functions[fnKey]
+			return fn, ok && fn != nil
+		}
+		return nil, false
+	}
+
+	callWith := func(fn *compiledFunction, recv ast.Expression) bool {
+		if fn == nil {
+			return false
+		}
+		args := make([]ast.Expression, 0, 1+len(mce.Arguments))
+		args = append(args, recv)
+		args = append(args, mce.Arguments...)
+		cg.generateUserFunctionCall(fn, &ast.CallExpression{
+			Token:     token.Token{Type: token.LPAREN, Literal: "("},
+			Arguments: args,
+		})
+		return true
+	}
+
+	if pointee, ok := peelPointerType(objType); ok {
+		if fn, ok := findMethod("*" + pointee); ok {
+			return callWith(fn, mce.Object)
+		}
+		if fn, ok := findMethod(pointee); ok {
+			return callWith(fn, &ast.PrefixExpression{
+				Token:    token.Token{Type: token.ASTERISK, Literal: "*"},
+				Operator: "*",
+				Right:    mce.Object,
+			})
+		}
+		return false
+	}
+
+	if fn, ok := findMethod(objType); ok {
+		return callWith(fn, mce.Object)
+	}
+	return false
 }
 
 func (cg *CodeGen) generateMemberAccessExpression(mae *ast.MemberAccessExpression) {

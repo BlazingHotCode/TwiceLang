@@ -11,6 +11,7 @@ type Environment struct {
 	typeAlias        map[string]string
 	genericTypeAlias map[string]GenericTypeAlias
 	structDefs       map[string]*ast.StructStatement
+	structMethods    map[string]Object
 	outer            *Environment // Parent scope, nil for global scope
 }
 
@@ -29,6 +30,7 @@ func NewEnvironment() *Environment {
 		typeAlias:        make(map[string]string),
 		genericTypeAlias: make(map[string]GenericTypeAlias),
 		structDefs:       make(map[string]*ast.StructStatement),
+		structMethods:    make(map[string]Object),
 		outer:            nil,
 	}
 }
@@ -182,4 +184,22 @@ func (e *Environment) Struct(name string) (*ast.StructStatement, bool) {
 func (e *Environment) HasStructInCurrentScope(name string) bool {
 	_, ok := e.structDefs[name]
 	return ok
+}
+
+func structMethodKey(receiverType, methodName string) string {
+	return receiverType + "::" + methodName
+}
+
+func (e *Environment) SetStructMethod(receiverType, methodName string, fn Object) {
+	e.structMethods[structMethodKey(receiverType, methodName)] = fn
+}
+
+func (e *Environment) StructMethod(receiverType, methodName string) (Object, bool) {
+	if fn, ok := e.structMethods[structMethodKey(receiverType, methodName)]; ok {
+		return fn, true
+	}
+	if e.outer != nil {
+		return e.outer.StructMethod(receiverType, methodName)
+	}
+	return nil, false
 }
