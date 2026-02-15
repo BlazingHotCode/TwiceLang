@@ -10,7 +10,12 @@
 - adding snippet to [test.tw](./test.tw) and running using binary to test the code
 - adding guide/points to show the feature in [README](./README.md)
 
-## 1. OOP and Type System Expansion
+## 1. Foreach Loop
+
+- Add foreach syntax:
+- `foreach (let a : b) {}`
+
+## 2. OOP and Type System Expansion
 
 - Add class declarations and object instantiation.o
 - Structs stay public-focused; classes support explicit `public`/`private`.
@@ -34,7 +39,7 @@
 - Typed declarations without `new` remain `null` until initialized (for example `let s: Shape;`).
 - Generic classes are supported by syntax plan, but are implemented together with class support.
 
-## 2. Inheritance
+## 3. Inheritance
 
 - Add inheritance as a separate feature from base class/object support.
 - Define overriding and method resolution rules.
